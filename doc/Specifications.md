@@ -371,3 +371,15 @@ qui ne seront par parcourrues connaissant la valeur « valeur »
 de la variable « nom ». L'argument peut être répété plusieurs
 fois pour fournir les valeurs de plusieurs variables.
 
+II.11 Suppression d'éléments inutiles\*\*\*
+-------------------------------------------
+
+L'option **\--removeUnused=type** supprime tous les éléments inutilisés
+contenu dans le code d'un des types suivants:
+
+-   var: variable locale
+-   moduleVar: variable de module (si le module était utilisé avec
+    une close only ne spécifiant que cette variable, le module est
+    également supprimé)
+-   associate; associate non utilisé
+
