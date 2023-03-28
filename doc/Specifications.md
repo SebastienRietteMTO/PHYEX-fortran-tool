@@ -3,6 +3,9 @@ Cahier des charges pour l'outil de modification des codes
 
 Document rédigé par Sébastien Riette (sebastien.riette at meteo.fr) le 8
 décembre 2022.
+Mise à jour du 28 mars 2023: utilisation d'un parser xml externe autorisé,
+ajout de fonctionnalités pour permettre la création automatique d'enrobages
+autour de routines existantes (cas des drivers compatibles python).
 
 I - Contexte et contraintes
 ===========================
@@ -37,6 +40,12 @@ Il est donc nécessaire de développer un outil de transformation du code
 pour pouvoir produire la version AROME ou la version Méso-NH à partir du
 code commun contenu dans PHYEX.
 
+De plus, il est prévu de pouvoir appeler les différentes paramétrisations
+physiques depuis un code python. Pour cela, des enrobages doivent être
+écrits pour rendre compatibles avec python les arguments des routines
+en fortran. Il serait souhaitable de pouvoir créer automatiquement ces
+enrobages.
+
 I.2 Existant
 ------------
 
@@ -57,15 +66,15 @@ I.3 Contraintes
 
 Voici une liste de contraintes :
 
--   Développement en python pur (pas de librairie compilée)
+-   Développement en python pur mis à part la possibilité d'utiliser une
+    librairie externe pour transformer le code fortran en fichier xml.
+    En particulier, il est possible d'utiliser la librairie
+    [fxtran](https://github.com/pmarguinaud/fxtran).
 -   Dans la mesure du possible, pas d'utilisation de modules non
-    standards (en particulier, on ne veut pas dépendre d'un « parser »
-    déjà développé qui pourrait être très puissant mais que l'on sera
-    difficilement capable de faire évoluer pour corriger un bug ou
-    ajouter une fonctionnalité ou dont le développement pourrait être
-    arrêté)
+    standards
 -   Si possible un développement « standalone », c'est-à-dire un seul
-    fichier, sans installation
+    fichier, sans installation. Cet objectif initial sera certainement
+    non tenable avec l'ajout de fonctionnalités à l'outil.
 -   Utilisation soit en python (importation de l'outil et appel d'une
     fonction ou utilisation d'une classe) ou en ligne de commande
 -   Licence : l'outil sera intégré au dépôt PHYEX qui est sous licence
@@ -119,7 +128,14 @@ Des exemples de code sont donnés. Tous ces exemples sont compilables
 dépendances). La compilation peut au besoin être vérifiée avec la
 commande gfortran -c \<nom du fichier\>.
 
-Le code doit être commenté en anglais.
+Le code doit être commenté en anglais et le guide d'utilisation
+doit également être rédigé en anglais.
+
+Certaines des fonctionnalités décrites ci-dessous peuvent être
+difficieles à interprêter dans le cas où plusieurs routines
+seraient présentes dans le code source. Il sera peut-être
+nécessaire d'introduire un argument général du type **\--only=nom**
+pour restreindre l'application à la routine portant ce nom.
 
 II.2 Changement de nom\*\*\*
 ----------------------------
@@ -316,3 +332,42 @@ Si l'option **\--noACC** est positionnée, toutes les directives openACC
 seront supprimées. Ces directives commencent par «!\$ » sur les deux
 premiers caractères de la ligne et ces caractères sont suivis de la
 chaîne « acc ». Entre les deux parties peuvent se trouver des espaces.
+
+II.6 Suppression d'arguments\*\*\*
+----------------------------------
+
+L'option **\--rmARG=nom** supprime l'argument « nom » de l'interface d'appel
+et supprime également la déclaration de cet argument.
+
+II.7 Renommage\*\*\*
+--------------------
+
+L'option **\--rename=avant\#apres** renomme l'identificateur « avant »
+en « après ». L'identificateur peut être le nom d'un module, d'un arguement
+de l'interface, d'une routine ou fonction, d'une variable locale ou d'une
+variable de module.
+
+II.8 Ajout de variable locale\*\*\*
+-----------------------------------
+
+L'option **\--addVAR=declaration** ajoute la ligne « declaration »
+après les déclarations des arguments de l'interface et avant la
+première ligne exécutable.
+
+II.9 Ajout de code\*\*\*
+------------------------
+
+L'option **\--addSRCbegin=source** ajoute le code « source »
+juste après les déclarations.
+
+L'option **\--addSRCend=source** ajoute le code « source »
+à la fin.
+
+II.10 Évaluation de conditions\*\*\*
+------------------------------------
+
+L'option **\--evalIF=nom\#valeur** supprime les portions de code
+qui ne seront par parcourrues connaissant la valeur « valeur »
+de la variable « nom ». L'argument peut être répété plusieurs
+fois pour fournir les valeurs de plusieurs variables.
+
