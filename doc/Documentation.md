@@ -1,1 +1,31 @@
 # User's guide
+
+## Introduction
+
+This repository contains a python script, pft.py, that reads a FORTRAN code,
+parse it in xml, performs some manipulation, reverts it in FORTRAN and
+writes it back on disk.
+
+This scripts suppose that the original source code is written using UTF-8
+encoding. If not, some special characters could be altered by the double
+conversion. Apart from this, the resulting FORTRAN source code is exactly
+the same as the INPUT source code if no manipulation is performed.
+
+DEPENDENCIES: [fxtran](https://github.com/pmarguinaud/fxtran) must be installed.
+
+LIMITATIONS:
+
+ - Depending on where there are put, pre-processor directives can break
+   the parsing by fxtran
+ - Other encoding than UTF-8 is not supported
+
+## Tool options
+
+If only one file name is given, the output file will replace the input file.
+
+**\--parser** can be used to specify the full path to the fxtran executable.
+Usefull if fxtran is not found or if a specific version must be used.
+
+**\--parserOption** the list of available options can be found in the fxtran
+documentation. If no option is provided, the defaults one will be used (the
+list of default options can be seen with "pft.py -h").
