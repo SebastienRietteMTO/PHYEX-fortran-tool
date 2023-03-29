@@ -6,7 +6,9 @@ import xml.etree.ElementTree as ET
 from io import StringIO
 import logging
 
-class PFT():
+from pypft.variables import Variables
+
+class PFT(Variables):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None):
@@ -22,10 +24,6 @@ class PFT():
         self._parser = 'fxtran' if parser is None else parser
         self._parserOptions = self.DEFAULT_FXTRAN_OPTIONS if parserOptions is None else parserOptions
         self._F2xml()
-        self._ns = dict([node for _, node in ET.iterparse(
-                              StringIO(self.xml), events=['start-ns'])
-                        ])
-        self._toDelete = []
 
     @property
     def xml(self):
@@ -55,6 +53,14 @@ class PFT():
         :param filename: Input file name containing FORTRAN code
         :return: xml as an ElementTree
         """
+        #Namespace registration
+        self._ns = {'f': 'http://fxtran.net/#syntax'}
+        ET.register_namespace('f', 'http://fxtran.net/#syntax')
+        #Alternatively, we could load a first time to find out the namespaces, then reload
+        #it after having registered the right namespace. The folowing code snippet
+        #allows to capture the declared namespaces.
+        #ns = dict([node for _, node in ET.iterparse(StringIO(self.xml), events=['start-ns'])])
+
         self._xml = subprocess.run([self._parser, self._filename,
                                     '-o', '-'] + self._parserOptions,
                                    stdout=subprocess.PIPE, check=True,
@@ -123,6 +129,11 @@ if __name__ == '__main__':
                            help='Put file extension in upper case')
     gFilename.add_argument('--renameFf', default=False, action='store_true',
                            help='Put file extension in lower case')
+
+    gVariables = parser.add_argument_group('Options to deal with variables')
+    gVariables.add_argument('--showVariables', default=False, action='store_true',
+                           help='Show the declared variables')
+
     args = parser.parse_args()
 
     #Opening and reading of the FORTRAN file
@@ -135,6 +146,9 @@ if __name__ == '__main__':
     #File name manipulations
     if args.renamefF: pft.renameUpper()
     if args.renameFf: pft.renameLower()
+
+    #Variables
+    if args.showVariables: pft.showVarList()
 
     #Writing of the FORTRAN file
     pft.write()

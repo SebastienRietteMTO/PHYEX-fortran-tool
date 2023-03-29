@@ -37,3 +37,9 @@ list of default options can be seen with "pft.py -h").
 **\--renamefF** transforms in upper case the file extension.
 
 **\--renameFf** transforms in upper case the file extension.
+
+
+### Dealing with variables
+
+**\--showVariables** displays a list of all the declared variables
+with some characteristics.
