@@ -23,9 +23,17 @@ LIMITATIONS:
 
 If only one file name is given, the output file will replace the input file.
 
+### Parser options
+
 **\--parser** can be used to specify the full path to the fxtran executable.
 Usefull if fxtran is not found or if a specific version must be used.
 
 **\--parserOption** the list of available options can be found in the fxtran
 documentation. If no option is provided, the defaults one will be used (the
 list of default options can be seen with "pft.py -h").
+
+### File name manipulations
+
+**\--renamefF** transforms in upper case the file extension.
+
+**\--renameFf** transforms in upper case the file extension.

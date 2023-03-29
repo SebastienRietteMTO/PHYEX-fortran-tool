@@ -137,8 +137,8 @@ seraient présentes dans le code source. Il sera peut-être
 nécessaire d'introduire un argument général du type **\--only=nom**
 pour restreindre l'application à la routine portant ce nom.
 
-II.2 Changement de nom\*\*\*
-----------------------------
+II.2 Changement de nom (implémenté)
+-----------------------------------
 
 Si l'option **\--renameFf** est passée, l'extension du nom du fichier est
 mis en minuscules (.F90 devient .f90, .F devient .f). Avec l'option

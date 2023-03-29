@@ -16,6 +16,7 @@ class PFT():
         :param fxtran: path to the fxtran parser
         """
         self._filename = filename
+        self._originalName = filename
         assert os.path.exists(filename), 'Input filename must exist'
         self._output = output
         self._parser = 'fxtran' if parser is None else parser
@@ -24,6 +25,7 @@ class PFT():
         self._ns = dict([node for _, node in ET.iterparse(
                               StringIO(self.xml), events=['start-ns'])
                         ])
+        self._toDelete = []
 
     @property
     def xml(self):
@@ -59,12 +61,41 @@ class PFT():
                                    encoding='UTF-8').stdout
         self._xml = ET.fromstring(self._xml, parser=ET.XMLParser(encoding='UTF-8'))
 
+    def renameUpper(self):
+        """
+        The output file will have an upper case extension
+        """
+        self._rename(str.upper)
+
+    def renameLower(self):
+        """
+        The output file will have a lower case extension
+        """
+        self._rename(str.lower)
+
+    def _rename(self, mod):
+        """
+        The output file will have a modified extension.
+        :param mod: function to apply to the file extension
+        """
+        def _trans_ext(path, mod):
+            p, e = os.path.splitext(path)
+            return p + mod(e)
+        if self._output is None:
+            self._filename = _trans_ext(self._filename, mod)
+        else:
+            self._output = _trans_ext(self._output, mod)
+
     def write(self):
         """
         Writes the output FORTRAN file
         """
         with open(self._filename if self._output is None else self._output, 'w') as f:
             f.write(self.fortran)
+        if self._output is None and self._filename != self._originalName:
+            #We must perform an in-place update of the file, but the output file
+            #name has been updated. Then, we must remove the original file.
+            os.unlink(self._originalName)
 
     def writeXML(self, filename):
         """
@@ -79,11 +110,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PHYEX FORTRAN tool')
     parser.add_argument('INPUT', help='FORTRAN input file')
     parser.add_argument('OUTPUT', default=None, help='FORTRAN output file', nargs='?')
-    parser.add_argument('--parser', default=None, type=str,
-                        help='Path to the fxtran parser binary')
-    parser.add_argument('--parserOption', nargs='*', action='append',
-                        help='Option to pass to fxtran, defaults' + \
-                        ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
+
+    gParser = parser.add_argument_group('fxtran parser relative options')
+    gParser.add_argument('--parser', default=None, type=str,
+                         help='Path to the fxtran parser binary')
+    gParser.add_argument('--parserOption', nargs='*', action='append',
+                         help='Option to pass to fxtran, defaults' + \
+                         ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
+
+    gFilename = parser.add_argument_group('Options to deal with file names')
+    gFilename.add_argument('--renamefF', default=False, action='store_true',
+                           help='Put file extension in upper case')
+    gFilename.add_argument('--renameFf', default=False, action='store_true',
+                           help='Put file extension in lower case')
     args = parser.parse_args()
 
     #Opening and reading of the FORTRAN file
@@ -92,6 +131,10 @@ if __name__ == '__main__':
     else:
         parserOptions = [el for elements in args.parserOption for el in elements]
     pft = PFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions)
+
+    #File name manipulations
+    if args.renamefF: pft.renameUpper()
+    if args.renameFf: pft.renameLower()
 
     #Writing of the FORTRAN file
     pft.write()
