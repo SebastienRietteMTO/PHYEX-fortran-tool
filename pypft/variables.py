@@ -3,7 +3,7 @@ This module implements functions to deal with variables
 """
 
 from . import copy_doc, PFTError
-from util import tostring, alltext, needEtree
+from util import tostring, alltext, needEtree, getFileName
 import logging
 
 @needEtree
@@ -94,7 +94,7 @@ def checkImplicitNone(doc, mustRaise=False):
     If mustRaise is True, issue a logging.error instead and raise an error
     """
     if getImplicitNoneText(doc) is None:
-        message = "The 'IMPLICIT NONE' statment is missing."
+        message = "The 'IMPLICIT NONE' statment is missing in file '{}'.".format(getFileName(doc))
         if mustRaise:
             logging.error(message)
             raise PFTError(message)
@@ -112,10 +112,10 @@ def checkIntent(doc, mustRaise=False):
     l = logging.error if mustRaise else logging.warn
     for v in getVarList(doc).values():
         if v['arg'] and v['i'] is None:
-          l('The dummy argument {} as no INTENT attribute'.format(v['n']))
+          l("The dummy argument {} as no INTENT attribute, in file '{}'".format(v['n'], getFileName(doc)))
           ok = False
     if not ok and mustRaise:
-        raise PFTError('There are dummy arguments without INTENT attribute')
+        raise PFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
 
 class Variables():
     @copy_doc(getVarList)

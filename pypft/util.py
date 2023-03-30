@@ -49,6 +49,15 @@ def needMinidom(func):
     return wrapper
 
 @needEtree
+def getFileName(doc):
+    """
+    :param doc: an ET object
+    :return: the name of the input file name or 'unknown' if not available
+             in the xml fragment provided
+    """
+    return doc.find('.//{*}file').attrib['name']
+
+@needEtree
 def tostring(doc):
     """
     :param doc: an ET object
@@ -70,7 +79,7 @@ def tofortran(doc):
     try:
         r = r.encode('raw_unicode_escape').decode('UTF-8')
     except UnicodeDecodeError:
-        logging.warning('The file certainly contains a strange character')
+        logging.warning("The file '{}' certainly contains a strange character".format(getFileName(doc)))
     return r
 
 @needEtree
