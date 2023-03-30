@@ -26,5 +26,12 @@ def alltext(doc):
     """
     return ''.join(doc.itertext())
 
+def non_code(e):
+    """
+    :param e: element
+    :return: True if e is non code (comment, text...)
+    """
+    return e.tag.split('}')[1] in {'#text', 'cnt', 'C'}
+
 from . import variables
 from .pft import PFT

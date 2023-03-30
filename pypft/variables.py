@@ -6,7 +6,7 @@ from . import copy_doc, tostring, alltext
 
 def getVarList(doc):
     """
-    :param doc: DOM element to use
+    :param doc: etree to use
     :return: a dict of dictionaries. Each key of the primary dictionnary is the
              variable name. The associated dictionnary has the following keys:
               - as: list of array specifications
@@ -57,7 +57,7 @@ def getVarList(doc):
 def showVarList(doc):
     """
     Display on stdout a nive view of all the variables
-    :param doc: DOM element to use
+    :param doc: etree to use
     """
     for v in getVarList(doc).values():
         isscalar = len(v['as0']) == len(v['as'])

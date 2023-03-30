@@ -7,8 +7,9 @@ from io import StringIO
 import logging
 
 from pypft.variables import Variables
+from pypft.cosmetics import Cosmetics
 
-class PFT(Variables):
+class PFT(Variables, Cosmetics):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None):
@@ -134,6 +135,12 @@ if __name__ == '__main__':
     gVariables.add_argument('--showVariables', default=False, action='store_true',
                            help='Show the declared variables')
 
+    gCosmetics = parser.add_argument_group('Cosmetics options')
+    gCosmetics.add_argument('--upperCase', default=False, action='store_true',
+                           help='Put FORTRAN code in upper case letters')
+    gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
+                           help='Put FORTRAN code in lower case letters')
+
     args = parser.parse_args()
 
     #Opening and reading of the FORTRAN file
@@ -149,6 +156,10 @@ if __name__ == '__main__':
 
     #Variables
     if args.showVariables: pft.showVarList()
+
+    #Cosmetics
+    if args.upperCase: pft.upperCase()
+    if args.lowerCase: pft.lowerCase()
 
     #Writing of the FORTRAN file
     pft.write()

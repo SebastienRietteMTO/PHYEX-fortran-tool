@@ -43,3 +43,9 @@ list of default options can be seen with "pft.py -h").
 
 **\--showVariables** displays a list of all the declared variables
 with some characteristics.
+
+### Cosmetics
+
+**\--upperCase** puts the FORTRAN code into upper case letters.
+
+**\--lowerCase** puts the FORTRAN code into lower case letters.
