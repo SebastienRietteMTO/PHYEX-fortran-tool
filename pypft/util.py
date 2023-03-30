@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
 from functools import wraps
+import logging
 
 """
 This module implements some tools to manipulate the xml
@@ -69,7 +70,7 @@ def tofortran(doc):
     try:
         r = r.encode('raw_unicode_escape').decode('UTF-8')
     except UnicodeDecodeError:
-        logging.warn
+        logging.warning('The file certainly contains a strange character')
     return r
 
 @needEtree
