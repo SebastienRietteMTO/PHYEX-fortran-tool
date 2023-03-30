@@ -2,7 +2,8 @@
 This module implements functions to deal with variables
 """
 
-from . import copy_doc, tostring, alltext
+from . import copy_doc
+from util import tostring, alltext
 
 def getVarList(doc):
     """

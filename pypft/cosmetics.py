@@ -2,7 +2,8 @@
 This module implements functions to deal with cosmetics
 """
 
-from . import copy_doc, non_code
+from . import copy_doc
+from util import non_code
 
 def upperCase(doc):
     """
