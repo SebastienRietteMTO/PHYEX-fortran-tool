@@ -2,8 +2,9 @@
 This module implements functions to deal with variables
 """
 
-from . import copy_doc
+from . import copy_doc, PFTError
 from util import tostring, alltext, needEtree
+import logging
 
 @needEtree
 def getVarList(doc):
@@ -76,6 +77,30 @@ def showVarList(doc):
             print('  is a local variable')
         print()
 
+@needEtree
+def getImplicitNoneText(doc):
+    """
+    :param doc: etree to use
+    :return: the "IMPLICIT NONE" text
+    """
+    ins = doc.findall('.//{*}implicit-none-stmt')
+    return ins[0].text if len(ins) != 0 else None
+
+def checkImplicitNone(doc, mustRaise=False): 
+    """
+    :param doc: xml fragment to use
+    :param mustRaise: True to raise
+    Issue a logging.warning if the "IMPLICIT NONE" statment is missing
+    If mustRaise is True, issue a logging.error instead and raise an error
+    """
+    if getImplicitNoneText(doc) is None:
+        message = "The 'IMPLICIT NONE' statment is missing."
+        if mustRaise:
+            logging.error(message)
+            raise PFTError(message)
+        else:
+            logging.warning(message)
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -84,3 +109,11 @@ class Variables():
     @copy_doc(showVarList)
     def showVarList(self):
         return showVarList(doc=self._xml)
+
+    @copy_doc(getImplicitNoneText)
+    def getImplicitNoneText(self):
+        return getImplicitNoneText(doc=self._xml)
+
+    @copy_doc(checkImplicitNone)
+    def checkImplicitNone(self, mustRaise=False):
+        return checkImplicitNone(self._xml, mustRaise)

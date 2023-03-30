@@ -149,15 +149,15 @@ fichiers avec une extension en majuscules doivent être traités par le
 préprocesseur alors que ceux avec une extension en minuscules ne doivent
 pas l'être.
 
-II.3 Vérification de la présence de « IMPLICIT NONE »\*\*\*
------------------------------------------------------------
+II.3 Vérification de la présence de « IMPLICIT NONE » (implémenté)
+------------------------------------------------------------------
 
 Toutes les SUBROUTINEs devraient comporter l'instruction « IMPLICIT
 NONE ». Ce n'est pas une obligation de la norme FORTRAN mais on souhaite
 que l'outil le vérifie.
 
 Le contrôle peut être activé par l'option
-**\--checkIMPLICIT=None\|Warn\|Err** avec None comme valeur par défaut.
+**\--checkIMPLICIT=Warn\|Err** 
 L'outil émet un warning (logging.warning) avec l'option Warn et émet une
 erreur (logging.error & raise) avec l'option Err si l'instruction
 « IMPLICIT NONE » n'est pas trouvée.

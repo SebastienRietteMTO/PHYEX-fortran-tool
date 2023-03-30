@@ -10,5 +10,7 @@ def copy_doc(copy_func):
         return func
     return wrapper
 
+class PFTError(Exception): pass
+
 from . import variables
 from .pft import PFT

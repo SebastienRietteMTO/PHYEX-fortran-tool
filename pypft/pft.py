@@ -108,6 +108,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='PHYEX FORTRAN tool')
 
+    #Inputs and outputs
     gInOut = parser.add_argument_group('Input and output')
     gInOut.add_argument('INPUT', help='FORTRAN input file')
     gInOut.add_argument('OUTPUT', default=None, help='FORTRAN output file', nargs='?')
@@ -121,6 +122,7 @@ if __name__ == '__main__':
                         help='Dry run without writing the FORTRAN file (the xml ' + \
                              'is still written')
 
+    #fxtran
     gParser = parser.add_argument_group('fxtran parser relative options')
     gParser.add_argument('--parser', default=None, type=str,
                          help='Path to the fxtran parser binary')
@@ -128,15 +130,23 @@ if __name__ == '__main__':
                          help='Option to pass to fxtran, defaults' + \
                          ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
 
+    #Variables
     gVariables = parser.add_argument_group('Options to deal with variables')
     gVariables.add_argument('--showVariables', default=False, action='store_true',
                            help='Show the declared variables')
 
+    #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
                            help='Put FORTRAN code in upper case letters')
     gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
                            help='Put FORTRAN code in lower case letters')
+
+    #Checks
+    gChecks = parser.add_argument_group('Check options')
+    gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
+                         help='Send a warning or raise an error if the "IMPLICIT NONE" ' + \
+                              'is missing')
 
     args = parser.parse_args()
 
@@ -157,6 +167,9 @@ if __name__ == '__main__':
     #Cosmetics
     if args.upperCase: pft.upperCase()
     if args.lowerCase: pft.lowerCase()
+
+    #Checks
+    if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
 
     #Writing
     if args.xml is not None: pft.writeXML(args.xml)
