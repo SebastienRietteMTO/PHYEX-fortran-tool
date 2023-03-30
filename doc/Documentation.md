@@ -52,3 +52,13 @@ with some characteristics.
 **\--upperCase** puts the FORTRAN code into upper case letters.
 
 **\--lowerCase** puts the FORTRAN code into lower case letters.
+
+### Checks
+
+**\--checkIMPLICIT=Warn\|Err** if the 'IMPLICIT NONE' statment is missing,
+issue a warning if option is 'Warn'; otherwise issue an error message and
+raise an exception.
+
+**\--checkINTENT=Warn\|Err** if an INTENT attribute is missing for a
+dummy argument, issue a warning if option is 'Warn'; otherwise issue
+an error message and raise an exception.

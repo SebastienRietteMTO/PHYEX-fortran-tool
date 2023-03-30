@@ -167,17 +167,17 @@ dans exemple\_check\_OK.F90.
 
 Il n'est pas attendu une correction automatique, juste le contrôle.
 
-II.4 Vérification de la présence de l'attribut INTENT\*\*\*
------------------------------------------------------------
+II.4 Vérification de la présence de l'attribut INTENT (implémenté)
+------------------------------------------------------------------
 
 Tous les arguments reçus par la routine devraient être déclarés avec
 l'attribut INTENT (ce n'est pas une obligation dans les spécifications
 FORTRAN mais on souhaite que l'outil le vérifie).
 
-Le contrôle peut être activé par l'option **\--checkINTENT=None\|Warn\|Err**
-avec None comme valeur par défaut. L'outil émet un warning
-(logging.warning) avec l'option Warn et émet une erreur (logging.error &
-raise) avec l'option Err si un attribut INTENT est manquant.
+Le contrôle peut être activé par l'option **\--checkINTENT=Warn\|Err**
+L'outil émet un warning (logging.warning) avec l'option Warn et
+émet une erreur (logging.error & raise) avec l'option Err si un
+attribut INTENT est manquant.
 
 L'argument ARG2 est incorrect dans [exemple\_check\_KO.F90](../examples/exemple_check_KO.F90) et est correct
 dans [exemple\_check\_OK.F90](../examples/exemple_check_OK.F90). À noter que les arguments non présents dans

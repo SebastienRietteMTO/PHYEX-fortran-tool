@@ -147,6 +147,9 @@ if __name__ == '__main__':
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
                          help='Send a warning or raise an error if the "IMPLICIT NONE" ' + \
                               'is missing')
+    gChecks.add_argument('--checkINTENT', choices={'Warn', 'Err'}, default=None,
+                         help='Send a warning or raise an error if the "INTENT" ' + \
+                              'attribute is missing for a dummy argument')
 
     args = parser.parse_args()
 
@@ -170,6 +173,7 @@ if __name__ == '__main__':
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
+    if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
 
     #Writing
     if args.xml is not None: pft.writeXML(args.xml)

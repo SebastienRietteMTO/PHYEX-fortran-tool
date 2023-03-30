@@ -101,6 +101,22 @@ def checkImplicitNone(doc, mustRaise=False):
         else:
             logging.warning(message)
 
+def checkIntent(doc, mustRaise=False): 
+    """
+    :param doc: xml fragment to use
+    :param mustRaise: True to raise
+    Issue a logging.warning if some "INTENT" attributes are missing
+    If mustRaise is True, issue a logging.error instead and raise an error
+    """
+    ok = True
+    l = logging.error if mustRaise else logging.warn
+    for v in getVarList(doc).values():
+        if v['arg'] and v['i'] is None:
+          l('The dummy argument {} as no INTENT attribute'.format(v['n']))
+          ok = False
+    if not ok and mustRaise:
+        raise PFTError('There are dummy arguments without INTENT attribute')
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -117,3 +133,7 @@ class Variables():
     @copy_doc(checkImplicitNone)
     def checkImplicitNone(self, mustRaise=False):
         return checkImplicitNone(self._xml, mustRaise)
+
+    @copy_doc(checkIntent)
+    def checkIntent(self, mustRaise=False):
+        return checkIntent(self._xml, mustRaise)
