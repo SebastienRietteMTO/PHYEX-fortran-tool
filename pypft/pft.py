@@ -115,8 +115,19 @@ class PFT(Variables, Cosmetics):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='PHYEX FORTRAN tool')
-    parser.add_argument('INPUT', help='FORTRAN input file')
-    parser.add_argument('OUTPUT', default=None, help='FORTRAN output file', nargs='?')
+
+    gInOut = parser.add_argument_group('Input and output')
+    gInOut.add_argument('INPUT', help='FORTRAN input file')
+    gInOut.add_argument('OUTPUT', default=None, help='FORTRAN output file', nargs='?')
+    gInOut.add_argument('--renamefF', default=False, action='store_true',
+                        help='Put file extension in upper case')
+    gInOut.add_argument('--renameFf', default=False, action='store_true',
+                        help='Put file extension in lower case')
+    gInOut.add_argument('--xml', default=None, type=str,
+                        help='Output file for xml')
+    gInOut.add_argument('--dryRun', default=False, action='store_true',
+                        help='Dry run without writing the FORTRAN file (the xml ' + \
+                             'is still written')
 
     gParser = parser.add_argument_group('fxtran parser relative options')
     gParser.add_argument('--parser', default=None, type=str,
@@ -124,12 +135,6 @@ if __name__ == '__main__':
     gParser.add_argument('--parserOption', nargs='*', action='append',
                          help='Option to pass to fxtran, defaults' + \
                          ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
-
-    gFilename = parser.add_argument_group('Options to deal with file names')
-    gFilename.add_argument('--renamefF', default=False, action='store_true',
-                           help='Put file extension in upper case')
-    gFilename.add_argument('--renameFf', default=False, action='store_true',
-                           help='Put file extension in lower case')
 
     gVariables = parser.add_argument_group('Options to deal with variables')
     gVariables.add_argument('--showVariables', default=False, action='store_true',
@@ -161,5 +166,7 @@ if __name__ == '__main__':
     if args.upperCase: pft.upperCase()
     if args.lowerCase: pft.lowerCase()
 
-    #Writing of the FORTRAN file
-    pft.write()
+    #Writing
+    if args.xml is not None: pft.writeXML(args.xml)
+    if not args.dryRun:
+        pft.write()

@@ -32,12 +32,15 @@ Usefull if fxtran is not found or if a specific version must be used.
 documentation. If no option is provided, the defaults one will be used (the
 list of default options can be seen with "pft.py -h").
 
-### File name manipulations
+### Input and output
 
 **\--renamefF** transforms in upper case the file extension.
 
 **\--renameFf** transforms in upper case the file extension.
 
+**\--xml=filename** writes the xml file in filename.
+
+**\--dryRun** prevents the FORTRAN writting.
 
 ### Dealing with variables
 
