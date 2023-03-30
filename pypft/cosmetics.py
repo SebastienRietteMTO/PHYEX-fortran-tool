@@ -3,8 +3,9 @@ This module implements functions to deal with cosmetics
 """
 
 from . import copy_doc
-from util import non_code
+from util import non_code, needEtree
 
+@needEtree
 def upperCase(doc):
     """
     :param doc: etree to use
@@ -15,6 +16,7 @@ def upperCase(doc):
             elem.text = elem.text.upper()
     return doc
 
+@needEtree
 def lowerCase(doc):
     """
     :param doc: etree to use

@@ -8,6 +8,7 @@ import logging
 
 from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
+from pypft.util import tostring, tofortran
 
 class PFT(Variables, Cosmetics):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
@@ -31,23 +32,14 @@ class PFT(Variables, Cosmetics):
         """
         Returns the xml as a string
         """
-        return ET.tostring(self._xml, method='xml', encoding='UTF-8').decode('UTF-8')
+        return tostring(self._xml)
 
     @property
     def fortran(self):
         """
         Returns the FORTRAN as a string
         """
-        #When fxtran encounters an UTF-8 character, it replaces it by *2* entities
-        #We must first transform each of these entities to its corresponding binary value
-        #(this is done by tostring), then we must consider the result as bytes
-        #to decode these two bytes into UTF-8 (this is done by encode('raw_...').decode('UTF-8'))
-        r = ET.tostring(self._xml, method='text', encoding='UTF-8').decode('UTF-8')
-        try:
-            r = r.encode('raw_unicode_escape').decode('UTF-8')
-        except UnicodeDecodeError:
-            logging.warning('This file certainly contains a strange character: {}'.format(self._filename))
-        return r
+        return tofortran(self._xml)
 
     def _F2xml(self):
         """
