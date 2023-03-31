@@ -3,7 +3,7 @@ This module implements functions to deal with variables
 """
 
 from . import copy_doc, PFTError
-from util import tostring, alltext, needEtree, getFileName
+from util import tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent
 import logging
 
 @needEtree
@@ -117,6 +117,37 @@ def checkIntent(doc, mustRaise=False):
     if not ok and mustRaise:
         raise PFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
 
+@needEtree
+def removeVar(doc, varName):
+    """
+    :param doc: xml fragment to use
+    :param varName: name of the variable to suppress (or list of variable names)
+    Remove the variable from declaration, and from the argument list if needed
+    """
+    if not isinstance(varName, list):
+        varName = [varName]
+    varName = [v.upper() for v in varName]
+
+    #Loop over the arguments
+    for arglist in doc.findall('.//{*}dummy-arg-LT'):
+        for arg in arglist.findall('.//{*}arg-N'):
+            if alltext(arg.find('.//{*}N/{*}n')).upper() in varName:
+                #This argument name is in the list and must be suppressed
+                ETremoveFromList(arg, arglist)
+
+    #Loop over the declarations
+    for decl_stmt in doc.findall('.//{*}T-decl-stmt'):
+        decl_lst = decl_stmt.find('./{*}EN-decl-LT') #list of declaration in the current statment
+        #Loop over each declared arg in the list
+        for en_decl in decl_lst.findall('./{*}EN-decl'):
+            if alltext(en_decl.find('.//{*}n')).upper() in varName:
+                #The argument is declared here, we suppress it from the declaration list
+                ETremoveFromList(en_decl, decl_lst)
+        #Suppression of the list if empty
+        if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+            ETgetParent(doc, decl_stmt).remove(decl_stmt)
+        
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -137,3 +168,7 @@ class Variables():
     @copy_doc(checkIntent)
     def checkIntent(self, mustRaise=False):
         return checkIntent(self._xml, mustRaise)
+
+    @copy_doc(removeVar)
+    def removeVar(self, *args, **kwargs):
+        return removeVar(self._xml, *args, **kwargs)

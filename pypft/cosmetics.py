@@ -3,7 +3,7 @@ This module implements functions to deal with cosmetics
 """
 
 from . import copy_doc
-from util import non_code, needEtree
+from util import ETnon_code, needEtree
 
 @needEtree
 def upperCase(doc):
@@ -12,7 +12,7 @@ def upperCase(doc):
     :return: same doc but with upper case letters for FORTRAN code
     """
     for elem in doc.iter():
-        if (not non_code(elem)) and  elem is not None and elem.text is not None:
+        if (not ETnon_code(elem)) and  elem is not None and elem.text is not None:
             elem.text = elem.text.upper()
     return doc
 
@@ -23,7 +23,7 @@ def lowerCase(doc):
     :return: same doc but with lower case letters for FORTRAN code
     """
     for elem in doc.iter():
-        if (not non_code(elem)) and  elem is not None and elem.text is not None:
+        if (not ETnon_code(elem)) and  elem is not None and elem.text is not None:
             elem.text = elem.text.lower()
     return doc
 

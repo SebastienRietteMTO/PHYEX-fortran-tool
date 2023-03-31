@@ -27,11 +27,11 @@ def needEtree(func):
     :return a new func that can use a minidom object
     """
     @wraps(func)
-    def wrapper(doc):
+    def wrapper(doc, *args, **kwargs):
         if isinstance(doc, xml.etree.ElementTree.Element):
-            return func(doc)
+            return func(doc, *args, **kwargs)
         else:
-            return func(minidom2etree(doc))
+            return func(minidom2etree(doc), *args, **kwargs)
     return wrapper
 
 def needMinidom(func):
@@ -40,12 +40,12 @@ def needMinidom(func):
     :return a new func that can use a ET object
     """
     @wraps(func)
-    def wrapper(doc):
+    def wrapper(doc, *args, **kwargs):
         wrapper.__doc__ = func.__doc__
         if isinstance(doc, xml.etree.ElementTree.Element):
-            return func(etree2minidom(doc))
+            return func(etree2minidom(doc), *args, **kwargs)
         else:
-            return func(doc)
+            return func(doc, *args, **kwargs)
     return wrapper
 
 @needEtree
@@ -90,11 +90,37 @@ def alltext(doc):
     """
     return ''.join(doc.itertext())
 
-def non_code(e):
+def ETnon_code(e):
     """ 
     :param e: element
     :return: True if e is non code (comment, text...)
     """
     return e.tag.split('}')[1] in {'#text', 'cnt', 'C'}
 
+def ETremoveFromList(item, l):
+    """
+    :param item: item to remove from list
+    :param l: the parent of item (the list)
+    """
 
+    #Suppression of the comma
+    i = list(l).index(item)
+    if item.tail is not None and ',' in item.tail:
+        tail = item.tail
+        item.tail = tail.replace(',', '')
+    elif i != 0 and ',' in l[i - 1].tail:
+        tail = l[i - 1].tail
+        l[i - 1].tail = tail.replace(',', '')
+
+    #Suppression of the node
+    l.remove(item)
+
+def ETgetParent(doc, item):
+    """
+    :param doc: xml fragment in which parent must be searched
+    :param item: item whose parent is to be searched
+    """
+
+    for p in doc.iter():
+        if item in list(p):
+            return p

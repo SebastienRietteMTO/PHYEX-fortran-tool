@@ -333,8 +333,8 @@ seront supprimées. Ces directives commencent par «!\$ » sur les deux
 premiers caractères de la ligne et ces caractères sont suivis de la
 chaîne « acc ». Entre les deux parties peuvent se trouver des espaces.
 
-II.6 Suppression d'arguments\*\*\*
-----------------------------------
+II.6 Suppression d'arguments (implémenté)
+-----------------------------------------
 
 L'option **\--rmARG=nom** supprime l'argument « nom » de l'interface d'appel
 et supprime également la déclaration de cet argument.

@@ -134,6 +134,8 @@ if __name__ == '__main__':
     gVariables = parser.add_argument_group('Options to deal with variables')
     gVariables.add_argument('--showVariables', default=False, action='store_true',
                            help='Show the declared variables')
+    gVariables.add_argument('--removeVariable', nargs='*', action='append',
+                         help='Variable name to remove from declaration')
 
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
@@ -166,6 +168,8 @@ if __name__ == '__main__':
 
     #Variables
     if args.showVariables: pft.showVarList()
+    rvar = [el for elements in args.removeVariable for el in elements]
+    if len(rvar) != 0: pft.removeVar(rvar)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()

@@ -47,6 +47,10 @@ list of default options can be seen with "pft.py -h").
 **\--showVariables** displays a list of all the declared variables
 with some characteristics.
 
+**\-removeVariable** removes the declaration of a local variable or
+of a dummy argument. In the case of a dummy argument, it is also suppresssed
+from the argument of the subroutine.
+
 ### Cosmetics
 
 **\--upperCase** puts the FORTRAN code into upper case letters.
