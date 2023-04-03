@@ -3,22 +3,25 @@ This module implements functions to deal with variables
 """
 
 from . import copy_doc, PFTError
-from util import tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent
+from util import (tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
+                  ETgetSiblings)
 import logging
 
 @needEtree
 def getVarList(doc):
     """
     :param doc: etree to use
-    :return: a dict of dictionaries. Each key of the primary dictionnary is the
-             variable name. The associated dictionnary has the following keys:
+    :return: a list of dictionaries. Each item is a variable. The associated
+             dictionnary has the following keys:
               - as: list of array specifications
-              - asx: same
+              - asx: same but encoded in xml
               - n: name of the variable as written
               - i: intent
               - t: type specification
               - arg: True if variable is a dummy argument
     """
+    #TODO add a key to the dictionnary to specify the subroutine/module/function
+    #     where the variable is declared
     def decode_array_specs(array_specs):
         as_list = []
         asx_list = []
@@ -32,7 +35,7 @@ def getVarList(doc):
     #Find dummy arguments
     dummy_args = [e.text for e in doc.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N/{*}n')]
 
-    decl_dict = {}
+    result = []
     decl_stmts = doc.findall('.//{*}T-decl-stmt')
     #Loop on each declaration statement
     for decl_stmt in decl_stmts:
@@ -52,25 +55,24 @@ def getVarList(doc):
             array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
             as_list, asx_list = decode_array_specs(array_specs)
 
-            decl_dict[n] = {'as0': as0_list, 'asx0': asx0_list,
-                            'as': as_list, 'asx': asx_list,
-                            'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args}
-    return decl_dict
+            result.append({'as': as_list if len(as0_list) == 0 else as0_list,
+                           'asx': asx_list if len(asx0_list) == 0 else asx0_list,
+                           'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args})
+    return result
 
 def showVarList(doc):
     """
     Display on stdout a nive view of all the variables
     :param doc: etree to use
     """
-    for v in getVarList(doc).values():
-        isscalar = len(v['as0']) == len(v['as'])
+    for v in getVarList(doc):
+        isscalar = len(v['as']) == 0
         print('Variable name {}:'.format(v['n']))
         if isscalar:
             print('  is scalar')
         else:
-            d = v['as'] if len(v['as0']) == 0 else v['as0']
-            print('  is of rank {}, with dimensions {}'.format(len(d),
-                                ', '.join([(':'.join([('' if s is None else s) for s in d[i]])) for i in range(len(d))])))
+            print('  is of rank {}, with dimensions {}'.format(len(v['as']),
+                                ', '.join([(':'.join([('' if s is None else s) for s in v['as'][i]])) for i in range(len(v['as']))])))
         if v['arg']:
             print('  is a dummy argument {}'.format('without intent' if v['i'] is None else 'with intent {}'.format(v['i'])))
         else:
@@ -118,35 +120,64 @@ def checkIntent(doc, mustRaise=False):
         raise PFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
 
 @needEtree
-def removeVar(doc, varName):
+def removeVar(doc, varList):
     """
     :param doc: xml fragment to use
-    :param varName: name of the variable to suppress (or list of variable names)
+    :param varList: list of variables to remove. Each item is a list or tuple of two elements.
+                    The first one describes where the variable is declared, the second one is the name
+                    of the variable. The first element takes the form module:<name of the module>,
+                    sub:<name of the subroutine>, func:<name of the function> or type:<name of the type>
     Remove the variable from declaration, and from the argument list if needed
     """
-    if not isinstance(varName, list):
-        varName = [varName]
-    varName = [v.upper() for v in varName]
 
-    #Loop over the arguments
-    for arglist in doc.findall('.//{*}dummy-arg-LT'):
-        for arg in arglist.findall('.//{*}arg-N'):
-            if alltext(arg.find('.//{*}N/{*}n')).upper() in varName:
-                #This argument name is in the list and must be suppressed
-                ETremoveFromList(arg, arglist)
+    for where, varName in varList:
+        found = False
+        #Usefull statements
+        varName = varName.upper()
+        assert len(where.split(':')) == 2, "First element must contain a ':'"
+        blocType, blocName = where.split(':')
+        blocName = blocName.upper()
+        assert blocType in ('module', 'sub', 'func', 'type')
+        tag = {'module':'module',
+               'func': 'function',
+               'sub': 'subroutine',
+               'type': 'T'}[blocType]
+        beginStmt, endStmt = '{}-stmt'.format(tag), 'end-{}-stmt'.format(tag)
+        if blocType == 'type':
+            declStmt = 'component-decl-stmt'
+        else:
+            declStmt = 'T-decl-stmt'
 
-    #Loop over the declarations
-    for decl_stmt in doc.findall('.//{*}T-decl-stmt'):
-        decl_lst = decl_stmt.find('./{*}EN-decl-LT') #list of declaration in the current statment
-        #Loop over each declared arg in the list
-        for en_decl in decl_lst.findall('./{*}EN-decl'):
-            if alltext(en_decl.find('.//{*}n')).upper() in varName:
-                #The argument is declared here, we suppress it from the declaration list
-                ETremoveFromList(en_decl, decl_lst)
-        #Suppression of the list if empty
-        if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
-            ETgetParent(doc, decl_stmt).remove(decl_stmt)
-        
+        #Search for the right bloc
+        for bloc in doc.findall('.//{*}' + beginStmt):
+            if alltext(bloc.find('.//{*}N/{*}n')).upper() == blocName:
+                #Checks if variable is a dummy argument
+                dummy_lst = bloc.find('{*}dummy-arg-LT') #This is the list of the dummy arguments (function or subroutine)
+                if dummy_lst is not None:
+                    #Loop over all dummy arguments
+                    for arg in dummy_lst.findall('.//{*}arg-N'):
+                        if alltext(arg.find('.//{*}N/{*}n')).upper() == varName:
+                            #The variable is a dummy arg, we remove it from the list
+                            ETremoveFromList(arg, dummy_lst)
+
+                for sibling in ETgetSiblings(doc, bloc, before=False):
+                    if sibling.tag.endswith('}' + endStmt) or sibling.tag.endswith('}contains-stmt'):
+                        break #we are outside of the targeted bloc
+                    if sibling.tag.endswith('}' + declStmt):
+                        #We are in a declaration statement
+                        decl_lst = sibling.find('./{*}EN-decl-LT') #list of declaration in the current statment
+                        for en_decl in decl_lst:
+                            if alltext(en_decl.find('.//{*}n')).upper() == varName:
+                                #The argument is declared here, we suppress it from the declaration list
+                                found = True
+                                ETremoveFromList(en_decl, decl_lst)
+                                break #cannot be declared twice, we can exit the loop
+                        #In case the argument was alone on the declaration statement
+                        if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+                            ETgetParent(doc, sibling).remove(sibling)
+                break #bloc has been found
+        if not found:
+            raise PFTError("The variable {var} in {bloc} has not been found.".format(var=varName, bloc=blocName))
 
 class Variables():
     @copy_doc(getVarList)

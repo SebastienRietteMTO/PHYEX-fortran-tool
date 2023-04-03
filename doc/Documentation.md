@@ -50,6 +50,15 @@ with some characteristics.
 **\-removeVariable** removes the declaration of a local variable or
 of a dummy argument. In the case of a dummy argument, it is also suppresssed
 from the argument of the subroutine.
+This options takes two argument, the first one describes where the variable
+is declared (to distinguish between several variables holding the same name
+but in different subroutines) and the second one is the variable name.
+The first argument takes one of the following forms:
+
+ - **module:_NAME_** to search for the variable in the module named _NAME_
+ - **sub:_NAME_** to search for the variable in the subroutine named _NAME_
+ - **func:_NAME_** to search for the variable in the function named _NAME_
+ - **type:_NAME_** to search for the variable in the definition of the type named _NAME_
 
 ### Cosmetics
 

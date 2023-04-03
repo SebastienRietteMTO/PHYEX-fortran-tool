@@ -133,9 +133,14 @@ if __name__ == '__main__':
     #Variables
     gVariables = parser.add_argument_group('Options to deal with variables')
     gVariables.add_argument('--showVariables', default=False, action='store_true',
-                           help='Show the declared variables')
-    gVariables.add_argument('--removeVariable', nargs='*', action='append',
-                         help='Variable name to remove from declaration')
+                            help='Show the declared variables')
+    gVariables.add_argument('--removeVariable', nargs=2, action='append',
+                            metavar=('WHERE', 'VARNAME'),
+                            help='Variable to remove from declaration. The first argument ' + \
+                                 'is the SUBROUTINE/FUNCTION/MODULE/TYPE where the variable ' + \
+                                 'is declared. It takes the form module:<name of the module>, ' + \
+                                 'sub:<name of the subroutine>, func:<name of the function> or ' + \
+                                 'type:<name of the type>. The second argument is the variable name')
 
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
@@ -168,8 +173,7 @@ if __name__ == '__main__':
 
     #Variables
     if args.showVariables: pft.showVarList()
-    rvar = [] if args.removeVariable is None else [el for elements in args.removeVariable for el in elements]
-    if len(rvar) != 0: pft.removeVar(rvar)
+    if args.removeVariable is not None: pft.removeVar(args.removeVariable)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()

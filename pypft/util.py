@@ -124,3 +124,19 @@ def ETgetParent(doc, item):
     for p in doc.iter():
         if item in list(p):
             return p
+
+def ETgetSiblings(doc, item, before=True, after=True):
+    """
+    :param doc: xml fragment in which siblings must be found
+    :param item: item whose siblings are to be searched
+    :param before: returns siblings before
+    :param after: returns siblings after
+    By default before and after are True so that all siblings are returned
+    """
+
+    siblings = ETgetParent(doc, item).findall('./{*}*')
+    if not after:
+        siblings = siblings[:siblings.index(item)]
+    if not before:
+        siblings = siblings[siblings.index(item) + 1:]
+    return [s for s in siblings if s != item]
