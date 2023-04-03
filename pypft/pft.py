@@ -168,7 +168,7 @@ if __name__ == '__main__':
 
     #Variables
     if args.showVariables: pft.showVarList()
-    rvar = [el for elements in args.removeVariable for el in elements]
+    rvar = [] if args.removeVariable is None else [el for elements in args.removeVariable for el in elements]
     if len(rvar) != 0: pft.removeVar(rvar)
 
     #Cosmetics
