@@ -142,6 +142,9 @@ if __name__ == '__main__':
                                  'sub:<name of the subroutine>, func:<name of the function> or ' + \
                                  'type:<name of the type>. The second argument is the variable name')
 
+    gVariables.add_argument('--attachArraySpecToEntity', default=False, action='store_true',
+                           help='Find all T-decl-stmt elements that have a child element attribute' + \
+                           ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -173,6 +176,7 @@ if __name__ == '__main__':
 
     #Variables
     if args.showVariables: pft.showVarList()
+    if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
     if args.removeVariable is not None: pft.removeVar(args.removeVariable)
 
     #Cosmetics
