@@ -79,6 +79,7 @@ def showVarList(doc):
             print('  is a local variable')
         print()
 
+@needEtree
 def attachArraySpecToEntity(doc):
     """
     Find all T-decl-stmt elements that have a child element 'attribute' with attribute-N="DIMENSION" and
