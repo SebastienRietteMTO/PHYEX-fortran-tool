@@ -151,6 +151,8 @@ if __name__ == '__main__':
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
                            help='Delete DR HOOK use')
+    gApplications.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
+                           help='Find all if-statement and convert it to if-then-statement')
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -187,7 +189,8 @@ if __name__ == '__main__':
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()
-    
+    if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
+
     #Cosmetics
     if args.upperCase: pft.upperCase()
     if args.lowerCase: pft.lowerCase()
