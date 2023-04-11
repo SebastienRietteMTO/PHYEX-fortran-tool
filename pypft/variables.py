@@ -110,7 +110,6 @@ def attachArraySpecToEntity(doc):
                     elem.append(array_spec)
                 # Remove the dimension and array-spec elements
                 ETremoveFromList(attr_elem,decl)
-    return doc
 
 @needEtree
 def getImplicitNoneText(doc):

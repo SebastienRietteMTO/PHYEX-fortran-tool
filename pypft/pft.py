@@ -8,9 +8,10 @@ import logging
 
 from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
+from pypft.applications import Applications
 from pypft.util import tostring, tofortran
 
-class PFT(Variables, Cosmetics):
+class PFT(Variables, Cosmetics, Applications):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None):
@@ -145,6 +146,13 @@ if __name__ == '__main__':
     gVariables.add_argument('--attachArraySpecToEntity', default=False, action='store_true',
                            help='Find all T-decl-stmt elements that have a child element attribute' + \
                            ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
+
+    #Applications
+    gApplications = parser.add_argument_group('Options to apply upper level transformation')
+    gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
+                           help='Delete DR HOOK use')
+    gApplications.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
+                           help='Find all if-statement and convert it to if-then-statement')
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -178,6 +186,10 @@ if __name__ == '__main__':
     if args.showVariables: pft.showVarList()
     if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
     if args.removeVariable is not None: pft.removeVar(args.removeVariable)
+
+    #Applications
+    if args.deleteDrHook: pft.deleteDrHook()
+    if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
