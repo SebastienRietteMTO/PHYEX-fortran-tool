@@ -111,6 +111,11 @@ def ETremoveFromList(item, l):
     elif i != 0 and ',' in l[i - 1].tail:
         tail = l[i - 1].tail
         l[i - 1].tail = tail.replace(',', '')
+    
+    # Get the tail of the previous children of the list and append the item's tail to be removed
+    tail=l[i-1].tail
+    if i != 0 and type(tail) is str and type(item.tail) is str:
+        l[i-1].tail=tail+item.tail
 
     #Suppression of the node
     l.remove(item)

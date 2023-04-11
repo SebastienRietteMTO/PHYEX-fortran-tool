@@ -80,6 +80,39 @@ def showVarList(doc):
         print()
 
 @needEtree
+def attachArraySpecToEntity(doc):
+    """
+    Find all T-decl-stmt elements that have a child element 'attribute' with attribute-N="DIMENSION" and
+    move the attribute into EN-N elements
+    E.g., before :
+    REAL, DIMENSION(D%NIJT,D%NKT) :: ZTLK, ZRT
+    INTEGER, PARAMETER, DIMENSION(1,1) :: IBUEXTRAIND=(/18, 30/)
+    after :
+    REAL :: ZTLK(D%NIJT,D%NKT), ZRT(D%NIJT,D%NKT)
+    INTEGER, PARAMETER  :: IBUEXTRAIND(1,1)=(/18, 30/)
+    Limitations : "DIMENSION" must be in upper case in attribute.text
+    :param doc: etree to use
+    :return: modified doc
+    """
+    # Find all T-decl-stmt elements that have a child element 'attribute' with attribute-N="DIMENSION"
+    decls = doc.findall('.//{*}T-decl-stmt')
+    
+    for decl in decls:
+        array_spec = decl.find('./{*}attribute[{*}attribute-N="DIMENSION"]/{*}array-spec')
+        attr_elem = decl.find('./{*}attribute[{*}attribute-N="DIMENSION"]/{*}array-spec/...')
+        if array_spec is not None:
+            # Check if EN-decl elements don't already have an array-spec child element
+            c_arrayspec=decl.findall('./{*}EN-decl-LT/{*}EN-decl/{*}array-spec')
+            if len(c_arrayspec) == 0:
+                n = decl.findall('./{*}EN-decl-LT/{*}EN-decl/{*}EN-N')
+                # Attach the array-spec element after the EN-N element
+                for elem in n:
+                    elem.append(array_spec)
+                # Remove the dimension and array-spec elements
+                ETremoveFromList(attr_elem,decl)
+    return doc
+
+@needEtree
 def getImplicitNoneText(doc):
     """
     :param doc: etree to use
@@ -187,6 +220,10 @@ class Variables():
     @copy_doc(showVarList)
     def showVarList(self):
         return showVarList(doc=self._xml)
+
+    @copy_doc(attachArraySpecToEntity)
+    def attachArraySpecToEntity(self):
+        return attachArraySpecToEntity(doc=self._xml)
 
     @copy_doc(getImplicitNoneText)
     def getImplicitNoneText(self):
