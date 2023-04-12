@@ -5,13 +5,15 @@ This module implements functions to deal with variables
 from util import (copy_doc, PFTError,
                   tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
                   ETgetSiblings)
-from locality import ETgetLocalityNode, ETgetLocalityChildNodes
+from locality import ETgetLocalityNode, ETgetLocalityChildNodes, getLocalitiesList
 import logging
 
 @needEtree
-def getVarList(doc):
+def getVarList(doc, localityPath=None):
     """
     :param doc: etree to use
+    :param localityPath: restrict list to this locality (None to get
+                         variables from all the localities)
     :return: a list of dictionaries. Each item is a variable. The associated
              dictionnary has the following keys:
               - as: list of array specifications
@@ -32,12 +34,19 @@ def getVarList(doc):
             as_list.append([alltext(lb) if lb is not None else None, alltext(ub) if ub is not None else None])
             asx_list.append([tostring(lb) if lb is not None else None, tostring(ub) if ub is not None else None])
         return as_list, asx_list
+
+    if localityPath is None:
+        #We search for declaration in the entire xml
+        stmts = [doc]
+    else:
+        #We search for declaration  only in the nodes corresponding to the locality
+        stmts = ETgetLocalityChildNodes(doc, localityPath)
         
     #Find dummy arguments
-    dummy_args = [e.text for e in doc.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N/{*}n')]
+    dummy_args = [e.text for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N/{*}n')]
 
     result = []
-    decl_stmts = doc.findall('.//{*}T-decl-stmt')
+    decl_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
     #Loop on each declaration statement
     for decl_stmt in decl_stmts:
         t_spec = alltext(decl_stmt.find('.//{*}_T-spec_'))
@@ -61,24 +70,28 @@ def getVarList(doc):
                            'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args})
     return result
 
-def showVarList(doc):
+def showVarList(doc, localityPath=None):
     """
-    Display on stdout a nive view of all the variables
+    Display on stdout a nice view of all the variables
     :param doc: etree to use
+    :param localityPath: restrict list to this locality (None to loop
+                         over all localities)
     """
-    for v in getVarList(doc):
-        isscalar = len(v['as']) == 0
-        print('Variable name {}:'.format(v['n']))
-        if isscalar:
-            print('  is scalar')
-        else:
-            print('  is of rank {}, with dimensions {}'.format(len(v['as']),
-                                ', '.join([(':'.join([('' if s is None else s) for s in v['as'][i]])) for i in range(len(v['as']))])))
-        if v['arg']:
-            print('  is a dummy argument {}'.format('without intent' if v['i'] is None else 'with intent {}'.format(v['i'])))
-        else:
-            print('  is a local variable')
-        print()
+    for locality in [localityPath] if localityPath is not None else getLocalitiesList(doc):
+        print('List of variables declared in {}:'.format(locality))
+        for v in getVarList(doc, locality):
+            isscalar = len(v['as']) == 0
+            print('  Variable name {}:'.format(v['n']))
+            if isscalar:
+                print('    is scalar')
+            else:
+                print('    is of rank {}, with dimensions {}'.format(len(v['as']),
+                                    ', '.join([(':'.join([('' if s is None else s) for s in v['as'][i]])) for i in range(len(v['as']))])))
+            if v['arg']:
+                print('    is a dummy argument {}'.format('without intent' if v['i'] is None else 'with intent {}'.format(v['i'])))
+            else:
+                print('    is a local variable')
+            print()
 
 @needEtree
 def attachArraySpecToEntity(doc):
