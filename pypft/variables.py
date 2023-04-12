@@ -157,8 +157,9 @@ def removeVar(doc, varList):
     :param doc: xml fragment to use
     :param varList: list of variables to remove. Each item is a list or tuple of two elements.
                     The first one describes where the variable is declared, the second one is the name
-                    of the variable. The first element takes the form module:<name of the module>,
-                    sub:<name of the subroutine>, func:<name of the function> or type:<name of the type>
+                    of the variable. The first element is a '/'-separated path with each element
+                    havinf the form 'module:<name of the module>', 'sub:<name of the subroutine>',
+                    'func:<name of the function>' or 'type:<name of the type>'
     Remove the variable from declaration, and from the argument list if needed
     """
 

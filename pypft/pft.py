@@ -141,11 +141,12 @@ if __name__ == '__main__':
                             help='Show the declared variables')
     gVariables.add_argument('--removeVariable', nargs=2, action='append',
                             metavar=('WHERE', 'VARNAME'),
-                            help='Variable to remove from declaration. The first argument ' + \
-                                 'is the SUBROUTINE/FUNCTION/MODULE/TYPE where the variable ' + \
-                                 'is declared. It takes the form module:<name of the module>, ' + \
-                                 'sub:<name of the subroutine>, func:<name of the function> or ' + \
-                                 'type:<name of the type>. The second argument is the variable name')
+                            help="Variable to remove from declaration. The first argument " + \
+                                 "is the SUBROUTINE/FUNCTION/MODULE/TYPE where the variable " + \
+                                 "is declared. It is '/'-separated path with each element having " + \
+                                 "the form 'module:<name of the module>', 'sub:<name of the subroutine>', " + \
+                                 "'func:<name of the function>' or 'type:<name of the type>'. " + \
+                                 "The second argument is the variable name")
 
     gVariables.add_argument('--attachArraySpecToEntity', default=False, action='store_true',
                            help='Find all T-decl-stmt elements that have a child element attribute' + \
