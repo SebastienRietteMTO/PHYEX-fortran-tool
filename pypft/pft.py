@@ -9,9 +9,10 @@ import logging
 from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
 from pypft.applications import Applications
+from pypft.locality import Locality
 from pypft.util import tostring, tofortran
 
-class PFT(Variables, Cosmetics, Applications):
+class PFT(Variables, Cosmetics, Applications, Locality):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
@@ -133,7 +134,7 @@ if __name__ == '__main__':
                          help='Path to the fxtran parser binary')
     gParser.add_argument('--parserOption', nargs='*', action='append',
                          help='Option to pass to fxtran, defaults' + \
-                         ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
+                              ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
 
     #Variables
     gVariables = parser.add_argument_group('Options to deal with variables')
@@ -147,23 +148,23 @@ if __name__ == '__main__':
                                  "the form 'module:<name of the module>', 'sub:<name of the subroutine>', " + \
                                  "'func:<name of the function>' or 'type:<name of the type>'. " + \
                                  "The second argument is the variable name")
-
     gVariables.add_argument('--attachArraySpecToEntity', default=False, action='store_true',
-                           help='Find all T-decl-stmt elements that have a child element attribute' + \
-                           ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
+                            help='Find all T-decl-stmt elements that have a child element attribute' + \
+                                 ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
 
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
-                           help='Delete DR HOOK use')
+                               help='Delete DR HOOK use')
     gApplications.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
-                           help='Find all if-statement and convert it to if-then-statement')
+                               help='Find all if-statement and convert it to if-then-statement')
+
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
-                           help='Put FORTRAN code in upper case letters')
+                            help='Put FORTRAN code in upper case letters')
     gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
-                           help='Put FORTRAN code in lower case letters')
+                            help='Put FORTRAN code in lower case letters')
 
     #Checks
     gChecks = parser.add_argument_group('Check options')
@@ -173,6 +174,11 @@ if __name__ == '__main__':
     gChecks.add_argument('--checkINTENT', choices={'Warn', 'Err'}, default=None,
                          help='Send a warning or raise an error if the "INTENT" ' + \
                               'attribute is missing for a dummy argument')
+
+    #Misc
+    gMisc = parser.add_argument_group('Miscellaneous')
+    gMisc.add_argument('--showLocalities', default=False, action='store_true',
+                       help='Show the different localities found in the source code')
 
     args = parser.parse_args()
 
@@ -203,6 +209,9 @@ if __name__ == '__main__':
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
     if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
+
+    #Misc
+    if args.showLocalities: pft.showLocalitiesList()
 
     #Writing
     if args.xml is not None: pft.writeXML(args.xml)

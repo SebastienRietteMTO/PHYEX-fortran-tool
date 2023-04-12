@@ -4,7 +4,8 @@ This module implements functions to deal with variables
 
 from util import (copy_doc, PFTError,
                   tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
-                  ETgetSiblings, ETgetLocalityNode, ETgetLocalityChildNodes)
+                  ETgetSiblings)
+from locality import ETgetLocalityNode, ETgetLocalityChildNodes
 import logging
 
 @needEtree
