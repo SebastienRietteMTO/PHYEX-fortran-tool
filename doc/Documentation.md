@@ -47,7 +47,7 @@ list of default options can be seen with "pft.py -h").
 **\--showVariables** displays a list of all the declared variables
 with some characteristics.
 
-**\-removeVariable** removes the declaration of a local variable or
+**\--removeVariable** removes the declaration of a local variable or
 of a dummy argument. In the case of a dummy argument, it is also suppresssed
 from the argument of the subroutine.
 This options takes two argument, the first one describes where the variable
@@ -59,6 +59,9 @@ The first argument takes one of the following forms:
  - **sub:_NAME_** to search for the variable in the subroutine named _NAME_
  - **func:_NAME_** to search for the variable in the function named _NAME_
  - **type:_NAME_** to search for the variable in the definition of the type named _NAME_
+
+**\--attachArraySpecToEntity** move the array declaration attributes to the right
+part of the declaration statement (e.g. "REAL, DIMENSION(5) :: X" becomes "REAL :: X(5)")
 
 ### Cosmetics
 
@@ -75,3 +78,10 @@ raise an exception.
 **\--checkINTENT=Warn\|Err** if an INTENT attribute is missing for a
 dummy argument, issue a warning if option is 'Warn'; otherwise issue
 an error message and raise an exception.
+
+### Applications
+
+**\--deleteDrHook** removes DrHook statements.
+
+**\--changeIfStatementsInIfConstructs** transforms one line 'IF' contructs
+in 'IF-THEN' constructs
