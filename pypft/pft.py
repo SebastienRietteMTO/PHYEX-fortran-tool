@@ -13,6 +13,7 @@ from pypft.util import tostring, tofortran
 
 class PFT(Variables, Cosmetics, Applications):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
+    MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None):
         """
@@ -26,6 +27,9 @@ class PFT(Variables, Cosmetics, Applications):
         self._output = output
         self._parser = 'fxtran' if parser is None else parser
         self._parserOptions = self.DEFAULT_FXTRAN_OPTIONS if parserOptions is None else parserOptions
+        for option in self.MANDATORY_FXTRAN_OPTIONS:
+            if option not in self._parserOptions:
+                self._parserOptions.append(option)
         self._F2xml()
 
     @property

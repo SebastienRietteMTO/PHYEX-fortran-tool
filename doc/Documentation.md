@@ -19,6 +19,23 @@ LIMITATIONS:
    the parsing by fxtran
  - Other encoding than UTF-8 is not supported
 
+## Concepts
+
+Especially when a FORTRAN source file contains several subroutine, functions
+or type declaration, it is necessary to specify on which part of the source
+code a modification must be done.
+This is achieved through the locality concept.
+The locality is a string representing a kind of path to access the source code
+fragment on which the action must be performed.
+A locality is a succession of path elements separated by '/'; each path elements
+has one of the following forms:
+
+ - **module:_NAME_** to refer to the module named _NAME_
+ - **sub:_NAME_** to refer to the subroutine named _NAME_
+ - **func:_NAME_** to refer to the function named _NAME_
+ - **type:_NAME_** to refer to the definition of the type named _NAME_
+
+
 ## Tool options
 
 If only one file name is given, the output file will replace the input file.
@@ -53,12 +70,7 @@ from the argument of the subroutine.
 This options takes two argument, the first one describes where the variable
 is declared (to distinguish between several variables holding the same name
 but in different subroutines) and the second one is the variable name.
-The first argument takes one of the following forms:
-
- - **module:_NAME_** to search for the variable in the module named _NAME_
- - **sub:_NAME_** to search for the variable in the subroutine named _NAME_
- - **func:_NAME_** to search for the variable in the function named _NAME_
- - **type:_NAME_** to search for the variable in the definition of the type named _NAME_
+The first argument is a locality as described in [Concepts](#concepts).
 
 **\--attachArraySpecToEntity** move the array declaration attributes to the right
 part of the declaration statement (e.g. "REAL, DIMENSION(5) :: X" becomes "REAL :: X(5)")

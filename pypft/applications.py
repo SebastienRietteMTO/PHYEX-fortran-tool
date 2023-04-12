@@ -2,9 +2,9 @@
 This module implements functions for high-to-moderate level transformation
 """
 
-from . import copy_doc
 import xml.etree.ElementTree as ET
-from util import (alltext, needEtree, ETgetParent)
+from util import (copy_doc,
+                  alltext, needEtree, ETgetParent)
 
 @needEtree
 def deleteDrHook(doc, delParkind=True):

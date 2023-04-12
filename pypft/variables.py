@@ -2,9 +2,9 @@
 This module implements functions to deal with variables
 """
 
-from . import copy_doc, PFTError
-from util import (tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
-                  ETgetSiblings)
+from util import (copy_doc, PFTError,
+                  tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
+                  ETgetSiblings, ETgetLocalityNode, ETgetLocalityChildNodes)
 import logging
 
 @needEtree
@@ -164,52 +164,45 @@ def removeVar(doc, varList):
 
     for where, varName in varList:
         found = False
-        #Usefull statements
         varName = varName.upper()
-        assert len(where.split(':')) == 2, "First element must contain a ':'"
-        blocType, blocName = where.split(':')
-        blocName = blocName.upper()
-        assert blocType in ('module', 'sub', 'func', 'type')
-        tag = {'module':'module',
-               'func': 'function',
-               'sub': 'subroutine',
-               'type': 'T'}[blocType]
-        beginStmt, endStmt = '{}-stmt'.format(tag), 'end-{}-stmt'.format(tag)
-        if blocType == 'type':
+        if where.split('/')[-1].split(':')[0] == 'type':
             declStmt = 'component-decl-stmt'
         else:
             declStmt = 'T-decl-stmt'
 
-        #Search for the right bloc
-        for bloc in doc.findall('.//{*}' + beginStmt):
-            if alltext(bloc.find('.//{*}N/{*}n')).upper() == blocName:
-                #Checks if variable is a dummy argument
-                dummy_lst = bloc.find('{*}dummy-arg-LT') #This is the list of the dummy arguments (function or subroutine)
-                if dummy_lst is not None:
-                    #Loop over all dummy arguments
-                    for arg in dummy_lst.findall('.//{*}arg-N'):
-                        if alltext(arg.find('.//{*}N/{*}n')).upper() == varName:
-                            #The variable is a dummy arg, we remove it from the list
-                            ETremoveFromList(arg, dummy_lst)
+        previous = None
+        #If where is "module:XX/sub:YY", ETgetLocalityNode returns the "program-unit" node
+        #just above the subroutine declaration statement.
+        #ETgetLocalityChildNodes returns all the node contained in the subroutine
+        #excluding the subroutine and functions potentially included after a "contains" statement
+        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, where)):
+            #Checks if variable is a dummy argument
+            dummy_lst = node.find('{*}dummy-arg-LT') #This is the list of the dummy arguments (function or subroutine)
+            if dummy_lst is not None:
+                #Loop over all dummy arguments
+                for arg in dummy_lst.findall('.//{*}arg-N'):
+                    if alltext(arg.find('.//{*}N/{*}n')).upper() == varName:
+                        #The variable is a dummy arg, we remove it from the list
+                        ETremoveFromList(arg, dummy_lst)
 
-                for sibling in ETgetSiblings(doc, bloc, before=False):
-                    if sibling.tag.endswith('}' + endStmt) or sibling.tag.endswith('}contains-stmt'):
-                        break #we are outside of the targeted bloc
-                    if sibling.tag.endswith('}' + declStmt):
-                        #We are in a declaration statement
-                        decl_lst = sibling.find('./{*}EN-decl-LT') #list of declaration in the current statment
-                        for en_decl in decl_lst:
-                            if alltext(en_decl.find('.//{*}n')).upper() == varName:
-                                #The argument is declared here, we suppress it from the declaration list
-                                found = True
-                                ETremoveFromList(en_decl, decl_lst)
-                                break #cannot be declared twice, we can exit the loop
-                        #In case the argument was alone on the declaration statement
-                        if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
-                            ETgetParent(doc, sibling).remove(sibling)
-                break #bloc has been found
+            if node.tag.endswith('}' + declStmt):
+                #We are in a declaration statement
+                decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
+                for en_decl in decl_lst:
+                    if alltext(en_decl.find('.//{*}n')).upper() == varName:
+                        #The argument is declared here, we suppress it from the declaration list
+                        found = True
+                        ETremoveFromList(en_decl, decl_lst)
+                        break #cannot be declared twice, we can exit the loop
+                #In case the argument was alone on the declaration statement
+                if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+                    if previous is not None:
+                        if previous.tail is None: previous.tail = ''
+                        previous.tail += node.tail
+                    ETgetParent(doc, node).remove(node)
+            previous = node
         if not found:
-            raise PFTError("The variable {var} in {bloc} has not been found.".format(var=varName, bloc=blocName))
+            raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
 
 class Variables():
     @copy_doc(getVarList)

@@ -2,8 +2,8 @@
 This module implements functions to deal with cosmetics
 """
 
-from . import copy_doc
-from util import ETnon_code, needEtree
+from util import (copy_doc,
+                  ETnon_code, needEtree)
 
 @needEtree
 def upperCase(doc):
