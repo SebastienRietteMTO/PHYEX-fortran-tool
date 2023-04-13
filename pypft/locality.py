@@ -1,4 +1,4 @@
-from util import (copy_doc, needEtree,
+from util import (copy_doc, needEtree, PFTError,
                   alltext, ETgetParent)
 
 """
@@ -67,7 +67,7 @@ def ETgetLocalityChildNodes(doc, locality):
     :param locality: path or node reprensenting the locality
     :return: list of child nodes
 
-    The function retruns all the nodes corresponding to the locality.
+    The function returns all the nodes corresponding to the locality.
     If the locality is a module, function or subroutine that contain
     (after a 'contains' statement) other subroutines or functions, those
     subroutines or functions are excluded from the result.
@@ -76,10 +76,9 @@ def ETgetLocalityChildNodes(doc, locality):
         locality = ETgetLocalityNode(doc, locality)
     assert len(locality) != 0, 'The locality construct is empty'
     assert locality[0].tag.endswith('-stmt'), 'The node is not a locality node'
-    endStmt = 'end-' + locality.tag
     result = []
     for node in locality:
-        if node.tag.endswith('}' + endStmt) or node.tag.endswith('}contains-stmt'):
+        if node.tag.endswith('}contains-stmt'):
             break #we are outside of the targeted bloc
         result.append(node)
     return result

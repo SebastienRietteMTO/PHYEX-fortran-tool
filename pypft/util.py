@@ -2,6 +2,9 @@ import xml.etree.ElementTree as ET
 import xml.dom.minidom
 from functools import wraps
 import logging
+import tempfile
+import os
+import subprocess
 
 """
 This module implements some tools to manipulate the xml
@@ -71,6 +74,47 @@ def getFileName(doc):
     """
     return doc.find('.//{*}file').attrib['name']
 
+def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
+    """
+    :param fortranSource: a string containing a fortran source code
+                          or a filename
+    :param parser: path to the fxtran parser
+    :param parserOptions: dictionnary holding the parser options
+    :returns: (ns, xml) where ns is a namespace dictionnary and xml
+              is an ET xml document
+    """
+    #Namespace registration
+    ns = {'f': 'http://fxtran.net/#syntax'}
+    #Alternatively, we could load a first time to find out the namespaces, then reload
+    #it after having registered the right namespace. The folowing code snippet
+    #allows to capture the declared namespaces.
+    #ns = dict([node for _, node in ET.iterparse(StringIO(self.xml), events=['start-ns'])])
+    for k, v in ns.items():
+        ET.register_namespace(k, v)
+
+    #Default options
+    if parserOptions is None:
+        import pypft
+        parserOptions = pypft.PFT.DEFAULT_FXTRAN_OPTIONS
+
+    #Call to fxtran
+    with tempfile.NamedTemporaryFile(buffering=0, suffix='.F90') as f:
+        if os.path.exists(fortranSource):
+            #tempfile not needed in this case but I found easier to write code
+            #like this to have only one subprocess call and automatic
+            #deletion of the temporary file
+            filename = fortranSource
+        else:
+            filename = f.name
+            f.write(fortranSource.encode('UTF-8'))
+        xml = subprocess.run([parser, filename,
+                             '-o', '-'] + parserOptions,
+                             stdout=subprocess.PIPE, check=True,
+                             encoding='UTF-8').stdout
+        xml = ET.fromstring(xml, parser=ET.XMLParser(encoding='UTF-8'))
+
+    return ns, xml
+
 @needEtree
 def tostring(doc):
     """
@@ -110,6 +154,26 @@ def ETnon_code(e):
     :return: True if e is non code (comment, text...)
     """
     return e.tag.split('}')[1] in {'#text', 'cnt', 'C'}
+
+def ETisExecutableStmt(e):
+    """
+    :param e: element
+    :return: True if element is an executable statement
+    """
+    return ETisStmt(e) and \
+           not e.tag.split('}')[1] in {'subroutine-stmt', 'end-subroutine-stmt',
+                                       'function-stmt', 'end-function-stmt',
+                                       'use-stmt', 'T-decl-stmt', 'component-decl-stmt',
+                                       'T-stmt', 'end-T-stmt',
+                                       'data-stmt', 'save-stmt',
+                                       'implicit-none-stmt'}
+
+def ETisStmt(e):
+    """
+    :param e: element
+    :return: True if element is a statement
+    """
+    return e.tag.endswith('-stmt')
 
 def ETremoveFromList(item, l):
     """
@@ -160,3 +224,31 @@ def ETgetSiblings(doc, item, before=True, after=True):
         siblings = siblings[siblings.index(item) + 1:]
     return [s for s in siblings if s != item]
 
+def ETinsertInList(pos, item, l):
+    """
+    :param pos: insertion position
+    :param item: item to add to the list
+    :param l: the parent of item (the list)
+    """
+    #insertion
+    if pos < 0: pos = len(l) + 1 + pos
+    l.insert(pos, item)
+    if len(l) > 1:
+        i = list(l).index(item) #effective position
+        if i == len(l) - 1:
+            #The item is the last one
+            l[i - 1].tail = ', '
+        else:
+            l[i].tail = ', '
+
+def isint(s):
+    """
+    :param s: string to test for intergerness
+    :return: True if s represent an int
+    """
+    try:
+        int(s)
+    except ValueError:
+        return False
+    else:
+        return True

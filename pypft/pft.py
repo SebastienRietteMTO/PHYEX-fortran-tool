@@ -10,7 +10,7 @@ from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
 from pypft.applications import Applications
 from pypft.locality import Locality
-from pypft.util import tostring, tofortran
+from pypft.util import tostring, tofortran, isint, fortran2xml
 
 class PFT(Variables, Cosmetics, Applications, Locality):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
@@ -20,7 +20,8 @@ class PFT(Variables, Cosmetics, Applications, Locality):
         """
         :param filename: Input file name containing FORTRAN code
         :param output: Output file name, None to replace input file
-        :param fxtran: path to the fxtran parser
+        :param parser: path to the fxtran parser
+        :param parserOptions: dictionnary holding the parser options
         """
         self._filename = filename
         self._originalName = filename
@@ -31,7 +32,7 @@ class PFT(Variables, Cosmetics, Applications, Locality):
         for option in self.MANDATORY_FXTRAN_OPTIONS:
             if option not in self._parserOptions:
                 self._parserOptions.append(option)
-        self._F2xml()
+        self._ns, self._xml = fortran2xml(self._filename, self._parser, self._parserOptions)
 
     @property
     def xml(self):
@@ -46,25 +47,6 @@ class PFT(Variables, Cosmetics, Applications, Locality):
         Returns the FORTRAN as a string
         """
         return tofortran(self._xml)
-
-    def _F2xml(self):
-        """
-        :param filename: Input file name containing FORTRAN code
-        :return: xml as an ElementTree
-        """
-        #Namespace registration
-        self._ns = {'f': 'http://fxtran.net/#syntax'}
-        ET.register_namespace('f', 'http://fxtran.net/#syntax')
-        #Alternatively, we could load a first time to find out the namespaces, then reload
-        #it after having registered the right namespace. The folowing code snippet
-        #allows to capture the declared namespaces.
-        #ns = dict([node for _, node in ET.iterparse(StringIO(self.xml), events=['start-ns'])])
-
-        self._xml = subprocess.run([self._parser, self._filename,
-                                    '-o', '-'] + self._parserOptions,
-                                   stdout=subprocess.PIPE, check=True,
-                                   encoding='UTF-8').stdout
-        self._xml = ET.fromstring(self._xml, parser=ET.XMLParser(encoding='UTF-8'))
 
     def renameUpper(self):
         """
@@ -151,7 +133,14 @@ if __name__ == '__main__':
     gVariables.add_argument('--attachArraySpecToEntity', default=False, action='store_true',
                             help='Find all T-decl-stmt elements that have a child element attribute' + \
                                  ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
-
+    gVariables.add_argument('--addVariable', nargs=4, action='append',
+                            metavar=('WHERE', 'VARNAME', 'DECLARATION', 'POSITION'),
+                            help='Add a variable. First argument is the locality (as for ' + \
+                                 'the --removeVariable option. The second is the variable ' + \
+                                 'name, the third is the declarative statement to insert, ' + \
+                                 'the fourth is the position (python indexing) the new ' + \
+                                 'variable will have in the calling statment of the ' + \
+                                 'routine (non-integer value for a local variable).')
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
@@ -197,6 +186,7 @@ if __name__ == '__main__':
     if args.showVariables: pft.showVarList()
     if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
     if args.removeVariable is not None: pft.removeVar(args.removeVariable)
+    if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()

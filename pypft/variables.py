@@ -4,8 +4,9 @@ This module implements functions to deal with variables
 
 from util import (copy_doc, PFTError,
                   tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
-                  ETgetSiblings)
+                  ETgetSiblings, ETinsertInList, fortran2xml, ETisExecutableStmt)
 from locality import ETgetLocalityNode, ETgetLocalityChildNodes, getLocalitiesList
+from xml.etree.ElementTree import Element
 import logging
 
 @needEtree
@@ -165,6 +166,18 @@ def checkIntent(doc, mustRaise=False):
     if not ok and mustRaise:
         raise PFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
 
+def _getDeclStmtTag(where):
+    """
+    Internal function
+    :param where: a locality path
+    :return: the declaration statement we can find in this locality path
+    """
+    if where.split('/')[-1].split(':')[0] == 'type':
+        declStmt = 'component-decl-stmt'
+    else:
+        declStmt = 'T-decl-stmt'
+    return declStmt
+
 @needEtree
 def removeVar(doc, varList):
     """
@@ -172,7 +185,7 @@ def removeVar(doc, varList):
     :param varList: list of variables to remove. Each item is a list or tuple of two elements.
                     The first one describes where the variable is declared, the second one is the name
                     of the variable. The first element is a '/'-separated path with each element
-                    havinf the form 'module:<name of the module>', 'sub:<name of the subroutine>',
+                    having the form 'module:<name of the module>', 'sub:<name of the subroutine>',
                     'func:<name of the function>' or 'type:<name of the type>'
     Remove the variable from declaration, and from the argument list if needed
     """
@@ -180,11 +193,8 @@ def removeVar(doc, varList):
     for where, varName in varList:
         found = False
         varName = varName.upper()
-        if where.split('/')[-1].split(':')[0] == 'type':
-            declStmt = 'component-decl-stmt'
-        else:
-            declStmt = 'T-decl-stmt'
-
+        declStmt = _getDeclStmtTag(where)
+        
         previous = None
         #If where is "module:XX/sub:YY", ETgetLocalityNode returns the "program-unit" node
         #just above the subroutine declaration statement.
@@ -219,6 +229,91 @@ def removeVar(doc, varList):
         if not found:
             raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
 
+@needEtree
+def addVar(doc, varList):
+    """
+    :param doc: xml fragment to use
+    :param varList: list of variable specification to insert in the xml code
+                    a variable specification is a list of three element:
+                    - variable locality (path to module, subroutine, function or type declaration)
+                    - variable name
+                    - declarative statment
+                    - position of the variable in the list of dummy argument,
+                      None for a local variable
+    """
+    for (path, name, declStmt, pos) in varList:
+        locNode = ETgetLocalityNode(doc, path)
+
+        #Add variable to the argument list
+        if pos is not None:
+            argN = Element('f:arg-N')
+            N = Element('f:N')
+            n = Element('f:n')
+            n.text = name
+            N.append(n)
+            argN.append(N)
+            #search for a potential node, within the scope, with a list of dummy arguments
+            argLst = [node.find('.//{*}dummy-arg-LT') for node in ETgetLocalityChildNodes(doc, locNode)]
+            argLst = [node for node in argLst if node is not None]
+            argLst = None if len(argLst) == 0 else argLst[0]
+            if argLst is None:
+               #This was a subroutine or function without dummy arguments
+               locNode[0][0].tail = '(' 
+               argLst = Element('f:dummy-arg-LT')
+               argLst.tail = ')'
+               locNode[0].insert(1, argLst)
+            ETinsertInList(pos, argN, argLst)
+
+        #Declare the variable
+        #The following test is needed in case several variables are added in the argument list
+        #but the declaration statement is given only once for all the variables
+        if declStmt is not None and declStmt != '':
+            #Declaration statement tag according to path (memeber of type declaration or not)
+            declStmtTag = _getDeclStmtTag(path)
+
+            if path.split('/')[-1].split(':')[0] == 'type':
+                #Add declaration statement in type declaration
+                #Statement building
+                fortranSource = "MODULE MODU_{var}\nTYPE TYP_{var}\n{decl}\nEND TYPE\nEND MODULE".format(var=name, decl=declStmt)
+                _, xml = fortran2xml(fortranSource)
+                ds = xml.find('.//{*}' + declStmtTag)
+                previousTail = ETgetSiblings(xml, ds, after=False)[-1].tail
+                #node insertion
+                #locNode[0] is the T-stmt node, locNode[-1] is the end-T-stmt node
+                #locNode[-2] is the last node before the end-T-stmt node (last component, comment or the T-stmt node)
+                ds.tail = locNode[-2].tail
+                locNode[-2].tail = previousTail
+                locNode.insert(-1, ds) #insert before last one
+
+            else:
+                #Add declaration statement (not type declaration case)
+                #Statement building
+                fortranSource = "SUBROUTINE SUB_{var}\n{decl}\nEND SUBROUTINE".format(var=name, decl=declStmt)
+                _, xml = fortran2xml(fortranSource)
+                ds = xml.find('.//{*}' + declStmtTag)
+                previousTail = ETgetSiblings(xml, ds, after=False)[-1].tail
+
+                #node insertion index
+                declLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
+                if len(declLst) != 0:
+                    #There already have declaration statements, we add the new one after them
+                    index = list(locNode).index(declLst[-1]) + 1
+                else:
+                    #There is no declaration statement
+                    stmtLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if ETisExecutableStmt(node)] #list of executable nodes
+                    if len(stmtLst) == 0:
+                        #There is no executable statement, we insert the declaration at the end
+                        index = len(locNode) - 1 #Last node is the ending node (e.g. end-subroutine-stmt)
+                    else:
+                        #We insert the declaration just before the first executable statement
+                        index = list(locNode).index(stmtLst[-1])
+
+                #node insertion
+                if index != 0:
+                    ds.tail = locNode[index - 1].tail
+                    locNode[index - 1].tail = previousTail
+                locNode.insert(index, ds)
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -247,3 +342,7 @@ class Variables():
     @copy_doc(removeVar)
     def removeVar(self, *args, **kwargs):
         return removeVar(self._xml, *args, **kwargs)
+
+    @copy_doc(addVar)
+    def addVar(self, *args, **kwargs):
+        return addVar(self._xml, *args, **kwargs)
