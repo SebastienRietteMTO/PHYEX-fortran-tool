@@ -70,17 +70,22 @@ def ETgetLocalityChildNodes(doc, locality):
     The function returns all the nodes corresponding to the locality.
     If the locality is a module, function or subroutine that contain
     (after a 'contains' statement) other subroutines or functions, those
-    subroutines or functions are excluded from the result.
+    subroutines or functions are excluded from the result; but the
+    result contains the 'END' statement of the module/subroutine or function.
     """
     if isinstance(locality, str):
         locality = ETgetLocalityNode(doc, locality)
     assert len(locality) != 0, 'The locality construct is empty'
     assert locality[0].tag.endswith('-stmt'), 'The node is not a locality node'
     result = []
+    breakOnCOntains = False
     for node in locality:
         if node.tag.endswith('}contains-stmt'):
+            breakOnCOntains = True
             break #we are outside of the targeted bloc
         result.append(node)
+    if breakOnCOntains:
+        result.append(locality[-1])
     return result
 
 def ETgetParentLocalityNode(doc, item, mustRaise=True):
