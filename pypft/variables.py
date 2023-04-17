@@ -232,6 +232,7 @@ def removeVar(doc, varList):
                         #The variable is a dummy arg, we remove it from the list
                         ETremoveFromList(arg, dummy_lst)
 
+            #In case the variable is declared
             if node.tag.endswith('}' + declStmt):
                 #We are in a declaration statement
                 decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
@@ -243,10 +244,41 @@ def removeVar(doc, varList):
                         break #cannot be declared twice, we can exit the loop
                 #In case the argument was alone on the declaration statement
                 if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+                    #We will delete the current node but we don't want to lose
+                    #any text. So, we put the node's text in the tail of the previous node
                     if previous is not None:
                         if previous.tail is None: previous.tail = ''
                         previous.tail += node.tail
                     ETgetParent(doc, node).remove(node)
+
+            #In case the variable is a module variable
+            if node.tag.endswith('}use-stmt'):
+                #We are in a use statement
+                use_lst = node.find('./{*}rename-LT')
+                if use_lst is not None:
+                    for name in use_lst:
+                        if alltext(name.find('.//{*}N/{*}n')).upper() == varName:
+                            found = True
+                            #The variable is declared here, we remove it from the list
+                            ETremoveFromList(name, use_lst)
+                            #In case the variable was alone
+                            attribute = node.find('{*}module-N').tail
+                            if attribute is None: attribute = ''
+                            attribute = attribute.replace(' ', '').replace('\n', '').replace('&', '').upper()
+                            use_lst = node.find('./{*}rename-LT')
+                            if len(use_lst) == 0 and attribute[0] == ',' and attribute[1:] == 'ONLY:':
+                                #If there is a 'ONLY' attribute, we suppress the use statement entirely
+                                ETgetParent(doc, node).remove(node)
+                            elif len(use_lst) == 0:
+                                #there is no 'ONLY' attribute
+                                moduleName = ETgetSiblings(doc, use_lst, before=True, after=False)[-1]
+                                previousTail = moduleName.tail
+                                if previousTail is not None:
+                                    moduleName.tail = previousTail.replace(',', '')
+                                ETgetParent(doc, use_lst).remove(use_lst)
+                            break
+
+            #Store node for the following iteration
             previous = node
         if not found:
             raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
