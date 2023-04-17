@@ -141,6 +141,11 @@ if __name__ == '__main__':
                                  'the fourth is the position (python indexing) the new ' + \
                                  'variable will have in the calling statment of the ' + \
                                  'routine (non-integer value for a local variable).')
+    gVariables.add_argument('--addModuleVariable', nargs=3, action='append',
+                            metavar=('WHERE', 'MODULENAME', 'VARNAME'),
+                            help='Add a USE statement. The first argument is the locality (as for ' + \
+                                 'the --removeVariable option). The second is the module ' + \
+                                 'name; the third is the variable name.')
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
@@ -187,6 +192,7 @@ if __name__ == '__main__':
     if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
     if args.removeVariable is not None: pft.removeVar(args.removeVariable)
     if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
+    if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()

@@ -288,7 +288,7 @@ def addVar(doc, varList):
     """
     :param doc: xml fragment to use
     :param varList: list of variable specification to insert in the xml code
-                    a variable specification is a list of three element:
+                    a variable specification is a list of four elements:
                     - variable locality (path to module, subroutine, function or type declaration)
                     - variable name
                     - declarative statment
@@ -368,6 +368,43 @@ def addVar(doc, varList):
                     locNode[index - 1].tail = previousTail
                 locNode.insert(index, ds)
 
+@needEtree
+def addModuleVar(doc, moduleVarList):
+    """
+    :param doc: xml fragment to use
+    :param moduleVarList: list of module variable specification to insert in the xml code
+                          a module variable specification is a list of three elements:
+                          - locality (path to module, subroutine, function or type declaration)
+                          - module name
+                          - variable name or None to add a USE statement without the ONLY attribute
+    For example addModuleVar('sub:FOO', 'MODD_XX', 'Y') will add the following line in subroutine FOO:
+    USE MODD_XX, ONLY: Y
+    """
+    for (path, moduleName, varName) in moduleVarList:
+        locNode = ETgetLocalityNode(doc, path)
+
+        #Statement building
+        fortranSource = "SUBROUTINE FOO598756\nUSE {}".format(moduleName)
+        if varName is not None:
+            fortranSource += ', ONLY:{}'.format(varName)
+        fortranSource += "\nEND SUBROUTINE"
+        _, xml = fortran2xml(fortranSource)
+        us = xml.find('.//{*}use-stmt')
+        previousTail = ETgetSiblings(xml, us, after=False)[-1].tail
+
+        #node insertion index
+        useLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
+        if len(useLst) != 0:
+            #There already have use statements, we add the new one after them
+            index = list(locNode).index(useLst[-1]) + 1
+        else:
+            #There is no use statement, we add the new node just after the first node
+            index = 1
+
+        us.tail = locNode[index - 1].tail
+        locNode[index - 1].tail = previousTail
+        locNode.insert(index, us)
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -400,3 +437,7 @@ class Variables():
     @copy_doc(addVar)
     def addVar(self, *args, **kwargs):
         return addVar(self._xml, *args, **kwargs)
+
+    @copy_doc(addModuleVar)
+    def addModuleVar(self, *args, **kwargs):
+        return addModuleVar(self._xml, *args, **kwargs)
