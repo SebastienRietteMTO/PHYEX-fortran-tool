@@ -146,6 +146,10 @@ if __name__ == '__main__':
                             help='Add a USE statement. The first argument is the locality (as for ' + \
                                  'the --removeVariable option). The second is the module ' + \
                                  'name; the third is the variable name.')
+    gVariables.add_argument('--showUnusedVariables', nargs='?', action='append',
+                            metavar='WHERE', default=None,
+                            help='Show a list of unused variables in the entire code ' + \
+                                 'or in the locality (if specified).')
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
@@ -193,6 +197,11 @@ if __name__ == '__main__':
     if args.removeVariable is not None: pft.removeVar(args.removeVariable)
     if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
     if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
+    if args.showUnusedVariables is not None:
+        if len(args.showUnusedVariables) == 1 and args.showUnusedVariables[0] is None:
+            pft.showUnusedVar()
+        else:
+            pft.showUnusedVar(args.showUnusedVariables)
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()

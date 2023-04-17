@@ -405,6 +405,76 @@ def addModuleVar(doc, moduleVarList):
         locNode[index - 1].tail = previousTail
         locNode.insert(index, us)
 
+@needEtree
+def isVarUsed(doc, varName, localityPath, strictLocality=False):
+    """
+    :param doc: xml fragment to search for variable usage
+    :param varName: variable name to search
+    :param localityPath: locality to explore
+    :param strictLocality: True to search strictly in locality
+
+    If strictLocality is True, the function will search for variable usage
+    only in this locality. But this feature has a limited interest.
+
+    If strictLocality is False:
+      - if localityPath is a subroutine/function in a contains section, 
+        and if the variable is not declared in this locality, usages are
+        searched in the module/subroutine/function upper that declared
+        the variable and in all subroutines/functions in the contains section
+      - if localityPath is a module/subroutine/function that has a
+        contains sections, usages are searched in all subroutines/functions
+        in the contains section
+
+    To know if a variable can be removed, you must use strictLocality=False
+    """
+    assert localityPath.split('/')[-1].split(':')[0] != 'type', 'We cannot check type component usage'
+    def _varInLoc(var, loc):
+        #Is the variable declared in this locality
+        return var.upper() in [v['n'].upper() for v in getVarList(doc, loc)]
+    if strictLocality:
+        found = False
+        #Loop on all child in the locality
+        for node in ETgetLocalityChildNodes(doc, localityPath):
+            if (not node.tag.endswith('}use-stmt')) and (not node.tag.endswith('}T-decl-stmt')):
+                #We look for the variable name in all the 'N' nodes.
+                #Function will return a True value if the name corresponds to a subroutine, function, module... name
+                found = found or any([varName.upper() == alltext(N).upper() for N in node.findall('.//{*}N')])
+        return found
+    else:
+        if '/' in localityPath:
+            #We are in a contains
+            if _varInLoc(varName, localityPath):
+                #Declared here, we must only check here
+                return isVarUsed(doc, varName, localityPath, strictLocality=True)
+            else:
+                #Declared upper
+                return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]))
+        else:
+            #We are in a top level program unit
+            #Variable is globally used if used in any of the localities among
+            #the current one and all present in the contains section
+            return any([isVarUsed(doc, varName, loc, strictLocality=True)
+                        for loc in [localityPath] + [l for l in getLocalitiesList(doc)
+                                                     if l.upper().startswith(localityPath.upper() + '/') and
+                                                        l.split('/')[-1].split(':')[0] != 'type']])
+
+def showUnusedVar(doc, localityPath=None):
+    """
+    Displays on stdout a list of unued variables
+    :param doc: xml fragment to search for variable usage
+    :param localityPath: locality to explore (None for all)
+    """
+    if localityPath is None:
+        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    else:
+        if isinstance(localityPath, str): localityPath = [localityPath]
+
+    for loc in localityPath:
+        varList = [v['n'].upper() for v in getVarList(doc, loc) if not isVarUsed(doc, v['n'], loc)]
+        if len(varList) != 0:
+            print('Some variables declared in {} are unused:'.format(loc))
+            print('  - ' + ('\n  - '.join(varList)))
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -441,3 +511,7 @@ class Variables():
     @copy_doc(addModuleVar)
     def addModuleVar(self, *args, **kwargs):
         return addModuleVar(self._xml, *args, **kwargs)
+
+    @copy_doc(showUnusedVar)
+    def showUnusedVar(self, *args, **kwargs):
+        return showUnusedVar(self._xml, *args, **kwargs)

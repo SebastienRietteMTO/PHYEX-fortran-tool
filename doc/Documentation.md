@@ -64,16 +64,32 @@ list of default options can be seen with "pft.py -h").
 **\--showVariables** displays a list of all the declared variables
 with some characteristics.
 
-**\--removeVariable** removes the declaration of a local variable or
+**\--removeVariable** removes the declaration of a local variable, a module variable or
 of a dummy argument. In the case of a dummy argument, it is also suppresssed
-from the argument of the subroutine.
+from the argument of the subroutine. In case of a module variable, if the module
+becomes unused, the use statement is also removed.
 This options takes two argument, the first one describes where the variable
 is declared (to distinguish between several variables holding the same name
 but in different subroutines) and the second one is the variable name.
 The first argument is a locality as described in [Concepts](#concepts).
 
+**\--addVariable** adds a new variable. The first argument describes where the variable
+must be declared (it is a locality as described in [Concepts](#concepts)).
+The second one is the variable name, the third one is the declarative statement to insert,
+and the fourth one is the position (python indexing) the new variable will have in the
+calling statment of the routine (non-integer value for a local variable)
+
+**--addModuleVariable** adds a USE statement with an ONLY attribute. The first
+argument describes where the variable must be declared (it is a locality as
+described in [Concepts](#concepts)). The second one is the module name and
+the third one is the variable name.
+
 **\--attachArraySpecToEntity** move the array declaration attributes to the right
 part of the declaration statement (e.g. "REAL, DIMENSION(5) :: X" becomes "REAL :: X(5)")
+
+**\--showUnusedVariables** lists the unused varibales. Without argument all the
+unused variables are shown. If one argument is given it is the locality (as described
+in [Concepts](#concepts)) where unused variables are searched for.
 
 ### Cosmetics
 
