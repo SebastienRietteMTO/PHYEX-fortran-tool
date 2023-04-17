@@ -94,6 +94,8 @@ def ETgetParentLocalityNode(doc, item, mustRaise=True):
     :param item: item whose locality parent is to be searched
     :param mustRaise: True to raise an exception if parent is not found
     :return: the locality parent node of item
+    Example: if item is a call statement, result is the program-unit node
+             in which the call statement is
     """
     result = ETgetParent(doc, item)
     while result is not None and not ETisLocalityNode(result):

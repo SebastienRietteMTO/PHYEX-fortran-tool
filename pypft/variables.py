@@ -17,15 +17,19 @@ def getVarList(doc, localityPath=None):
                          variables from all the localities)
     :return: a list of dictionaries. Each item is a variable. The associated
              dictionnary has the following keys:
-              - as: list of array specifications
-              - asx: same but encoded in xml
+              - as: list of array specifications, [] for a scalar, None if unknown
+              - asx: same but encoded in xml, [] for a scalar, None if unknown
               - n: name of the variable as written
               - i: intent
-              - t: type specification
-              - arg: True if variable is a dummy argument
+              - t: type specification, or None if unknown
+              - arg: False if variable is a not dummy argument
+                     argument position otherwise
+              - use: false if variable is not a module variable
+                     module name otherwise
+    Notes: - variables are found in modules only if the 'ONLY' attribute is used
+           - array specification and type is unknown for module variables
+           - function is not able to follow the 'ASSOCIATE' statements
     """
-    #TODO add a key to the dictionnary to specify the subroutine/module/function
-    #     where the variable is declared
     def decode_array_specs(array_specs):
         as_list = []
         asx_list = []
@@ -47,7 +51,8 @@ def getVarList(doc, localityPath=None):
     dummy_args = [e.text for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N/{*}n')]
 
     result = []
-    decl_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
+    decl_stmts = [stmt for stmt in stmts
+                  if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
     #Loop on each declaration statement
     for decl_stmt in decl_stmts:
         t_spec = alltext(decl_stmt.find('.//{*}_T-spec_'))
@@ -55,7 +60,7 @@ def getVarList(doc, localityPath=None):
         if i_spec is not None: i_spec = i_spec.text
 
         #Dimensions declared with the DIMENSION attribute
-        array_specs =decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
+        array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
         as0_list, asx0_list = decode_array_specs(array_specs)
         
         #Loop on each declared variables
@@ -68,7 +73,18 @@ def getVarList(doc, localityPath=None):
 
             result.append({'as': as_list if len(as0_list) == 0 else as0_list,
                            'asx': asx_list if len(asx0_list) == 0 else asx0_list,
-                           'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args})
+                           'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
+                           'use':False})
+
+    #Loop on each use statement
+    use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
+    for use_stmt in use_stmts:
+        module = alltext(use_stmt.find('.//{*}module-N').find('.//{*}n'))
+        for v in use_stmt.findall('.//{*}use-N'):
+            n = alltext(v.find('.//{*}n'))
+            result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
+                           'n': n, 'use': module})
+
     return result
 
 def showVarList(doc, localityPath=None):
@@ -81,17 +97,23 @@ def showVarList(doc, localityPath=None):
     for locality in [localityPath] if localityPath is not None else getLocalitiesList(doc):
         print('List of variables declared in {}:'.format(locality))
         for v in getVarList(doc, locality):
-            isscalar = len(v['as']) == 0
-            print('  Variable name {}:'.format(v['n']))
-            if isscalar:
-                print('    is scalar')
+            print('  Variable {}:'.format(v['n']))
+            if v['use']:
+                print('    is a variable taken in the {} module'.format(v['use']))
             else:
-                print('    is of rank {}, with dimensions {}'.format(len(v['as']),
-                                    ', '.join([(':'.join([('' if s is None else s) for s in v['as'][i]])) for i in range(len(v['as']))])))
-            if v['arg']:
-                print('    is a dummy argument {}'.format('without intent' if v['i'] is None else 'with intent {}'.format(v['i'])))
-            else:
-                print('    is a local variable')
+                isscalar = len(v['as']) == 0
+                if isscalar:
+                    print('    is scalar')
+                else:
+                    print('    is of rank {}, with dimensions {}'.format(len(v['as']),
+                                        ', '.join([(':'.join([('' if s is None else s)
+                                                              for s in v['as'][i]]))
+                                                   for i in range(len(v['as']))])))
+                if v['arg']:
+                    intent = 'without intent' if v['i'] is None else 'with intent {}'.format(v['i']) 
+                    print('    is a dummy argument {}'.format(intent))
+                else:
+                    print('    is a local variable')
             print()
 
 @needEtree
