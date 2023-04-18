@@ -286,6 +286,26 @@ def removeVar(doc, varList):
         if not found:
             raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
 
+def removeVarIfUnused(doc, varList):
+    """
+    :param doc: xml fragment to use
+    :param varList: list of variables to remove if unused. Each item is a list or tuple of two elements.
+                    The first one describes where the variable is declared, the second one is the name
+                    of the variable. The first element is a '/'-separated path with each element
+                    having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
+                    'func:<name of the function>'
+    :return: the varList without the unremovable variables
+    If possible, remove the variable from declaration, and from the argument list if needed
+    """
+    varListToRemove = []
+    for localityPath, varName in varList:
+        assert where.split('/')[-1].split(':')[0] != 'type', \
+          "The removeVarIfUnused cannot be used with type members"
+        if not isUsedVar(doc, varName, localityPath):
+            varListToRemove.append([localityPath, varName])
+    removeVar(doc, varListToRemove)
+    return varListToRemove
+
 @needEtree
 def addVar(doc, varList):
     """
@@ -482,6 +502,24 @@ def showUnusedVar(doc, localityPath=None):
             print('Some variables declared in {} are unused:'.format(loc))
             print('  - ' + ('\n  - '.join(varList)))
 
+def removeUnusedLocalVar(doc, localityPath=None):
+    """
+    Displays on stdout a list of unued variables
+    :param doc: xml fragment to search for variable usage
+    :param localityPath: locality to explore (None for all)
+    """
+    if localityPath is None:
+        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    else:
+        if isinstance(localityPath, str): localityPath = [localityPath]
+
+    for loc in localityPath:
+        varList = [(loc, v['n']) for v in getVarList(doc, loc)
+                   if (not v['arg']) and
+                      (not isVarUsed(doc, v['n'], loc))]
+        removeVar(doc, varList)
+
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -522,3 +560,7 @@ class Variables():
     @copy_doc(showUnusedVar)
     def showUnusedVar(self, *args, **kwargs):
         return showUnusedVar(self._xml, *args, **kwargs)
+
+    @copy_doc(removeUnusedLocalVar)
+    def removeUnusedLocalVar(self, *args, **kwargs):
+        return removeUnusedLocalVar(self._xml, *args, **kwargs)

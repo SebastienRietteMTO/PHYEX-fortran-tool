@@ -91,11 +91,18 @@ part of the declaration statement (e.g. "REAL, DIMENSION(5) :: X" becomes "REAL 
 unused variables are shown. If one argument is given it is the locality (as described
 in [Concepts](#concepts)) where unused variables are searched for.
 
+**\--removeUnusedLocalVariables** remove unused local variables. Without argument all the
+unused variables are suppressed. If one argument is given it is the locality (as described
+in [Concepts](#concepts)) where unused variables are searched for.
+
 ### Cosmetics
 
 **\--upperCase** puts the FORTRAN code into upper case letters.
 
 **\--lowerCase** puts the FORTRAN code into lower case letters.
+
+**\--changeIfStatementsInIfConstructs** transforms one line 'IF' contructs
+in 'IF-THEN' constructs
 
 ### Checks
 
@@ -111,5 +118,3 @@ an error message and raise an exception.
 
 **\--deleteDrHook** removes DrHook statements.
 
-**\--changeIfStatementsInIfConstructs** transforms one line 'IF' contructs
-in 'IF-THEN' constructs

@@ -150,6 +150,11 @@ if __name__ == '__main__':
                             metavar='WHERE', default=None,
                             help='Show a list of unused variables in the entire code ' + \
                                  'or in the locality (if specified).')
+    gVariables.add_argument('--removeUnusedLocalVariables', nargs='?', action='append',
+                            metavar='WHERE', default=None,
+                            help='Remove unused local variables in the entire code ' + \
+                                 'or in the locality (if specified).')
+
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
@@ -202,6 +207,11 @@ if __name__ == '__main__':
             pft.showUnusedVar()
         else:
             pft.showUnusedVar(args.showUnusedVariables)
+    if args.removeUnusedLocalVariables is not None:
+        if len(args.removeUnusedLocalVariables) == 1 and args.removeUnusedLocalVariables[0] is None:
+            pft.removeUnusedLocalVar()
+        else:
+            pft.removeUnusedLocalVar(args.removeUnusedLocalVariables)
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()
