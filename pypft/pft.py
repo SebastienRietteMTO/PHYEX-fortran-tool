@@ -96,6 +96,10 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='PHYEX FORTRAN tool')
 
+    parser.add_argument('--simplify', default=False, action='store_true',
+                        help='After a deletion, recursively deletes the code ' + \
+                             'and variables that have become useless')
+
     #Inputs and outputs
     gInOut = parser.add_argument_group('Input and output')
     gInOut.add_argument('INPUT', help='FORTRAN input file')
@@ -184,6 +188,7 @@ if __name__ == '__main__':
                        help='Show the different localities found in the source code')
 
     args = parser.parse_args()
+    simplify = {'simplify': args.simplify}
 
     #Opening and reading of the FORTRAN file
     if args.parserOption is None:
@@ -199,7 +204,7 @@ if __name__ == '__main__':
     #Variables
     if args.showVariables: pft.showVarList()
     if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
-    if args.removeVariable is not None: pft.removeVar(args.removeVariable)
+    if args.removeVariable is not None: pft.removeVar(args.removeVariable, **simplify)
     if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
     if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
     if args.showUnusedVariables is not None:

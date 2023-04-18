@@ -201,7 +201,7 @@ def _getDeclStmtTag(where):
     return declStmt
 
 @needEtree
-def removeVar(doc, varList):
+def removeVar(doc, varList, simplify=False):
     """
     :param doc: xml fragment to use
     :param varList: list of variables to remove. Each item is a list or tuple of two elements.
@@ -209,6 +209,9 @@ def removeVar(doc, varList):
                     of the variable. The first element is a '/'-separated path with each element
                     having the form 'module:<name of the module>', 'sub:<name of the subroutine>',
                     'func:<name of the function>' or 'type:<name of the type>'
+    :param simplify: try to simplify code (if we delete a declaration statement that used a
+                     variable as kind selector, and if this variable is not used else where,
+                     we also delete it)
     Remove the variable from declaration, and from the argument list if needed
     """
 
@@ -244,12 +247,16 @@ def removeVar(doc, varList):
                         break #cannot be declared twice, we can exit the loop
                 #In case the argument was alone on the declaration statement
                 if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+                    if simplify:
+                        varToRemoveIfUnused = [[where, ETn2name(N)] for N in node.findall('.//{*}N')]
                     #We will delete the current node but we don't want to lose
                     #any text. So, we put the node's text in the tail of the previous node
                     if previous is not None:
                         if previous.tail is None: previous.tail = ''
                         previous.tail += node.tail
                     ETgetParent(doc, node).remove(node)
+                    if simplify:
+                        removeVarIfUnused(doc, varToRemoveIfUnused, excludeDummy=True, simplify=True)
 
             #In case the variable is a module variable
             if node.tag.endswith('}use-stmt'):
@@ -286,7 +293,7 @@ def removeVar(doc, varList):
         if not found:
             raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
 
-def removeVarIfUnused(doc, varList):
+def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     """
     :param doc: xml fragment to use
     :param varList: list of variables to remove if unused. Each item is a list or tuple of two elements.
@@ -294,16 +301,20 @@ def removeVarIfUnused(doc, varList):
                     of the variable. The first element is a '/'-separated path with each element
                     having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                     'func:<name of the function>'
+    :param excludeDummy: if True, dummy arguments are always kept untouched
+    :param simplify: try to simplify code (if we delete a declaration statement that used a
+                     variable as kind selector, and if this variable is not used else where,
+                     we also delete it)
     :return: the varList without the unremovable variables
     If possible, remove the variable from declaration, and from the argument list if needed
     """
     varListToRemove = []
     for localityPath, varName in varList:
-        assert where.split('/')[-1].split(':')[0] != 'type', \
+        assert localityPath.split('/')[-1].split(':')[0] != 'type', \
           "The removeVarIfUnused cannot be used with type members"
-        if not isUsedVar(doc, varName, localityPath):
+        if not isVarUsed(doc, varName, localityPath, dummyAreAlwaysUsed=excludeDummy):
             varListToRemove.append([localityPath, varName])
-    removeVar(doc, varListToRemove)
+    removeVar(doc, varListToRemove, simplify=simplify)
     return varListToRemove
 
 @needEtree
@@ -429,12 +440,13 @@ def addModuleVar(doc, moduleVarList):
         locNode.insert(index, us)
 
 @needEtree
-def isVarUsed(doc, varName, localityPath, strictLocality=False):
+def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUsed=False):
     """
     :param doc: xml fragment to search for variable usage
     :param varName: variable name to search
     :param localityPath: locality to explore
     :param strictLocality: True to search strictly in locality
+    :param dummyAreAlwaysUsed: Returns True if variable is a dummy argument
 
     If strictLocality is True, the function will search for variable usage
     only in this locality. But this feature has a limited interest.
@@ -461,26 +473,35 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False):
             if (not node.tag.endswith('}use-stmt')) and (not node.tag.endswith('}T-decl-stmt')):
                 #We look for the variable name in all the 'N' nodes.
                 for N in [N for N in node.findall('.//{*}N') if varName.upper() == ETn2name(N).upper()]:
-                    parPar = ETgetParent(doc, N, 2) #parent of parent
-                    #We exclude dummy argument list
-                    if parPar is None or not parPar.tag.endswith('}dummy-arg-LT'):
+                    if dummyAreAlwaysUsed:
+                        #No need to check if the variable is a dummy argument; because if it is one
+                        #it will be found in the argument list of the subroutine/function and will
+                        #be considered as used
                         found = True
-                        break
+                    else:
+                        parPar = ETgetParent(doc, N, 2) #parent of parent
+                        #We exclude dummy argument list to really check if the variable is used
+                        #and do not only appear as an argument of the subroutine/function
+                        if parPar is None or not parPar.tag.endswith('}dummy-arg-LT'):
+                            found = True
+                            break
         return found
     else:
         if '/' in localityPath:
             #We are in a contains
             if _varInLoc(varName, localityPath):
                 #Declared here, we must only check here
-                return isVarUsed(doc, varName, localityPath, strictLocality=True)
+                return isVarUsed(doc, varName, localityPath, strictLocality=True,
+                                 dummyAreAlwaysUsed=dummyAreAlwaysUsed)
             else:
                 #Declared upper
-                return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]))
+                return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]),
+                                 dummyAreAlwaysUsed=dummyAreAlwaysUsed)
         else:
             #We are in a top level program unit
             #Variable is globally used if used in any of the localities among
             #the current one and all present in the contains section
-            return any([isVarUsed(doc, varName, loc, strictLocality=True)
+            return any([isVarUsed(doc, varName, loc, strictLocality=True, dummyAreAlwaysUsed=dummyAreAlwaysUsed)
                         for loc in [localityPath] + [l for l in getLocalitiesList(doc)
                                                      if l.upper().startswith(localityPath.upper() + '/') and
                                                         l.split('/')[-1].split(':')[0] != 'type']])
