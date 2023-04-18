@@ -154,8 +154,6 @@ if __name__ == '__main__':
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
                                help='Delete DR HOOK use')
-    gApplications.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
-                               help='Find all if-statement and convert it to if-then-statement')
 
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
@@ -163,6 +161,8 @@ if __name__ == '__main__':
                             help='Put FORTRAN code in upper case letters')
     gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
                             help='Put FORTRAN code in lower case letters')
+    gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
+                            help='Find all if-statement and convert it to if-then-statement')
 
     #Checks
     gChecks = parser.add_argument_group('Check options')
