@@ -1,5 +1,5 @@
 from util import (copy_doc, needEtree, PFTError,
-                  alltext, ETgetParent)
+                  alltext, ETgetParent, ETn2name)
 
 """
 This module implements the locality stuff
@@ -54,7 +54,7 @@ def ETgetLocalityNode(doc, localityPath):
     else:
         top = doc
     for bloc in top.findall('./{*}' + construct + '/{*}' + beginStmt):
-        if alltext(bloc.find('.//{*}N/{*}n')).upper() == blocName:
+        if ETn2name(bloc.find('.//{*}N')).upper() == blocName:
             if remainingPath is None:
                 return ETgetParent(doc, bloc)
             else:
@@ -113,7 +113,7 @@ def ETgetLocalityPath(doc, item, includeItself=True):
     """
     def _getNodePath(node):
         stmt = node[0].tag.split('}')[1]
-        name = alltext(node[0].find('.//{*}N/{*}n')).upper()
+        name = ETn2name(node[0].find('.//{*}N')).upper()
         return {v: k for (k, v) in localityStmt.items()}[stmt] + ':' + name
 
     if includeItself and ETisLocalityNode(item):

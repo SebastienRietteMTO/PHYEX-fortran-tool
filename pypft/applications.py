@@ -25,6 +25,9 @@ def deleteDrHook(doc, delParkind=True):
     :param delParkind : boolean, True to delete PARKIND1 module use
     :return: modified doc
     """
+
+    #TODO: don't use directly the n tags, instead, we must use ETn2name applied to the N tag
+
     n=doc.findall('.//{*}n')
     itemtorm=[]
     paritemtorm=[]

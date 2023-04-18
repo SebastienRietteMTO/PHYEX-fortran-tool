@@ -4,7 +4,7 @@ This module implements functions to deal with variables
 
 from util import (copy_doc, PFTError,
                   tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
-                  ETgetSiblings, ETinsertInList, fortran2xml, ETisExecutableStmt)
+                  ETgetSiblings, ETinsertInList, fortran2xml, ETisExecutableStmt, ETn2name)
 from locality import ETgetLocalityNode, ETgetLocalityChildNodes, getLocalitiesList
 from xml.etree.ElementTree import Element
 import logging
@@ -48,7 +48,7 @@ def getVarList(doc, localityPath=None):
         stmts = ETgetLocalityChildNodes(doc, localityPath)
         
     #Find dummy arguments
-    dummy_args = [e.text for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N/{*}n')]
+    dummy_args = [ETn2name(e) for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
 
     result = []
     decl_stmts = [stmt for stmt in stmts
@@ -66,7 +66,7 @@ def getVarList(doc, localityPath=None):
         #Loop on each declared variables
         en_decls = decl_stmt.findall('.//{*}EN-decl')
         for en_decl in en_decls:
-            n = alltext(en_decl.find('.//{*}n'))
+            n = ETn2name(en_decl.find('.//{*}N'))
             #Dimensions declared after the variable name
             array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
             as_list, asx_list = decode_array_specs(array_specs)
@@ -79,9 +79,9 @@ def getVarList(doc, localityPath=None):
     #Loop on each use statement
     use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
     for use_stmt in use_stmts:
-        module = alltext(use_stmt.find('.//{*}module-N').find('.//{*}n'))
+        module = ETn2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
         for v in use_stmt.findall('.//{*}use-N'):
-            n = alltext(v.find('.//{*}n'))
+            n = ETn2name(v.find('.//{*}N'))
             result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
                            'n': n, 'use': module})
 
@@ -228,7 +228,7 @@ def removeVar(doc, varList):
             if dummy_lst is not None:
                 #Loop over all dummy arguments
                 for arg in dummy_lst.findall('.//{*}arg-N'):
-                    if alltext(arg.find('.//{*}N/{*}n')).upper() == varName:
+                    if ETn2name(arg.find('.//{*}N')).upper() == varName:
                         #The variable is a dummy arg, we remove it from the list
                         ETremoveFromList(arg, dummy_lst)
 
@@ -237,7 +237,7 @@ def removeVar(doc, varList):
                 #We are in a declaration statement
                 decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
                 for en_decl in decl_lst:
-                    if alltext(en_decl.find('.//{*}n')).upper() == varName:
+                    if ETn2name(en_decl.find('.//{*}N')).upper() == varName:
                         #The argument is declared here, we suppress it from the declaration list
                         found = True
                         ETremoveFromList(en_decl, decl_lst)
@@ -257,7 +257,7 @@ def removeVar(doc, varList):
                 use_lst = node.find('./{*}rename-LT')
                 if use_lst is not None:
                     for name in use_lst:
-                        if alltext(name.find('.//{*}N/{*}n')).upper() == varName:
+                        if ETn2name(name.find('.//{*}N')).upper() == varName:
                             found = True
                             #The variable is declared here, we remove it from the list
                             ETremoveFromList(name, use_lst)
@@ -268,6 +268,9 @@ def removeVar(doc, varList):
                             use_lst = node.find('./{*}rename-LT')
                             if len(use_lst) == 0 and attribute[0] == ',' and attribute[1:] == 'ONLY:':
                                 #If there is a 'ONLY' attribute, we suppress the use statement entirely
+                                if previous is not None:
+                                    if previous.tail is None: previous.tail = ''
+                                    previous.tail += node.tail
                                 ETgetParent(doc, node).remove(node)
                             elif len(use_lst) == 0:
                                 #there is no 'ONLY' attribute
@@ -438,7 +441,7 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False):
             if (not node.tag.endswith('}use-stmt')) and (not node.tag.endswith('}T-decl-stmt')):
                 #We look for the variable name in all the 'N' nodes.
                 #Function will return a True value if the name corresponds to a subroutine, function, module... name
-                found = found or any([varName.upper() == alltext(N).upper() for N in node.findall('.//{*}N')])
+                found = found or any([varName.upper() == ETn2name(N).upper() for N in node.findall('.//{*}N')])
         return found
     else:
         if '/' in localityPath:

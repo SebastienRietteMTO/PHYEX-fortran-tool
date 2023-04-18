@@ -140,6 +140,12 @@ def tofortran(doc):
         logging.warning("The file '{}' certainly contains a strange character".format(getFileName(doc)))
     return r
 
+def ETn2name(N):
+    """
+    Helper function which returns the entity name enclosed in a N tag
+    """
+    return ''.join([e.text for e in N.findall('./{*}n')])
+
 @needEtree
 def alltext(doc):
     """ 
