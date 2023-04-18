@@ -204,15 +204,17 @@ def ETremoveFromList(item, l):
     #Suppression of the node
     l.remove(item)
 
-def ETgetParent(doc, item):
+def ETgetParent(doc, item, level=1):
     """
     :param doc: xml fragment in which parent must be searched
     :param item: item whose parent is to be searched
+    :param level: number of degrees (1 to get the parent, 2 to get
+                  the parent of the parent...)
     """
-
+    assert level >= 1
     for p in doc.iter():
         if item in list(p):
-            return p
+            return p if level == 1 else ETgetParent(doc, p, level - 1)
 
 def ETgetSiblings(doc, item, before=True, after=True):
     """

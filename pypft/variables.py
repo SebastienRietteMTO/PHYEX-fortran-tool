@@ -440,8 +440,12 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False):
         for node in ETgetLocalityChildNodes(doc, localityPath):
             if (not node.tag.endswith('}use-stmt')) and (not node.tag.endswith('}T-decl-stmt')):
                 #We look for the variable name in all the 'N' nodes.
-                #Function will return a True value if the name corresponds to a subroutine, function, module... name
-                found = found or any([varName.upper() == ETn2name(N).upper() for N in node.findall('.//{*}N')])
+                for N in [N for N in node.findall('.//{*}N') if varName.upper() == ETn2name(N).upper()]:
+                    parPar = ETgetParent(doc, N, 2) #parent of parent
+                    #We exclude dummy argument list
+                    if parPar is None or not parPar.tag.endswith('}dummy-arg-LT'):
+                        found = True
+                        break
         return found
     else:
         if '/' in localityPath:
