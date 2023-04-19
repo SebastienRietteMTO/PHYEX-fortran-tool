@@ -120,6 +120,9 @@ an error message and raise an exception.
 call statements must be suppressed (it is a locality as described in [Concepts](#concepts)).
 The second argument is the subprogram name.
 
+**\--removePrints** removes print statements. The argument describes from where the
+call statements must be suppressed (it is a locality as described in [Concepts](#concepts)).
+
 ### Applications
 
 **\--deleteDrHook** removes DrHook statements.

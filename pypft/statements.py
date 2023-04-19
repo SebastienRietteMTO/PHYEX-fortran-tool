@@ -35,6 +35,31 @@ def removeCall(doc, callName, localityPath, simplify=False):
                 removeStmtNode(doc, callNode, simplify, simplify)
 
 @needEtree
+def removePrints(doc, localityPath, simplify=False):
+    """
+    Removes all print statements
+    :param doc: xml fragment to use
+    :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
+                         having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
+                         'func:<name of the function>'
+    :param simplify: try to simplify code (if we delete "print*, X" and if X is not used else where,
+                     we also delete it; or if the print was alone inside a if-then-endif construct,
+                     the construct is also removed, and variables used in the if condition are also
+                     checked...)
+    """
+    if localityPath is None:
+        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    else:
+        if isinstance(localityPath, str): localityPath = [localityPath]
+    for loc in localityPath:
+        #Loop on nodes composing the locality
+        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, loc)):
+            printNodes = [node] if node.tag.endswith('}print-stmt') else [] #In case node is a print statement
+            printNodes += [cn for cn in node.findall('.//{*}print-stmt')] #If node is a construct with print statements
+            for printNode in printNodes:
+                removeStmtNode(doc, printNode, simplify, simplify)
+
+@needEtree
 def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
     """
     This function removes a node and:
@@ -76,6 +101,7 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
         _removeNode(doc, node[0], simplifyVar, simplifyStruct, parent=node)
         #We don't remove current node as it is removed automatically by _removeNode even with simplifyStruct==False
     else:
+        #At least a-stmt, print-stmt
         _removeNode(doc, node, simplifyVar, simplifyStruct)
 
 def _nodesInIf(ifNode):
@@ -140,7 +166,7 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
             args = node.find('./{*}arg-spec')
             if args is not None:
                 varToCheck.extend([(loc, ETn2name(arg.find('.//{*}N'))) for arg in args])
-        elif node.tag.endswith('}a-stmt'):
+        elif node.tag.endswith('}a-stmt') or node.tag.endswith('}print-stmt'):
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}N')])
 
     #Node suppression
@@ -167,5 +193,9 @@ class Statements():
     @copy_doc(removeCall)
     def removeCall(self, *args, **kwargs):
         return removeCall(self._xml, *args, **kwargs)
+
+    @copy_doc(removePrints)
+    def removePrints(self, *args, **kwargs):
+        return removePrints(self._xml, *args, **kwargs)
 
 
