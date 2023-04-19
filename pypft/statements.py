@@ -2,8 +2,9 @@
 This module includes functions to act on statements
 """
 
-from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code
-from locality import ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList, ETgetLocalityPath
+from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings
+from locality import (ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList,
+                      ETgetLocalityPath)
 from variables import removeVarIfUnused
 
 @needEtree
@@ -108,6 +109,11 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
     elif node.tag.endswith('}where-stmt'):
         _removeNode(doc, node.find('./{*}action-stmt')[0], simplifyVar, simplifyStruct)
         #We don't remove current node as it is removed automatically by _removeNode even with simplifyStruct==False
+    elif node.tag.endswith('}selectcase-construct'):
+        for item in _nodesInCase(node):
+            #removes inner statements
+            removeStmtNode(doc, item, simplifyVar, False)
+        _removeNode(doc, node, simplifyVar, simplifyStruct)
     else:
         #At least a-stmt, print-stmt
         _removeNode(doc, node, simplifyVar, simplifyStruct)
@@ -145,6 +151,18 @@ def _nodesInDo(doNode):
     for item in [i for i in doNode if not (i.tag.endswith('}do-stmt') or \
                                            i.tag.endswith('}end-do-stmt'))]:
         if not ETnon_code(item): nodes.append(item)
+    return nodes
+
+def _nodesInCase(caseNode):
+    """
+    Internal method to return nodes in do structure
+    """
+    nodes = []
+    for block in caseNode.findall('./{*}selectcase-block'):
+        for item in [i for i in block if not (i.tag.endswith('}select-case-stmt') or \
+                                              i.tag.endswith('}case-stmt') or \
+                                              i.tag.endswith('}end-select-case-stmt'))]:
+            if not ETnon_code(item): nodes.append(item)
     return nodes
 
 @needEtree
@@ -191,8 +209,20 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
                 varToCheck.extend([(loc, ETn2name(arg.find('.//{*}N'))) for arg in args])
         elif node.tag.endswith('}a-stmt') or node.tag.endswith('}print-stmt'):
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}N')])
+        elif node.tag.endswith('}selectcase-construct'):
+            #Try to remove variables used in the selector and in conditions
+            varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}case-E//{*}N')])
+            varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}case-value//{*}N')])
 
     #Node suppression
+    if node.tail is not None:
+        previous = ETgetSiblings(doc, node, after=False)
+        if len(previous) == 0:
+            previous = parent
+        else:
+            previous = previous[-1]
+        if previous.tail is None: previous.tail = ''
+        previous.tail = previous.tail + node.tail
     parent.remove(node)
 
     #Variable simplification
@@ -209,11 +239,15 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
         elif parent.tag.endswith('}if-block'):
             parPar = ETgetParent(doc, parent)
             if len(_nodesInIf(parPar)) == 0:
-                _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
+                _removeNode(doc, parPar, simplifyVar, simplifyStruct)
         elif parent.tag.endswith('}where-block'):
             parPar = ETgetParent(doc, parent)
             if len(_nodesInWhere(parPar)) == 0:
-                _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
+                _removeNode(doc, parPar, simplifyVar, simplifyStruct)
+        elif parent.tag.endswith('}selectcase-block'):
+            parPar = ETgetParent(doc, parent)
+            if len(_nodesInCase(parPar)) == 0:
+                _removeNode(doc, parPar, simplifyVar, simplifyStruct)
 
 
 class Statements():
