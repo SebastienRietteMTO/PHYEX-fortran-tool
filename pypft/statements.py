@@ -94,11 +94,19 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
             #removes inner statements
             removeStmtNode(doc, item, simplifyVar, False)
         _removeNode(doc, node, simplifyVar, simplifyStruct)
+    elif node.tag.endswith('}where-construct'):
+        for item in _nodesInWhere(node):
+            #removes inner statements
+            removeStmtNode(doc, item, simplifyVar, False)
+        _removeNode(doc, node, simplifyVar, simplifyStruct)
     elif node.tag.endswith('}if-stmt'):
         _removeNode(doc, node.find('./{*}action-stmt')[0], simplifyVar, simplifyStruct)
         #We don't remove current node as it is removed automatically by _removeNode even with simplifyStruct==False
     elif node.tag.endswith('}action-stmt'):
         _removeNode(doc, node[0], simplifyVar, simplifyStruct, parent=node)
+        #We don't remove current node as it is removed automatically by _removeNode even with simplifyStruct==False
+    elif node.tag.endswith('}where-stmt'):
+        _removeNode(doc, node.find('./{*}action-stmt')[0], simplifyVar, simplifyStruct)
         #We don't remove current node as it is removed automatically by _removeNode even with simplifyStruct==False
     else:
         #At least a-stmt, print-stmt
@@ -114,6 +122,18 @@ def _nodesInIf(ifNode):
                                               i.tag.endswith('}else-if-stmt') or \
                                               i.tag.endswith('}else-stmt') or \
                                               i.tag.endswith('}end-if-stmt'))]:
+            if not ETnon_code(item): nodes.append(item)
+    return nodes
+
+def _nodesInWhere(whereNode):
+    """
+    Internal method to return nodes in where structure
+    """
+    nodes = []
+    for block in whereNode.findall('./{*}where-block'):
+        for item in [i for i in block if not (i.tag.endswith('}where-construct-stmt') or \
+                                              i.tag.endswith('}else-where-stmt') or \
+                                              i.tag.endswith('}end-where-stmt'))]:
             if not ETnon_code(item): nodes.append(item)
     return nodes
 
@@ -161,6 +181,9 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
         elif node.tag.endswith('}if-construct') or node.tag.endswith('}if-stmt'):
             #Try to remove variables used in the conditions
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}condition-E//{*}N')])
+        elif node.tag.endswith('}where-construct') or node.tag.endswith('}where-stmt'):
+            #Try to remove variables used in the conditions
+            varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}mask-E//{*}N')])
         elif node.tag.endswith('}call-stmt'):
             #We must check if we can suppress the variables used to call the subprogram
             args = node.find('./{*}arg-spec')
@@ -175,17 +198,21 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
     #Variable simplification
     removeVarIfUnused(doc, varToCheck, excludeDummy=True, simplify=simplifyVar)
 
-    #If we have suppressed the statement in a if statement (one-line if)
-    #we must suppress the entire if statement even when simplifyStruct is False
+    #If we have suppressed the statement in a if statement (one-line if) or else statement
+    #we must suppress the entire if/where statement even when simplifyStruct is False
     if parent.tag.endswith('}action-stmt'):
         _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
 
     elif simplifyStruct:
         if parent.tag.endswith('}do-construct') and len(_nodesInDo(parent)) == 0:
             _removeNode(doc, parent, simplifyVar, simplifyStruct)
-        if parent.tag.endswith('}if-block'):
+        elif parent.tag.endswith('}if-block'):
             parPar = ETgetParent(doc, parent)
             if len(_nodesInIf(parPar)) == 0:
+                _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
+        elif parent.tag.endswith('}where-block'):
+            parPar = ETgetParent(doc, parent)
+            if len(_nodesInWhere(parPar)) == 0:
                 _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
 
 
