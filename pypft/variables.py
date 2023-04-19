@@ -214,6 +214,7 @@ def removeVar(doc, varList, simplify=False):
                      we also delete it)
     Remove the variable from declaration, and from the argument list if needed
     """
+    varList = list(set([(v[0], v[1].upper()) for v in varList])) #suppress duplicates
 
     for where, varName in varList:
         found = False

@@ -52,6 +52,8 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
                            also checked...)
     """
     varToCheck = [] #List of variables to check for suppression
+    assert node.tag.endswith('-stmt') or node.tag.endswith('-construct'), \
+      "Don't know how to suppress only a part of a structure or of a statement"
 
     parent = ETgetParent(doc, node)
     loc = ETgetLocalityPath(doc, node)
@@ -67,7 +69,7 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
             #action-stmt has already been removed, we must suppress the if-stmt node
             if simplifyVar:
                 #all the variables used in the conditional part must be checked for removal
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}N')])
+                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}condition-E//{*}N')])
             _removeNode(doc, node, simplifyVar, simplifyStruct, parent=parent)
     elif node.tag.endswith('}action-stmt'):
         if len(node) != 0:
@@ -79,7 +81,12 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
             parent.remove(node)
             removeStmtNode(doc, parent, simplifyVar, simplifyStruct) #The parent (if-stmt node) must be removed
     elif node.tag.endswith('}do-construct'):
-        for item in node[1:]:
+        for item in _nodesInDo(node):
+            #removes inner statements
+            removeStmtNode(doc, item, simplifyVar, False) #Do not touch structure to prevent infinite loop
+        _removeNode(doc, node, simplifyVar, simplifyStruct, parent=parent)
+    elif node.tag.endswith('}if-construct'):
+        for item in _nodesInIf(node):
             #removes inner statements
             removeStmtNode(doc, item, simplifyVar, False) #Do not touch structure to prevent infinite loop
         _removeNode(doc, node, simplifyVar, simplifyStruct, parent=parent)
@@ -102,6 +109,29 @@ def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
     #Variable simplification
     removeVarIfUnused(doc, varToCheck, excludeDummy=True, simplify=simplifyVar)
 
+def _nodesInIf(ifNode):
+    """
+    Internal method to return nodes in if structure
+    """
+    nodes = []
+    for block in ifNode.findall('./{*}if-block'):
+        for item in [i for i in block if not (i.tag.endswith('}if-then-stmt') or \
+                                              i.tag.endswith('}else-if-stmt') or \
+                                              i.tag.endswith('}else-stmt') or \
+                                              i.tag.endswith('}end-if-stmt'))]:
+            if not ETnon_code(item): nodes.append(item)
+    return nodes
+
+def _nodesInDo(doNode):
+    """
+    Internal method to return nodes in do structure
+    """
+    nodes = []
+    for item in [i for i in doNode if not (i.tag.endswith('}do-stmt') or \
+                                           i.tag.endswith('}end-do-stmt'))]:
+        if not ETnon_code(item): nodes.append(item)
+    return nodes
+
 @needEtree
 def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
     """
@@ -109,7 +139,7 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
     to suppress code parts that became useless (empty if, do...)
 
     The removeStmtNode function is in charge to remove the inner part of the statement to remove.
-    The _removeNode removes the node itself and check if upper nodes may also been removed
+    The _removeNode removes the node itself and check if upper nodes may also be removed
 
     :param doc: xml fragment to use
     :param node: node to remove
@@ -133,13 +163,19 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
         if node.tag.endswith('}do-construct'):
             #Try to remove variables used in the loop
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.find('./{*}do-stmt').findall('.//{*}N')])
+        if node.tag.endswith('}if-construct'):
+            #Try to remove variables used in the conditions
+            varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}condition-E//{*}N')])
 
     parent.remove(node)
 
     if simplifyStruct:
-        if parent.tag.endswith('}do-construct') and \
-           len([i for i in parent if not ETnon_code(i)]) == 2: #are there statements other than do/enddo/comments
+        if parent.tag.endswith('}do-construct') and len(_nodesInDo(parent)) == 0:
             _removeNode(doc, parent, simplifyVar, simplifyStruct)
+        if parent.tag.endswith('}if-block'):
+            parPar = ETgetParent(doc, parent)
+            if len(_nodesInIf(parPar)) == 0:
+                _removeNode(doc, ETgetParent(doc, parent), simplifyVar, simplifyStruct)
 
     #Variable simplification
     removeVarIfUnused(doc, varToCheck, excludeDummy=True, simplify=simplifyVar)
