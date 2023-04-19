@@ -10,9 +10,10 @@ from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
 from pypft.applications import Applications
 from pypft.locality import Locality
+from pypft.statements import Statements
 from pypft.util import tostring, tofortran, isint, fortran2xml
 
-class PFT(Variables, Cosmetics, Applications, Locality):
+class PFT(Variables, Cosmetics, Applications, Locality, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
@@ -182,6 +183,18 @@ if __name__ == '__main__':
                          help='Send a warning or raise an error if the "INTENT" ' + \
                               'attribute is missing for a dummy argument')
 
+    #Statements
+    gStatement = parser.add_argument_group('Statements options')
+    gStatement.add_argument('--removeCall', nargs=2, action='append',
+                            metavar=('WHERE', 'CALLNAME'),
+                            help="Call to remove from source code. The first argument " + \
+                                 "is the SUBROUTINE/FUNCTION/MODULE where the call statement" + \
+                                 "has to be removed. It is '/'-separated path with each element having " + \
+                                 "the form 'module:<name of the module>', 'sub:<name of the subroutine>' or " + \
+                                 "'func:<name of the function>'. use 'ALL' to suppress all the call " + \
+                                 "statements regardless where there are. " + \
+                                 "The second argument is the subprogram name")
+
     #Misc
     gMisc = parser.add_argument_group('Miscellaneous')
     gMisc.add_argument('--showLocalities', default=False, action='store_true',
@@ -229,6 +242,10 @@ if __name__ == '__main__':
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
     if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
+
+    #Statements
+    if args.removeCall is not None:
+        for rc in args.removeCall: pft.removeCall(rc[1], None if rc[0] == 'ALL' else rc[0], **simplify)
 
     #Misc
     if args.showLocalities: pft.showLocalitiesList()

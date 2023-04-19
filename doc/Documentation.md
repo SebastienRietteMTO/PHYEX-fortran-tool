@@ -114,6 +114,12 @@ raise an exception.
 dummy argument, issue a warning if option is 'Warn'; otherwise issue
 an error message and raise an exception.
 
+### Dealing with statements
+
+**\--removeCall** removes call statements. The first argument describes from where the
+call statements must be suppressed (it is a locality as described in [Concepts](#concepts)).
+The second argument is the subprogram name.
+
 ### Applications
 
 **\--deleteDrHook** removes DrHook statements.

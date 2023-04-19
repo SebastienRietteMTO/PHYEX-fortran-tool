@@ -291,7 +291,11 @@ def removeVar(doc, varList, simplify=False):
             #Store node for the following iteration
             previous = node
         if not found:
-            raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
+            if '/' in where:
+                #Variable is certainly declared in the level upper
+                removeVar(doc, [('/'.join(where.split('/')[:-1]), varName)], simplify=False)
+            else:
+                raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
 
 def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     """
@@ -494,7 +498,7 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUs
                 return isVarUsed(doc, varName, localityPath, strictLocality=True,
                                  dummyAreAlwaysUsed=dummyAreAlwaysUsed)
             else:
-                #Declared upper
+                #Declared upper, we must start the search one level upper
                 return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]),
                                  dummyAreAlwaysUsed=dummyAreAlwaysUsed)
         else:
