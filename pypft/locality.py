@@ -1,4 +1,4 @@
-from util import (copy_doc, needEtree, PFTError,
+from util import (copy_doc, needEtree, PFTError, debugDecor,
                   alltext, ETgetParent, ETn2name)
 
 """
@@ -8,23 +8,26 @@ This module implements the locality stuff
 localityStmt = {'module':'module-stmt',
                'func': 'function-stmt',
                'sub': 'subroutine-stmt',
-               'type': 'T-stmt'}
+               'type': 'T-stmt',
+               'prog': 'program-stmt'}
 localityConstruct = {'module':'program-unit',
                      'func': 'program-unit',
                      'sub': 'program-unit',
-                     'type': 'T-construct'}
+                     'type': 'T-construct',
+                     'prog': 'program-unit'}
 def _localityStmt(blocType):
     """
     Internal method
     :param blocType: kind of locality
     :return: (construct, beginStmt, endStmt)
     """
-    assert blocType in ('module', 'sub', 'func', 'type')
+    assert blocType in localityStmt.keys()
     stmt = localityStmt[blocType]
     construct = localityConstruct[blocType]
     beginStmt, endStmt = stmt, 'end-{}-stmt'.format(stmt)
     return construct, beginStmt, endStmt
 
+@debugDecor
 def ETisLocalityNode(node):
     """
     :param node: node to test
@@ -33,6 +36,7 @@ def ETisLocalityNode(node):
     """
     return any([node.tag.endswith('}' + construct) for construct in localityConstruct.values()])
 
+@debugDecor
 def ETgetLocalityNode(doc, localityPath):
     """
     :param doc: xml fragment in which the locality path must be found
@@ -53,7 +57,8 @@ def ETgetLocalityNode(doc, localityPath):
         top = doc.find('./{*}file')
     else:
         top = doc
-    for bloc in top.findall('./{*}' + construct + '/{*}' + beginStmt):
+    for bloc in top.findall('./{*}' + construct + '/{*}' + beginStmt) + \
+                top.findall('./{*}interface-construct/{*}' + construct + '/{*}' + beginStmt):
         if ETn2name(bloc.find('.//{*}N')).upper() == blocName:
             if remainingPath is None:
                 return ETgetParent(doc, bloc)
@@ -61,6 +66,7 @@ def ETgetLocalityNode(doc, localityPath):
                 return ETgetLocalityNode(ETgetParent(doc, bloc), remainingPath)
     raise PFTError("The locality path {path} has not been found.".format(path=where))
 
+@debugDecor
 def ETgetLocalityChildNodes(doc, locality):
     """
     :param doc: xml fragment in which the nodes must be found
@@ -88,6 +94,7 @@ def ETgetLocalityChildNodes(doc, locality):
         result.append(locality[-1])
     return result
 
+@debugDecor
 def ETgetParentLocalityNode(doc, item, mustRaise=True):
     """
     :param doc: xml fragment in which parent must be searched
@@ -104,6 +111,7 @@ def ETgetParentLocalityNode(doc, item, mustRaise=True):
         raise PFTError("The locality parent has not been found.")
     return result
 
+@debugDecor
 def ETgetLocalityPath(doc, item, includeItself=True):
     """
     :param doc: xml fragment in which the path must be found
@@ -126,6 +134,7 @@ def ETgetLocalityPath(doc, item, includeItself=True):
         item = ETgetParentLocalityNode(doc, item, mustRaise=False)
     return '/'.join(result)
 
+@debugDecor
 @needEtree
 def getLocalitiesList(doc):
     """

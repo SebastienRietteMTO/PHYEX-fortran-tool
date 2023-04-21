@@ -2,13 +2,14 @@
 This module implements functions to deal with variables
 """
 
-from util import (copy_doc, PFTError,
+from util import (copy_doc, PFTError, debugDecor,
                   tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
                   ETgetSiblings, ETinsertInList, fortran2xml, ETisExecutableStmt, ETn2name)
 from locality import ETgetLocalityNode, ETgetLocalityChildNodes, getLocalitiesList
 from xml.etree.ElementTree import Element
 import logging
 
+@debugDecor
 @needEtree
 def getVarList(doc, localityPath=None):
     """
@@ -87,6 +88,7 @@ def getVarList(doc, localityPath=None):
 
     return result
 
+@debugDecor
 def showVarList(doc, localityPath=None):
     """
     Display on stdout a nice view of all the variables
@@ -116,6 +118,7 @@ def showVarList(doc, localityPath=None):
                     print('    is a local variable')
             print()
 
+@debugDecor
 @needEtree
 def attachArraySpecToEntity(doc):
     """
@@ -148,6 +151,7 @@ def attachArraySpecToEntity(doc):
                 # Remove the dimension and array-spec elements
                 ETremoveFromList(attr_elem,decl)
 
+@debugDecor
 @needEtree
 def getImplicitNoneText(doc):
     """
@@ -157,6 +161,7 @@ def getImplicitNoneText(doc):
     ins = doc.findall('.//{*}implicit-none-stmt')
     return ins[0].text if len(ins) != 0 else None
 
+@debugDecor
 def checkImplicitNone(doc, mustRaise=False): 
     """
     :param doc: xml fragment to use
@@ -172,6 +177,7 @@ def checkImplicitNone(doc, mustRaise=False):
         else:
             logging.warning(message)
 
+@debugDecor
 def checkIntent(doc, mustRaise=False): 
     """
     :param doc: xml fragment to use
@@ -200,6 +206,7 @@ def _getDeclStmtTag(where):
         declStmt = 'T-decl-stmt'
     return declStmt
 
+@debugDecor
 @needEtree
 def removeVar(doc, varList, simplify=False):
     """
@@ -240,7 +247,7 @@ def removeVar(doc, varList, simplify=False):
             if node.tag.endswith('}' + declStmt):
                 #We are in a declaration statement
                 decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
-                for en_decl in decl_lst:
+                for en_decl in decl_lst.findall('.//{*}EN-decl'):
                     if ETn2name(en_decl.find('.//{*}N')).upper() == varName:
                         #The argument is declared here, we suppress it from the declaration list
                         found = True
@@ -264,7 +271,7 @@ def removeVar(doc, varList, simplify=False):
                 #We are in a use statement
                 use_lst = node.find('./{*}rename-LT')
                 if use_lst is not None:
-                    for name in use_lst:
+                    for name in use_lst.findall('.//{*}rename'):
                         if ETn2name(name.find('.//{*}N')).upper() == varName:
                             found = True
                             #The variable is declared here, we remove it from the list
@@ -294,10 +301,11 @@ def removeVar(doc, varList, simplify=False):
         if not found:
             if '/' in where:
                 #Variable is certainly declared in the level upper
-                removeVar(doc, [('/'.join(where.split('/')[:-1]), varName)], simplify=False)
+                removeVar(doc, [('/'.join(where.split('/')[:-1]), varName)], simplify=simplify)
             else:
-                raise PFTError("The variable {var} in {path} has not been found.".format(var=varName, path=where))
+                logging.warning("The variable {var} in {path} has not been found (searched for suppression).".format(var=varName, path=where))
 
+@debugDecor
 def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     """
     :param doc: xml fragment to use
@@ -322,6 +330,7 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     removeVar(doc, varListToRemove, simplify=simplify)
     return varListToRemove
 
+@debugDecor
 @needEtree
 def addVar(doc, varList):
     """
@@ -407,6 +416,7 @@ def addVar(doc, varList):
                     locNode[index - 1].tail = previousTail
                 locNode.insert(index, ds)
 
+@debugDecor
 @needEtree
 def addModuleVar(doc, moduleVarList):
     """
@@ -444,6 +454,7 @@ def addModuleVar(doc, moduleVarList):
         locNode[index - 1].tail = previousTail
         locNode.insert(index, us)
 
+@debugDecor
 @needEtree
 def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUsed=False):
     """
@@ -475,9 +486,17 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUs
         found = False
         #Loop on all child in the locality
         for node in ETgetLocalityChildNodes(doc, localityPath):
-            if (not node.tag.endswith('}use-stmt')) and (not node.tag.endswith('}T-decl-stmt')):
-                #We look for the variable name in all the 'N' nodes.
-                for N in [N for N in node.findall('.//{*}N') if varName.upper() == ETn2name(N).upper()]:
+            #we don't want use statement, it could be where the variable is declaredn not a usage place
+            if not node.tag.endswith('}use-stmt'):
+                if node.tag.endswith('}T-decl-stmt'):
+                    #We don't want the part with the list of declared variables, we only want
+                    #to capture variables used in the kind selector
+                    Nnodes = node.findall('.//{*}_T-spec_//{*}N')
+                else:
+                    Nnodes = node.findall('.//{*}N')
+
+                #We look for the variable name in these 'N' nodes.
+                for N in [N for N in Nnodes if varName.upper() == ETn2name(N).upper()]:
                     if dummyAreAlwaysUsed:
                         #No need to check if the variable is a dummy argument; because if it is one
                         #it will be found in the argument list of the subroutine/function and will
@@ -492,24 +511,23 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUs
                             break
         return found
     else:
-        if '/' in localityPath:
-            #We are in a contains
-            if _varInLoc(varName, localityPath):
-                #Declared here, we must only check here
-                return isVarUsed(doc, varName, localityPath, strictLocality=True,
-                                 dummyAreAlwaysUsed=dummyAreAlwaysUsed)
-            else:
-                #Declared upper, we must start the search one level upper
-                return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]),
-                                 dummyAreAlwaysUsed=dummyAreAlwaysUsed)
+        if '/' in localityPath and not _varInLoc(varName, localityPath):
+            #Declared upper, we must start the search one level upper
+            return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]),
+                             dummyAreAlwaysUsed=dummyAreAlwaysUsed)
         else:
             #We are in a top level program unit
             #Variable is globally used if used in any of the localities among
-            #the current one and all present in the contains section
+            #the current one and all present in the contains section (if not declared in them)
+            testLocalityes = [localityPath] #we must search in the current locality
+            for l in getLocalitiesList(doc):
+                if l.upper().startswith(localityPath.upper() + '/') and \
+                   l.split('/')[-1].split(':')[0] != 'type':
+                    #l is a locality contained inside localityPath and is not a type declaration
+                    if not _varInLoc(varName, l): #there is not another variable with same name declared inside
+                        testLocalityes.append(l) #if variable is used here, it is still needed
             return any([isVarUsed(doc, varName, loc, strictLocality=True, dummyAreAlwaysUsed=dummyAreAlwaysUsed)
-                        for loc in [localityPath] + [l for l in getLocalitiesList(doc)
-                                                     if l.upper().startswith(localityPath.upper() + '/') and
-                                                        l.split('/')[-1].split(':')[0] != 'type']])
+                        for loc in testLocalityes])
 
 def showUnusedVar(doc, localityPath=None):
     """
@@ -528,6 +546,7 @@ def showUnusedVar(doc, localityPath=None):
             print('Some variables declared in {} are unused:'.format(loc))
             print('  - ' + ('\n  - '.join(varList)))
 
+@debugDecor
 def removeUnusedLocalVar(doc, localityPath=None):
     """
     Displays on stdout a list of unued variables

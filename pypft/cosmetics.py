@@ -2,9 +2,10 @@
 This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
-from util import (copy_doc, ETgetParent,
+from util import (copy_doc, ETgetParent, debugDecor,
                   ETnon_code, needEtree)
 
+@debugDecor
 @needEtree
 def upperCase(doc):
     """
@@ -16,6 +17,7 @@ def upperCase(doc):
             elem.text = elem.text.upper()
     return doc
 
+@debugDecor
 @needEtree
 def lowerCase(doc):
     """
@@ -27,6 +29,7 @@ def lowerCase(doc):
             elem.text = elem.text.lower()
     return doc
 
+@debugDecor
 def changeIfStatementsInIfConstructs(doc):
     """
     Find all if-stmt and convert it to if-then-stmt

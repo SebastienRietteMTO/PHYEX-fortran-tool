@@ -3,9 +3,10 @@ This module implements functions for high-to-moderate level transformation
 """
 
 import xml.etree.ElementTree as ET
-from util import (copy_doc,
+from util import (copy_doc, debugDecor,
                   alltext, needEtree, ETgetParent)
 
+@debugDecor
 @needEtree
 def deleteDrHook(doc, delParkind=True):
     """

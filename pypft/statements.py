@@ -2,11 +2,12 @@
 This module includes functions to act on statements
 """
 
-from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings
+from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings, debugDecor
 from locality import (ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList,
                       ETgetLocalityPath)
 from variables import removeVarIfUnused
 
+@debugDecor
 @needEtree
 def removeCall(doc, callName, localityPath, simplify=False):
     """
@@ -35,6 +36,7 @@ def removeCall(doc, callName, localityPath, simplify=False):
             for callNode in callNodes:
                 removeStmtNode(doc, callNode, simplify, simplify)
 
+@debugDecor
 @needEtree
 def removePrints(doc, localityPath, simplify=False):
     """
@@ -60,6 +62,7 @@ def removePrints(doc, localityPath, simplify=False):
             for printNode in printNodes:
                 removeStmtNode(doc, printNode, simplify, simplify)
 
+@debugDecor
 @needEtree
 def removeStmtNode(doc, node, simplifyVar, simplifyStruct):
     """
@@ -165,6 +168,7 @@ def _nodesInCase(caseNode):
             if not ETnon_code(item): nodes.append(item)
     return nodes
 
+@debugDecor
 @needEtree
 def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
     """
@@ -204,9 +208,9 @@ def _removeNode(doc, node, simplifyVar, simplifyStruct, parent=None):
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}mask-E//{*}N')])
         elif node.tag.endswith('}call-stmt'):
             #We must check if we can suppress the variables used to call the subprogram
-            args = node.find('./{*}arg-spec')
-            if args is not None:
-                varToCheck.extend([(loc, ETn2name(arg.find('.//{*}N'))) for arg in args])
+            varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('./{*}arg-spec//{*}N')])
+            #And maybe, the subprogram comes from a module
+            varToCheck.append((loc, ETn2name(node.find('./{*}procedure-designator//{*}N'))))
         elif node.tag.endswith('}a-stmt') or node.tag.endswith('}print-stmt'):
             varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}N')])
         elif node.tag.endswith('}selectcase-construct'):

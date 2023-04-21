@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 
 import os
-import subprocess
-import xml.etree.ElementTree as ET
-from io import StringIO
-import logging
 
 from pypft.variables import Variables
 from pypft.cosmetics import Cosmetics
 from pypft.applications import Applications
 from pypft.locality import Locality
 from pypft.statements import Statements
-from pypft.util import tostring, tofortran, isint, fortran2xml
+from pypft.util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
 
 class PFT(Variables, Cosmetics, Applications, Locality, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
@@ -100,6 +96,8 @@ if __name__ == '__main__':
     parser.add_argument('--simplify', default=False, action='store_true',
                         help='After a deletion, recursively deletes the code ' + \
                              'and variables that have become useless')
+    parser.add_argument('--logLevel', default='warning',
+                        help='Provide logging level. Example --logLevel debug (default is warning)' )
 
     #Inputs and outputs
     gInOut = parser.add_argument_group('Input and output')
@@ -209,6 +207,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     simplify = {'simplify': args.simplify}
+    set_verbosity(args.logLevel)
 
     #Opening and reading of the FORTRAN file
     if args.parserOption is None:
@@ -263,3 +262,6 @@ if __name__ == '__main__':
     if args.xml is not None: pft.writeXML(args.xml)
     if not args.dryRun:
         pft.write()
+
+    #Infos
+    print_infos()

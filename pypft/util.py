@@ -5,10 +5,80 @@ import logging
 import tempfile
 import os
 import subprocess
+import logging
+import time
 
 """
 This module implements some tools to manipulate the xml
 """
+
+################################################################################
+### Verbosity, decorators and Exception
+
+debugStats = {}
+
+def debugDecor(func):
+    """
+    Defines a decorator to trace all function calling with arguments and results
+    and count number of calls and time spent
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        #Logging call
+        logger = logging.getLogger()
+        if logger.isEnabledFor(logging.DEBUG):
+            callstr = func.__name__ + \
+                      '(' + ', '.join([str(a) for a in args] + \
+                                      [k + '=' + str(v) for (k, v) in kwargs.items()]) + ')'
+            logging.debug(callstr + ' --> ...')
+
+        #Count and time
+        if logger.isEnabledFor(logging.INFO):
+            t0 = time.time()
+
+        #effective call
+        result = func(*args, **kwargs)
+
+        #Count and time
+        if logger.isEnabledFor(logging.INFO):
+            import util
+            if not func.__name__ in util.debugStats:
+                util.debugStats[func.__name__] = dict(nb=0, totalTime=0)
+            util.debugStats[func.__name__]['nb'] += 1
+            duration = time.time() - t0
+            util.debugStats[func.__name__]['totalTime'] += duration
+            util.debugStats[func.__name__]['min'] = min(duration, util.debugStats[func.__name__].get('min', duration))
+            util.debugStats[func.__name__]['max'] = max(duration, util.debugStats[func.__name__].get('max', duration))
+
+        #logging result
+        if logger.isEnabledFor(logging.DEBUG):
+            logging.debug(callstr + ' --> ' + str(result))
+
+        #return result
+        return result
+    return wrapper
+
+def set_verbosity(level):
+    """
+    Set the verbosity level
+    :param level: verbosity level used to set the logging module
+    """
+    logger = logging.getLogger()
+    if isinstance(level, str):
+        logger.setLevel(level=level.upper())
+    else:
+        logger.setLevel(level=level)
+
+def print_infos():
+    logger = logging.getLogger()
+    if logger.isEnabledFor(logging.INFO):
+        def _print(name, nb, min, max, mean):
+            print('| ' + name.ljust(30) + '| ' + str(nb).ljust(14) + '| ' + \
+                  str(min).ljust(23) + '| ' + str(max).ljust(23) + '| ' + str(mean).ljust(23) + '|')
+        _print('Name of the function', '# of calls', 'Min (s)', 'Maxi (s)', 'Total (s)')
+        import util
+        for funcName, values in util.debugStats.items():
+            _print(funcName, values['nb'], values['min'], values['max'], values['totalTime'])
 
 def copy_doc(copy_func):
     """
@@ -23,6 +93,9 @@ def copy_doc(copy_func):
     return wrapper
 
 class PFTError(Exception): pass
+
+################################################################################
+### Conversions
 
 def minidom2etree(doc):
     """
@@ -64,15 +137,6 @@ def needMinidom(func):
         else:
             return func(doc, *args, **kwargs)
     return wrapper
-
-@needEtree
-def getFileName(doc):
-    """
-    :param doc: an ET object
-    :return: the name of the input file name or 'unknown' if not available
-             in the xml fragment provided
-    """
-    return doc.find('.//{*}file').attrib['name']
 
 def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
     """
@@ -139,6 +203,18 @@ def tofortran(doc):
     except UnicodeDecodeError:
         logging.warning("The file '{}' certainly contains a strange character".format(getFileName(doc)))
     return r
+
+################################################################################
+### Helper functions acting on the xml
+
+@needEtree
+def getFileName(doc):
+    """
+    :param doc: an ET object
+    :return: the name of the input file name or 'unknown' if not available
+             in the xml fragment provided
+    """
+    return doc.find('.//{*}file').attrib['name']
 
 def ETn2name(N):
     """
