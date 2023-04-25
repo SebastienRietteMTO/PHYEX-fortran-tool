@@ -111,6 +111,16 @@ def ETgetParentLocalityNode(doc, item, mustRaise=True):
         raise PFTError("The locality parent has not been found.")
     return result
 
+def _getNodePath(node):
+    """
+    Internal methode to compute a path part from a node
+    :param node: program-unit node
+    :return: path part (e.g. module:MODU)
+    """
+    stmt = node[0].tag.split('}')[1]
+    name = ETn2name(node[0].find('.//{*}N')).upper()
+    return {v: k for (k, v) in localityStmt.items()}[stmt] + ':' + name
+
 @debugDecor
 def ETgetLocalityPath(doc, item, includeItself=True):
     """
@@ -119,11 +129,6 @@ def ETgetLocalityPath(doc, item, includeItself=True):
     :param includeItself: include the item if it is a locality node
     :return: the full path of the structure containing item
     """
-    def _getNodePath(node):
-        stmt = node[0].tag.split('}')[1]
-        name = ETn2name(node[0].find('.//{*}N')).upper()
-        return {v: k for (k, v) in localityStmt.items()}[stmt] + ':' + name
-
     if includeItself and ETisLocalityNode(item):
         result = [_getNodePath(item)]
     else:
@@ -136,17 +141,36 @@ def ETgetLocalityPath(doc, item, includeItself=True):
 
 @debugDecor
 @needEtree
-def getLocalitiesList(doc):
+def getLocalitiesList(doc, withNodes=False):
     """
     :param doc: xml document in which localities must be found
-    :return: a list of localities (module, subroutines, functions and
-             type declaration)
+    :param withNodes: to return nodes in addition to path
+    :return: if withNodes='dict', returns a dict whose keys are the path to localities
+                                  (module, subroutines, functions and type declaration)
+                                  present in doc; and values are the corresponding nodes.
+             if withNodes='tuple', returns a list of tuples whith two elements, the first
+                                   one is the path, the second one the node.
+             otherwise, returns a list of paths.
     """
-    result = []
-    for stmt in localityStmt.values():
-        for item in doc.findall('.//{*}' + stmt):
-            result.append(ETgetLocalityPath(doc, item))
-    return result
+    def _getRecur(doc, node, basePath=''):
+        #If node is the entire doc
+        if node.tag.endswith('}object'):
+            node = doc.find('./{*}file')
+        results = []
+        for child in node:
+            if any([child.tag.endswith(struct) for struct in localityConstruct.values()]):
+                path = _getNodePath(child) if basePath == '' else basePath + '/' + _getNodePath(child)
+                results.append((path, child))
+                results.extend(_getRecur(doc, child, path))
+        return results
+
+    result = _getRecur(doc, doc)
+    if withNodes == 'tuple':
+        return result
+    elif withNodes == 'dict':
+       return {path:node for (path, node) in result}
+    else:
+        return [r[0] for r in result]
 
 class Locality():
     @copy_doc(getLocalitiesList)
