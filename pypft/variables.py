@@ -501,13 +501,13 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
     else:
         #Function to determine if var is declared in this locality, with cache
         allVar = {}
+        allLocalities = getLocalitiesList(doc, withNodes='dict')
         def _varInLoc(var, loc):
             #Is the variable declared in this locality
             if not loc in allVar:
-                allVar[loc] = getVarList(doc, loc)
+                allVar[loc] = getVarList(doc, allLocalities[loc])
             return var.upper() in [v['n'].upper() for v in allVar[loc]]
 
-        allLocalities = getLocalitiesList(doc)
         locsVar = {}
         for localityPath, varName in varList:
             loc = localityPath
@@ -520,7 +520,7 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
             #We start search from here but we must include all routines in contains
             #that do not declare again the same variable name
             testLocalities = [loc] #we must search in the current locality
-            for l in allLocalities:
+            for l in allLocalities.keys():
                 if l.startswith(loc + '/') and \
                    l.split('/')[-1].split(':')[0] != 'type':
                     #l is a locality contained inside loc and is not a type declaration
@@ -533,7 +533,7 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
     for loc in list(set([item for sublist in locsVar.values() for item in sublist])):
         usedVar[loc] = []
         #Loop on all child in the locality
-        for node in ETgetLocalityChildNodes(doc, loc):
+        for node in ETgetLocalityChildNodes(doc, allLocalities[loc]):
             #we don't want use statement, it could be where the variable is declared, not a usage place
             if not node.tag.endswith('}use-stmt'):
                 if node.tag.endswith('}T-decl-stmt'):
