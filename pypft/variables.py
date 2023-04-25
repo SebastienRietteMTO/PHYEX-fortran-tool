@@ -206,6 +206,15 @@ def _getDeclStmtTag(where):
         declStmt = 'T-decl-stmt'
     return declStmt
 
+def _normalizeUniqVarList(varList):
+    """
+    Internal method to suppress duplicates in varList (list of tuples made of localyty and variable name)
+    """
+    return list(set([('/'.join([(k.lower() + ':' + w.upper())
+                                for (k, w) in [component.split(':') for component in where.split('/')]]),
+                      var.upper())
+                     for (where, var) in varList]))
+
 @debugDecor
 @needEtree
 def removeVar(doc, varList, simplify=False):
@@ -221,7 +230,7 @@ def removeVar(doc, varList, simplify=False):
                      we also delete it)
     Remove the variable from declaration, and from the argument list if needed
     """
-    varList = list(set([(v[0], v[1].upper()) for v in varList])) #suppress duplicates
+    varList = _normalizeUniqVarList(varList)
 
     for where, varName in varList:
         found = False
@@ -302,8 +311,6 @@ def removeVar(doc, varList, simplify=False):
             if '/' in where:
                 #Variable is certainly declared in the level upper
                 removeVar(doc, [('/'.join(where.split('/')[:-1]), varName)], simplify=simplify)
-            else:
-                logging.warning("The variable {var} in {path} has not been found (searched for suppression).".format(var=varName, path=where))
 
 @debugDecor
 def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
@@ -321,11 +328,14 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     :return: the varList without the unremovable variables
     If possible, remove the variable from declaration, and from the argument list if needed
     """
+    varList = _normalizeUniqVarList(varList)
+
+    varUsed = isVarUsed(doc, varList, dummyAreAlwaysUsed=excludeDummy)
     varListToRemove = []
     for localityPath, varName in varList:
         assert localityPath.split('/')[-1].split(':')[0] != 'type', \
           "The removeVarIfUnused cannot be used with type members"
-        if not isVarUsed(doc, varName, localityPath, dummyAreAlwaysUsed=excludeDummy):
+        if not varUsed[(localityPath, varName)]:
             varListToRemove.append([localityPath, varName])
     removeVar(doc, varListToRemove, simplify=simplify)
     return varListToRemove
@@ -456,13 +466,18 @@ def addModuleVar(doc, moduleVarList):
 
 @debugDecor
 @needEtree
-def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUsed=False):
+def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
     """
     :param doc: xml fragment to search for variable usage
-    :param varName: variable name to search
-    :param localityPath: locality to explore
+    :param varList: list of variables to remove if unused. Each item is a list or tuple of two elements.
+                    The first one describes where the variable is declared, the second one is the name
+                    of the variable. The first element is a '/'-separated path with each element
+                    having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
+                    'func:<name of the function>'
     :param strictLocality: True to search strictly in locality
     :param dummyAreAlwaysUsed: Returns True if variable is a dummy argument
+    :return: a dict whose keys are the elements of varList, and values are True when the variable is
+             used, False otherwise
 
     If strictLocality is True, the function will search for variable usage
     only in this locality. But this feature has a limited interest.
@@ -478,15 +493,48 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUs
 
     To know if a variable can be removed, you must use strictLocality=False
     """
-    assert localityPath.split('/')[-1].split(':')[0] != 'type', 'We cannot check type component usage'
-    def _varInLoc(var, loc):
-        #Is the variable declared in this locality
-        return var.upper() in [v['n'].upper() for v in getVarList(doc, loc)]
+    varList = _normalizeUniqVarList(varList)
+
+    #Computes in which localities variable must be searched
     if strictLocality:
-        found = False
+        locsVar = [([localityPath], varName) for localityPath, varName in varList]
+    else:
+        #Function to determine if var is declared in this locality, with cache
+        allVar = {}
+        def _varInLoc(var, loc):
+            #Is the variable declared in this locality
+            if not loc in allVar:
+                allVar[loc] = getVarList(doc, loc)
+            return var.upper() in [v['n'].upper() for v in allVar[loc]]
+
+        allLocalities = getLocalitiesList(doc)
+        locsVar = {}
+        for localityPath, varName in varList:
+            loc = localityPath
+
+            #Should we search in upper levels
+            while('/' in loc and not _varInLoc(varName, loc)):
+                #Declared upper, we must start the search one level upper
+                loc = '/'.join(loc.split('/')[:-1])
+
+            #We start search from here but we must include all routines in contains
+            #that do not declare again the same variable name
+            testLocalities = [loc] #we must search in the current locality
+            for l in allLocalities:
+                if l.startswith(loc + '/') and \
+                   l.split('/')[-1].split(':')[0] != 'type':
+                    #l is a locality contained inside loc and is not a type declaration
+                    if not _varInLoc(varName, l): #there is not another variable with same name declared inside
+                        testLocalities.append(l) #if variable is used here, it is used
+            locsVar[(localityPath, varName)] = testLocalities
+
+    #For each locality to search, list all the variables used
+    usedVar = {}
+    for loc in list(set([item for sublist in locsVar.values() for item in sublist])):
+        usedVar[loc] = []
         #Loop on all child in the locality
-        for node in ETgetLocalityChildNodes(doc, localityPath):
-            #we don't want use statement, it could be where the variable is declaredn not a usage place
+        for node in ETgetLocalityChildNodes(doc, loc):
+            #we don't want use statement, it could be where the variable is declared, not a usage place
             if not node.tag.endswith('}use-stmt'):
                 if node.tag.endswith('}T-decl-stmt'):
                     #We don't want the part with the list of declared variables, we only want
@@ -496,38 +544,26 @@ def isVarUsed(doc, varName, localityPath, strictLocality=False, dummyAreAlwaysUs
                     Nnodes = node.findall('.//{*}N')
 
                 #We look for the variable name in these 'N' nodes.
-                for N in [N for N in Nnodes if varName.upper() == ETn2name(N).upper()]:
+                for N in Nnodes:
                     if dummyAreAlwaysUsed:
                         #No need to check if the variable is a dummy argument; because if it is one
                         #it will be found in the argument list of the subroutine/function and will
                         #be considered as used
-                        found = True
+                        usedVar[loc].append(ETn2name(N).upper())
                     else:
                         parPar = ETgetParent(doc, N, 2) #parent of parent
                         #We exclude dummy argument list to really check if the variable is used
                         #and do not only appear as an argument of the subroutine/function
                         if parPar is None or not parPar.tag.endswith('}dummy-arg-LT'):
-                            found = True
-                            break
-        return found
-    else:
-        if '/' in localityPath and not _varInLoc(varName, localityPath):
-            #Declared upper, we must start the search one level upper
-            return isVarUsed(doc, varName, '/'.join(localityPath.split('/')[:-1]),
-                             dummyAreAlwaysUsed=dummyAreAlwaysUsed)
-        else:
-            #We are in a top level program unit
-            #Variable is globally used if used in any of the localities among
-            #the current one and all present in the contains section (if not declared in them)
-            testLocalityes = [localityPath] #we must search in the current locality
-            for l in getLocalitiesList(doc):
-                if l.upper().startswith(localityPath.upper() + '/') and \
-                   l.split('/')[-1].split(':')[0] != 'type':
-                    #l is a locality contained inside localityPath and is not a type declaration
-                    if not _varInLoc(varName, l): #there is not another variable with same name declared inside
-                        testLocalityes.append(l) #if variable is used here, it is still needed
-            return any([isVarUsed(doc, varName, loc, strictLocality=True, dummyAreAlwaysUsed=dummyAreAlwaysUsed)
-                        for loc in testLocalityes])
+                            usedVar[loc].append(ETn2name(N).upper())
+
+    
+    result = {}
+    for localityPath, varName in varList:
+        assert localityPath.split('/')[-1].split(':')[0] != 'type', 'We cannot check type component usage'
+        result[(localityPath, varName)] = any([varName.upper() in usedVar[loc] for loc in locsVar[(localityPath, varName)]])
+        
+    return result
 
 def showUnusedVar(doc, localityPath=None):
     """
@@ -540,8 +576,9 @@ def showUnusedVar(doc, localityPath=None):
     else:
         if isinstance(localityPath, str): localityPath = [localityPath]
 
+    varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in getVarList(doc, loc)])
     for loc in localityPath:
-        varList = [v['n'].upper() for v in getVarList(doc, loc) if not isVarUsed(doc, v['n'], loc)]
+        varList = [k[1].upper() for (k, v) in varUsed.items if v and k[0] == loc]
         if len(varList) != 0:
             print('Some variables declared in {} are unused:'.format(loc))
             print('  - ' + ('\n  - '.join(varList)))
@@ -558,11 +595,14 @@ def removeUnusedLocalVar(doc, localityPath=None):
     else:
         if isinstance(localityPath, str): localityPath = [localityPath]
 
+    allVar = {loc: getVarList(doc, loc) for loc in localityPath}
+    varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in allVar[loc]])
+    varlist = []
     for loc in localityPath:
-        varList = [(loc, v['n']) for v in getVarList(doc, loc)
-                   if (not v['arg']) and
-                      (not isVarUsed(doc, v['n'], loc))]
-        removeVar(doc, varList)
+        varList.extend([(loc, v['n']) for v in allVar[loc]
+                        if (not v['arg']) and
+                           (not varUsed[(loc, v['n'])])])
+    removeVar(doc, varList)
 
 
 class Variables():
