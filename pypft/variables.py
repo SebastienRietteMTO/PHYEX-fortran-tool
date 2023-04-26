@@ -67,7 +67,7 @@ def getVarList(doc, localityPath=None):
         #Loop on each declared variables
         en_decls = decl_stmt.findall('.//{*}EN-decl')
         for en_decl in en_decls:
-            n = ETn2name(en_decl.find('.//{*}N'))
+            n = ETn2name(en_decl.find('.//{*}N')).upper()
             #Dimensions declared after the variable name
             array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
             as_list, asx_list = decode_array_specs(array_specs)
@@ -616,7 +616,7 @@ def removeUnusedLocalVar(doc, localityPath=None):
 
     allVar = {loc: getVarList(doc, loc) for loc in localityPath}
     varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in allVar[loc]])
-    varlist = []
+    varList = []
     for loc in localityPath:
         varList.extend([(loc, v['n']) for v in allVar[loc]
                         if (not v['arg']) and
