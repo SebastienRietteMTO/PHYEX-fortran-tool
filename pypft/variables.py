@@ -597,7 +597,7 @@ def showUnusedVar(doc, localityPath=None):
 
     varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in getVarList(doc, loc)])
     for loc in localityPath:
-        varList = [k[1].upper() for (k, v) in varUsed.items if v and k[0] == loc]
+        varList = [k[1].upper() for (k, v) in varUsed.items() if (not v) and k[0] == loc]
         if len(varList) != 0:
             print('Some variables declared in {} are unused:'.format(loc))
             print('  - ' + ('\n  - '.join(varList)))
