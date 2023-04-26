@@ -232,85 +232,104 @@ def removeVar(doc, varList, simplify=False):
     """
     varList = _normalizeUniqVarList(varList)
 
+    #Sort localities by depth
+    sortedVarList = {}
     for where, varName in varList:
-        found = False
-        varName = varName.upper()
-        declStmt = _getDeclStmtTag(where)
-        
-        previous = None
-        #If where is "module:XX/sub:YY", ETgetLocalityNode returns the "program-unit" node
-        #just above the subroutine declaration statement.
-        #ETgetLocalityChildNodes returns all the node contained in the subroutine
-        #excluding the subroutine and functions potentially included after a "contains" statement
-        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, where)):
-            #Checks if variable is a dummy argument
-            dummy_lst = node.find('{*}dummy-arg-LT') #This is the list of the dummy arguments (function or subroutine)
-            if dummy_lst is not None:
-                #Loop over all dummy arguments
-                for arg in dummy_lst.findall('.//{*}arg-N'):
-                    if ETn2name(arg.find('.//{*}N')).upper() == varName:
-                        #The variable is a dummy arg, we remove it from the list
-                        ETremoveFromList(arg, dummy_lst)
+        nb = where.count('/')
+        sortedVarList[nb] = sortedVarList.get(nb, []) + [(where, varName.upper())]
 
-            #In case the variable is declared
-            if node.tag.endswith('}' + declStmt):
-                #We are in a declaration statement
-                decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
-                for en_decl in decl_lst.findall('.//{*}EN-decl'):
-                    if ETn2name(en_decl.find('.//{*}N')).upper() == varName:
-                        #The argument is declared here, we suppress it from the declaration list
-                        found = True
-                        ETremoveFromList(en_decl, decl_lst)
-                        break #cannot be declared twice, we can exit the loop
-                #In case the argument was alone on the declaration statement
-                if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
-                    if simplify:
-                        varToRemoveIfUnused = [[where, ETn2name(N)] for N in node.findall('.//{*}N')]
-                    #We will delete the current node but we don't want to lose
-                    #any text. So, we put the node's text in the tail of the previous node
-                    if previous is not None:
-                        if previous.tail is None: previous.tail = ''
-                        previous.tail += node.tail
-                    ETgetParent(doc, node).remove(node)
-                    if simplify:
-                        removeVarIfUnused(doc, varToRemoveIfUnused, excludeDummy=True, simplify=True)
+    #Not found at start up
+    found = {v:False for v in varList}
 
-            #In case the variable is a module variable
-            if node.tag.endswith('}use-stmt'):
-                #We are in a use statement
-                use_lst = node.find('./{*}rename-LT')
-                if use_lst is not None:
-                    for name in use_lst.findall('.//{*}rename'):
-                        if ETn2name(name.find('.//{*}N')).upper() == varName:
-                            found = True
-                            #The variable is declared here, we remove it from the list
-                            ETremoveFromList(name, use_lst)
-                            #In case the variable was alone
-                            attribute = node.find('{*}module-N').tail
-                            if attribute is None: attribute = ''
-                            attribute = attribute.replace(' ', '').replace('\n', '').replace('&', '').upper()
-                            use_lst = node.find('./{*}rename-LT')
-                            if len(use_lst) == 0 and attribute[0] == ',' and attribute[1:] == 'ONLY:':
-                                #If there is a 'ONLY' attribute, we suppress the use statement entirely
-                                if previous is not None:
-                                    if previous.tail is None: previous.tail = ''
-                                    previous.tail += node.tail
-                                ETgetParent(doc, node).remove(node)
-                            elif len(use_lst) == 0:
-                                #there is no 'ONLY' attribute
-                                moduleName = ETgetSiblings(doc, use_lst, before=True, after=False)[-1]
-                                previousTail = moduleName.tail
-                                if previousTail is not None:
-                                    moduleName.tail = previousTail.replace(',', '')
-                                ETgetParent(doc, use_lst).remove(use_lst)
-                            break
+    varToRemoveIfUnused = []
+    #Loop on varList starting by inner most variables
+    nbList = [] if len(sortedVarList.keys()) == 0 else range(max(sortedVarList.keys()) + 1)[::-1]
+    for nb in nbList:
+        sortedVarList[nb] = sortedVarList.get(nb, [])
+        #Loop on localities
+        for where in list(set([where for where, _ in sortedVarList[nb]])):
+            #Variables searched in this locality
+            varNames = list(set([v for (w, v) in sortedVarList[nb] if w == where]))
+            declStmt = _getDeclStmtTag(where)
+            #If where is "module:XX/sub:YY", ETgetLocalityNode returns the "program-unit" node
+            #just above the subroutine declaration statement.
+            #ETgetLocalityChildNodes returns all the node contained in the subroutine
+            #excluding the subroutine and functions potentially included after a "contains" statement
+            previous = None
+            for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, where)):
+                #Checks if variable is a dummy argument
+                dummy_lst = node.find('{*}dummy-arg-LT') #This is the list of the dummy arguments
+                if dummy_lst is not None:
+                    #Loop over all dummy arguments
+                    for arg in dummy_lst.findall('.//{*}arg-N'):
+                        name = ETn2name(arg.find('.//{*}N')).upper()
+                        for varName in [v for v in varNames if v == name]:
+                            #This dummy arg is a searched variable, we remove it from the list
+                            ETremoveFromList(arg, dummy_lst)
 
-            #Store node for the following iteration
-            previous = node
-        if not found:
-            if '/' in where:
-                #Variable is certainly declared in the level upper
-                removeVar(doc, [('/'.join(where.split('/')[:-1]), varName)], simplify=simplify)
+                #In case the variable is declared
+                if node.tag.endswith('}' + declStmt):
+                    #We are in a declaration statement
+                    decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
+                    for en_decl in decl_lst.findall('.//{*}EN-decl'):
+                        name = ETn2name(en_decl.find('.//{*}N')).upper()
+                        for varName in [v for v in varNames if v == name]:
+                            #The argument is declared here, we suppress it from the declaration list
+                            varNames.remove(varName)
+                            ETremoveFromList(en_decl, decl_lst)
+                    #In all the variables are suppressed from the declaration statement
+                    if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
+                        if simplify:
+                            varToRemoveIfUnused.extend([[where, ETn2name(N)] for N in node.findall('.//{*}N')])
+                        #We will delete the current node but we don't want to lose
+                        #any text. So, we put the node's text in the tail of the previous node
+                        if previous is not None:
+                            if previous.tail is None: previous.tail = ''
+                            previous.tail += node.tail
+                        ETgetParent(doc, node).remove(node)
+
+                #In case the variable is a module variable
+                if node.tag.endswith('}use-stmt'):
+                    #We are in a use statement
+                    use_lst = node.find('./{*}rename-LT')
+                    if use_lst is not None:
+                        for rename in use_lst.findall('.//{*}rename'):
+                            name = ETn2name(rename.find('.//{*}N')).upper()
+                            for varName in [v for v in varNames if v == name]:
+                                varNames.remove(varName)
+                                #The variable is declared here, we remove it from the list
+                                ETremoveFromList(rename, use_lst)
+                                #In case the variable was alone
+                                attribute = node.find('{*}module-N').tail
+                                if attribute is None: attribute = ''
+                                attribute = attribute.replace(' ', '').replace('\n', '').replace('&', '').upper()
+                                use_lst = node.find('./{*}rename-LT')
+                                if len(use_lst) == 0 and attribute[0] == ',' and attribute[1:] == 'ONLY:':
+                                    #If there is a 'ONLY' attribute, we suppress the use statement entirely
+                                    if previous is not None:
+                                        if previous.tail is None: previous.tail = ''
+                                        previous.tail += node.tail
+                                    ETgetParent(doc, node).remove(node)
+                                elif len(use_lst) == 0:
+                                    #there is no 'ONLY' attribute
+                                    moduleName = ETgetSiblings(doc, use_lst, before=True, after=False)[-1]
+                                    previousTail = moduleName.tail
+                                    if previousTail is not None:
+                                        moduleName.tail = previousTail.replace(',', '')
+                                    ETgetParent(doc, use_lst).remove(use_lst)
+
+                #end loop if all variables have been found
+                if len(varNames) == 0: break
+                #Store node for the following iteration
+                previous = node
+
+            #If some variables have not been found, they are certainly declared one level upper
+            if len(varNames) != 0:
+                 newWhere = '/'.join(where.split('/')[:-1])
+                 sortedVarList[nb - 1] = sortedVarList.get(nb - 1, []) + [(newWhere, varName) for varName in varNames]
+
+    if simplify and len(varToRemoveIfUnused) > 0:
+        removeVarIfUnused(doc, varToRemoveIfUnused, excludeDummy=True, simplify=True)
 
 @debugDecor
 def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
