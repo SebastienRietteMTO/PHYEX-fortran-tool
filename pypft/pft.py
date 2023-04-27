@@ -239,11 +239,11 @@ if __name__ == '__main__':
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook()
-    if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
     if args.lowerCase: pft.lowerCase()
+    if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
