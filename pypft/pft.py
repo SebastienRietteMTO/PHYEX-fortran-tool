@@ -238,7 +238,7 @@ if __name__ == '__main__':
             pft.removeUnusedLocalVar(args.removeUnusedLocalVariables)
 
     #Applications
-    if args.deleteDrHook: pft.deleteDrHook()
+    if args.deleteDrHook: pft.deleteDrHook(**simplify)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
