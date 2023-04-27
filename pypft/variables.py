@@ -153,13 +153,18 @@ def attachArraySpecToEntity(doc):
 
 @debugDecor
 @needEtree
-def getImplicitNoneText(doc):
+def getImplicitNoneText(doc, loc):
     """
     :param doc: etree to use
+    :param loc: locality to search for the implicit none statement
     :return: the "IMPLICIT NONE" text
     """
-    ins = doc.findall('.//{*}implicit-none-stmt')
-    return ins[0].text if len(ins) != 0 else None
+    if isinstance(loc, str):
+        loc = ETgetLocalityNode(doc, loc)
+    for node in ETgetLocalityChildNodes(doc, loc):
+        if node.tag.endswith('}implicit-none-stmt'):
+            return node.text
+    return None
 
 @debugDecor
 def checkImplicitNone(doc, mustRaise=False): 
@@ -169,13 +174,15 @@ def checkImplicitNone(doc, mustRaise=False):
     Issue a logging.warning if the "IMPLICIT NONE" statment is missing
     If mustRaise is True, issue a logging.error instead and raise an error
     """
-    if getImplicitNoneText(doc) is None:
-        message = "The 'IMPLICIT NONE' statment is missing in file '{}'.".format(getFileName(doc))
-        if mustRaise:
-            logging.error(message)
-            raise PFTError(message)
-        else:
-            logging.warning(message)
+    for loc, node in [(loc, node) for (loc, node) in getLocalitiesList(doc, withNodes='tuple') if loc.count('/') == 0]:
+        if getImplicitNoneText(doc, node) is None:
+            message = "The 'IMPLICIT NONE' statment is missing in file '{file}' for {loc}."
+            message = message.format(file=getFileName(doc), loc=loc)
+            if mustRaise:
+                logging.error(message)
+                raise PFTError(message)
+            else:
+                logging.warning(message)
 
 @debugDecor
 def checkIntent(doc, mustRaise=False): 
