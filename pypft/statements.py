@@ -2,7 +2,7 @@
 This module includes functions to act on statements
 """
 
-from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings, debugDecor
+from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings, debugDecor, alltext
 from locality import (ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList,
                       ETgetLocalityPath)
 from variables import removeVarIfUnused
@@ -89,7 +89,7 @@ def removeConstructNode(doc, node, simplifyVar, simplifyStruct):
     #During this step, nodes are suppressed with simplifyStruct=False to prevent infinite loops
     #then the actual node is removed using removeStmtNode
 
-    if node.tag.endswith('}-construct'):
+    if node.tag.endswith('-construct'):
         #inner nodes
         nodes = {'do-construct': _nodesInDo,
                  'if-construct': _nodesInIf,
@@ -182,6 +182,7 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     #In case the suppression of an if-stmt or where-stmt is asked,
     #we must start by the inner statement
     nodesToSuppress = []
+    if not isinstance(nodes, list): nodes = [nodes]
     for node in nodes:
         if node.tag.endswith('}if-stmt') or node.tag.endswith('}where-stmt'):
             action = node.find('./{*}action-stmt')
@@ -228,14 +229,15 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     for node in nodesToSuppress:
         parent = ETgetParent(doc, node)
         parents[id(node)] = parent
-        if node.tail is not None:
+        newlines = '\n' * (alltext(node).count('\n') if node.tag.endswith('-construct') else 0)
+        if node.tail is not None or len(newlines) > 0:
             previous = ETgetSiblings(doc, node, after=False)
             if len(previous) == 0:
                 previous = parent
             else:
                 previous = previous[-1]
             if previous.tail is None: previous.tail = ''
-            previous.tail = previous.tail + node.tail
+            previous.tail = previous.tail + newlines + (node.tail if node.tail is not None else '')
         parent.remove(node)
     
     #Variable simplification
