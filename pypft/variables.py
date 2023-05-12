@@ -54,7 +54,6 @@ def getVarList(doc, localityPath=None):
         #Find dummy arguments
         dummy_args = [ETn2name(e) for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
 
-        result = []
         decl_stmts = [stmt for stmt in stmts
                       if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
         #Loop on each declaration statement
