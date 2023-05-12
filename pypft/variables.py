@@ -14,10 +14,10 @@ import logging
 def getVarList(doc, localityPath=None):
     """
     :param doc: etree to use
-    :param localityPath: restrict list to this locality (None to get
+    :param localityPath: restrict list to this locality or locality list (None to get
                          variables from all the localities)
-    :return: a list of dictionaries. Each item is a variable. The associated
-             dictionnary has the following keys:
+    :return: a list of dictionaries. Each one is for a different variable
+             and has the following keys:
               - as: list of array specifications, [] for a scalar, None if unknown
               - asx: same but encoded in xml, [] for a scalar, None if unknown
               - n: name of the variable as written
@@ -42,49 +42,52 @@ def getVarList(doc, localityPath=None):
         return as_list, asx_list
 
     if localityPath is None:
-        #We search for declaration in the entire xml
-        stmts = [doc]
+        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        #We search for declaration  only in the nodes corresponding to the locality
-        stmts = ETgetLocalityChildNodes(doc, localityPath)
-        
-    #Find dummy arguments
-    dummy_args = [ETn2name(e) for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
+        if isinstance(localityPath, str): localityPath = [localityPath]
 
     result = []
-    decl_stmts = [stmt for stmt in stmts
-                  if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
-    #Loop on each declaration statement
-    for decl_stmt in decl_stmts:
-        t_spec = alltext(decl_stmt.find('.//{*}_T-spec_'))
-        i_spec = decl_stmt.find('.//{*}intent-spec')
-        if i_spec is not None: i_spec = i_spec.text
-
-        #Dimensions declared with the DIMENSION attribute
-        array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
-        as0_list, asx0_list = decode_array_specs(array_specs)
+    for loc in localityPath:
+        #We search for declaration  only in the nodes corresponding to the locality
+        stmts = ETgetLocalityChildNodes(doc, loc)
         
-        #Loop on each declared variables
-        en_decls = decl_stmt.findall('.//{*}EN-decl')
-        for en_decl in en_decls:
-            n = ETn2name(en_decl.find('.//{*}N')).upper()
-            #Dimensions declared after the variable name
-            array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
-            as_list, asx_list = decode_array_specs(array_specs)
+        #Find dummy arguments
+        dummy_args = [ETn2name(e) for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
 
-            result.append({'as': as_list if len(as0_list) == 0 else as0_list,
-                           'asx': asx_list if len(asx0_list) == 0 else asx0_list,
-                           'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
-                           'use':False})
+        result = []
+        decl_stmts = [stmt for stmt in stmts
+                      if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
+        #Loop on each declaration statement
+        for decl_stmt in decl_stmts:
+            t_spec = alltext(decl_stmt.find('.//{*}_T-spec_'))
+            i_spec = decl_stmt.find('.//{*}intent-spec')
+            if i_spec is not None: i_spec = i_spec.text
 
-    #Loop on each use statement
-    use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
-    for use_stmt in use_stmts:
-        module = ETn2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
-        for v in use_stmt.findall('.//{*}use-N'):
-            n = ETn2name(v.find('.//{*}N'))
-            result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
-                           'n': n, 'use': module})
+            #Dimensions declared with the DIMENSION attribute
+            array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
+            as0_list, asx0_list = decode_array_specs(array_specs)
+            
+            #Loop on each declared variables
+            en_decls = decl_stmt.findall('.//{*}EN-decl')
+            for en_decl in en_decls:
+                n = ETn2name(en_decl.find('.//{*}N')).upper()
+                #Dimensions declared after the variable name
+                array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
+                as_list, asx_list = decode_array_specs(array_specs)
+
+                result.append({'as': as_list if len(as0_list) == 0 else as0_list,
+                               'asx': asx_list if len(asx0_list) == 0 else asx0_list,
+                               'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
+                               'use':False})
+
+        #Loop on each use statement
+        use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
+        for use_stmt in use_stmts:
+            module = ETn2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
+            for v in use_stmt.findall('.//{*}use-N'):
+                n = ETn2name(v.find('.//{*}N'))
+                result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
+                               'n': n, 'use': module})
 
     return result
 
@@ -194,7 +197,7 @@ def checkIntent(doc, mustRaise=False):
     """
     ok = True
     l = logging.error if mustRaise else logging.warn
-    for v in getVarList(doc).values():
+    for v in getVarList(doc):
         if v['arg'] and v['i'] is None:
           l("The dummy argument {} as no INTENT attribute, in file '{}'".format(v['n'], getFileName(doc)))
           ok = False
