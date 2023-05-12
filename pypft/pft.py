@@ -162,7 +162,8 @@ if __name__ == '__main__':
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
                                help='Delete DR HOOK use')
-
+    gApplications.add_argument('--deleteBudgetDDH', default=False, action='store_true',
+                               help='Delete Budget/DDH use')
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -239,6 +240,7 @@ if __name__ == '__main__':
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
+    if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
