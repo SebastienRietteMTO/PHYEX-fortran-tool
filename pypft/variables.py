@@ -327,7 +327,21 @@ def removeVar(doc, varList, simplify=False):
                                     if previousTail is not None:
                                         moduleName.tail = previousTail.replace(',', '')
                                     ETgetParent(doc, use_lst).remove(use_lst)
-
+                        #Check if last object is not an & followed by nothing, if so, remove '&' and the last ','
+                        if use_lst is not None and len(use_lst)>0:
+                            if use_lst[-1].tag.endswith('}cnt'):
+                                use_lst.remove(use_lst[-1])
+                                use_lst[-1].tail=use_lst[-1].tail.replace(',','')
+                            #Remove multiple consecutive empty line with only '&', leave only the first one
+                            allcnt = use_lst.findall('./{*}cnt')
+                            if len(allcnt) > 1:
+                                size_use_lst = len(use_lst)
+                                index_torm = []
+                                for i in range(size_use_lst-1):
+                                    if use_lst[i].tag.endswith('}cnt') and use_lst[i+1].tag.endswith('}cnt'):
+                                        index_torm.append(i+1)
+                                for i in index_torm:
+                                    use_lst.remove(use_lst[i])
                 #end loop if all variables have been found
                 if len(varNames) == 0: break
                 #Store node for the following iteration
