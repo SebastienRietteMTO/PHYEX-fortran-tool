@@ -44,7 +44,7 @@ def getVarList(doc, localityPath=None):
     if localityPath is None:
         localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(localityPath, (str, Element)): localityPath = [localityPath]
 
     result = []
     for loc in localityPath:
