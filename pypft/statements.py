@@ -247,7 +247,7 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     newNodesToSuppress = []
     for node in nodesToSuppress:
         parent = parents[id(node)]
-        #If we have suppressed the statement in a if statement (one-line if) or else statement
+        #If we have suppressed the statement in a if statement (one-line if) or where statement
         #we must suppress the entire if/where statement even when simplifyStruct is False
         if parent.tag.endswith('}action-stmt'):
             newNodesToSuppress.append(ETgetParent(doc, parent))
@@ -271,9 +271,9 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     constructNodes, otherNodes = [], []
     for n in newNodesToSuppress:
         if n.tag.endswith('-construct'):
-            constructNodes.append(n)
+            if n not in constructNodes: constructNodes.append(n)
         else:
-            otherNodes.append(n)
+            if n not in otherNodes: otherNodes.append(n)
     #suppress all statements at once
     if len(otherNodes) > 0:
         removeStmtNode(doc, otherNodes, simplifyVar, False)
