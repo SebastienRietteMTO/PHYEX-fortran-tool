@@ -20,9 +20,24 @@ def deleteDrHook(doc, simplify=False):
     """
     removeCall(doc, 'DR_HOOK', None, simplify=simplify)
 
+@debugDecor
+@needEtree
+def deleteBudgetDDH(doc, simplify=False):
+    """
+    Remove Budget calls.
+    If Simplify is True, also remove all variables only needed for these calls
+    :param doc: etree to use
+    :param simplify : if True, remove variables that are now unused
+    :return: modified doc
+    """
+    removeCall(doc, 'BUDGET_STORE_INIT_PHY', None, simplify=simplify)
+    removeCall(doc, 'BUDGET_STORE_END_PHY', None, simplify=simplify)
+    removeCall(doc, 'BUDGET_STORE_ADD_PHY', None, simplify=simplify)
+
 class Applications():
     @copy_doc(deleteDrHook)
     def deleteDrHook(self, *args, **kwargs):
         return deleteDrHook(self._xml, *args, **kwargs)
-        
-
+    @copy_doc(deleteBudgetDDH)
+    def deleteBudgetDDH(self, *args, **kwargs):
+        return deleteBudgetDDH(self._xml, *args, **kwargs)
