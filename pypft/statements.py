@@ -1,11 +1,60 @@
 """
 This module includes functions to act on statements
 """
-
+import xml.etree.ElementTree as ET
 from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings, debugDecor, alltext
 from locality import (ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList,
                       ETgetLocalityPath)
 from variables import removeVarIfUnused
+
+@debugDecor
+@needEtree
+def setFalseIfStmt(doc, flags, localityPath, simplify=False):
+    """
+    Set to .FALSE. a given boolean fortran flag before removing the node
+    :param doc: xml fragment to use
+    :param flags: list of strings of flags to set to .FALSE.
+    :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
+                         having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
+                         'func:<name of the function>'
+    :param simplify: try to simplify code (if we delete "print*, X" and if X is not used else where,
+                     we also delete it; or if the print was alone inside a if-then-endif construct,
+                     the construct is also removed, and variables used in the if condition are also
+                     checked...)
+    """
+    xmlstring = '''<my_element xmlns:f="http://fxtran.net/#syntax"><f:literal-E> .FALSE. </f:literal-E></my_element>'''
+    FalseNode = ET.fromstring(xmlstring)[0]
+    for flag in flags:
+        flag = flag.upper()
+    if localityPath is None:
+        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    else:
+        if isinstance(localityPath, str): localityPath = [localityPath]
+    setFalseNodes = []
+    for loc in localityPath:
+        #Loop on nodes composing the locality
+        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, loc)):
+            #Multiple flags conditions
+            Node_opE = node.findall('.//{*}condition-E/{*}op-E')
+            for node_opE in Node_opE:
+                for i,n in enumerate(node_opE):
+                    if n.tag.endswith('}named-E') and alltext(n).upper() in flags:
+                        if i == 0: # Append at first object of parent
+                            node_opE.insert(0,FalseNode)
+                        else:
+                            node_opE.append(FalseNode)
+                        ETgetParent(node_opE,n).remove(n)
+            #Solo condition
+            Node_namedE = node.findall('.//{*}condition-E/{*}named-E')
+            for n in Node_namedE:
+                if alltext(n).upper() in flags:
+                    par = ETgetParent(node,n)
+                    par.append(FalseNode)
+                    par.remove(n)
+            for flag in flags:
+                setFalseNodes += [node] if node.tag.endswith('}if-then-stmt') else [] #In case node is a call statement
+    #removeStmtNode(doc, printNodes, simplify, simplify)
+
 
 @debugDecor
 @needEtree

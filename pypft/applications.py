@@ -5,7 +5,7 @@ This module implements functions for high-to-moderate level transformation
 import xml.etree.ElementTree as ET
 from util import (copy_doc, debugDecor,
                   alltext, needEtree, ETgetParent)
-from statements import removeCall
+from statements import removeCall, setFalseIfStmt
 
 @debugDecor
 @needEtree
@@ -33,6 +33,11 @@ def deleteBudgetDDH(doc, simplify=False):
     removeCall(doc, 'BUDGET_STORE_INIT_PHY', None, simplify=simplify)
     removeCall(doc, 'BUDGET_STORE_END_PHY', None, simplify=simplify)
     removeCall(doc, 'BUDGET_STORE_ADD_PHY', None, simplify=simplify)
+    flag_torm = ['BUCONF%LBUDGET_SV','BUCONF%LBUDGET_TKE','BUCONF%LBUDGET_TH','BUCONF%LBUDGET_RI', \
+    'BUCONF%LBUDGET_RV','BUCONF%LBUDGET_RG','BUCONF%LBUDGET_RS','BUCONF%LBUDGET_RH','BUCONF%LBUDGET_RR', \
+    'BUCONF%LBUDGET_RC','BUCONF%LBUDGET_U','BUCONF%LBUDGET_V','BUCONF%LBUDGET_W']
+    setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
+
 
 class Applications():
     @copy_doc(deleteDrHook)
