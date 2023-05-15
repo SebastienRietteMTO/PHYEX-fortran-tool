@@ -153,10 +153,12 @@ if __name__ == '__main__':
                             metavar='WHERE', default=None,
                             help='Show a list of unused variables in the entire code ' + \
                                  'or in the locality (if specified).')
-    gVariables.add_argument('--removeUnusedLocalVariables', nargs='?', action='append',
-                            metavar='WHERE', default=None,
-                            help='Remove unused local variables in the entire code ' + \
-                                 'or in the locality (if specified).')
+    gVariables.add_argument('--removeUnusedLocalVariables', nargs=2, action='append',
+                            metavar=('WHERE', 'EXCLUDE'), default=None,
+                            help='Remove unused local variables in the specified locality ' + \
+                                 '(use the special locality name ALL to apply on the entire ' + \
+                                 'code), excluding some variables (comma-separated list or NONE ' + \
+                                 'to exclude nothing).')
 
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -232,10 +234,10 @@ if __name__ == '__main__':
         else:
             pft.showUnusedVar(args.showUnusedVariables)
     if args.removeUnusedLocalVariables is not None:
-        if len(args.removeUnusedLocalVariables) == 1 and args.removeUnusedLocalVariables[0] is None:
-            pft.removeUnusedLocalVar()
-        else:
-            pft.removeUnusedLocalVar(args.removeUnusedLocalVariables)
+        for where, exclude in args.removeUnusedLocalVariables:
+            pft.removeUnusedLocalVar(where if where != 'ALL' else None,
+                                     [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                     **simplify)
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook(**simplify)

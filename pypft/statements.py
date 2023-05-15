@@ -241,7 +241,7 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
         parent.remove(node)
     
     #Variable simplification
-    removeVarIfUnused(doc, varToCheck, excludeDummy=True, simplify=simplifyVar)
+    removeVarIfUnused(doc, varToCheck, excludeDummy=True, excludeModule=True, simplify=simplifyVar)
     
     #List the new nodes to suppress
     newNodesToSuppress = []

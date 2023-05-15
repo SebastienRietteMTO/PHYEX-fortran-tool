@@ -215,14 +215,24 @@ def _getDeclStmtTag(where):
         declStmt = 'T-decl-stmt'
     return declStmt
 
+def _normalizeLocality(locality):
+    """
+    Internal method to normalize a locality
+    """
+    return '/'.join([(k.lower() + ':' + w.upper())
+                     for (k, w) in [component.split(':') for component in locality.split('/')]])
+
+def _normalizeVarList(varList):
+    """
+    Internal method to normalize a varList (list of tuples made of locality and variable name)
+    """
+    return [(_normalizeLocality(where), var.upper()) for (where, var) in varList]
+
 def _normalizeUniqVarList(varList):
     """
-    Internal method to suppress duplicates in varList (list of tuples made of localyty and variable name)
+    Internal method to suppress duplicates in varList (list of tuples made of locality and variable name)
     """
-    return list(set([('/'.join([(k.lower() + ':' + w.upper())
-                                for (k, w) in [component.split(':') for component in where.split('/')]]),
-                      var.upper())
-                     for (where, var) in varList]))
+    return list(set(_normalizeVarList(varList)))
 
 @debugDecor
 @needEtree
@@ -266,6 +276,8 @@ def removeVar(doc, varList, simplify=False):
             #excluding the subroutine and functions potentially included after a "contains" statement
             previous = None
             for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, where)):
+                deleted = False
+
                 #Checks if variable is a dummy argument
                 dummy_lst = node.find('{*}dummy-arg-LT') #This is the list of the dummy arguments
                 if dummy_lst is not None:
@@ -292,9 +304,10 @@ def removeVar(doc, varList, simplify=False):
                             varToRemoveIfUnused.extend([[where, ETn2name(N)] for N in node.findall('.//{*}N')])
                         #We will delete the current node but we don't want to lose
                         #any text. So, we put the node's text in the tail of the previous node
-                        if previous is not None:
+                        if previous is not None and node.tail is not None:
                             if previous.tail is None: previous.tail = ''
                             previous.tail += node.tail
+                        deleted = True
                         ETgetParent(doc, node).remove(node)
 
                 #In case the variable is a module variable
@@ -315,9 +328,10 @@ def removeVar(doc, varList, simplify=False):
                                 use_lst = node.find('./{*}rename-LT')
                                 if len(use_lst) == 0 and attribute[0] == ',' and attribute[1:] == 'ONLY:':
                                     #If there is a 'ONLY' attribute, we suppress the use statement entirely
-                                    if previous is not None:
+                                    if previous is not None and node.tail is not None:
                                         if previous.tail is None: previous.tail = ''
                                         previous.tail += node.tail
+                                    deleted = True
                                     ETgetParent(doc, node).remove(node)
                                 elif len(use_lst) == 0:
                                     #there is no 'ONLY' attribute
@@ -330,7 +344,8 @@ def removeVar(doc, varList, simplify=False):
                 #end loop if all variables have been found
                 if len(varNames) == 0: break
                 #Store node for the following iteration
-                previous = node
+                if not deleted:
+                    previous = node
 
             #If some variables have not been found, they are certainly declared one level upper
             if len(varNames) != 0:
@@ -341,7 +356,7 @@ def removeVar(doc, varList, simplify=False):
         removeVarIfUnused(doc, varToRemoveIfUnused, excludeDummy=True, simplify=True)
 
 @debugDecor
-def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
+def removeVarIfUnused(doc, varList, excludeDummy=False, excludeModule=False, simplify=False):
     """
     :param doc: xml fragment to use
     :param varList: list of variables to remove if unused. Each item is a list or tuple of two elements.
@@ -350,6 +365,7 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
                     having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                     'func:<name of the function>'
     :param excludeDummy: if True, dummy arguments are always kept untouched
+    :param excludeModule: if True, module variables are always kept untouched
     :param simplify: try to simplify code (if we delete a declaration statement that used a
                      variable as kind selector, and if this variable is not used else where,
                      we also delete it)
@@ -357,6 +373,8 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, simplify=False):
     If possible, remove the variable from declaration, and from the argument list if needed
     """
     varList = _normalizeUniqVarList(varList)
+    if excludeModule:
+        varList = [v for v in varList if v[0].split('/')[-1].split(':')[0] != 'module']
 
     varUsed = isVarUsed(doc, varList, dummyAreAlwaysUsed=excludeDummy)
     varListToRemove = []
@@ -612,26 +630,30 @@ def showUnusedVar(doc, localityPath=None):
             print('  - ' + ('\n  - '.join(varList)))
 
 @debugDecor
-def removeUnusedLocalVar(doc, localityPath=None):
+def removeUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify=False):
     """
-    Displays on stdout a list of unued variables
+    Remove unused local variables (dummy and module variables are not suppressed)
     :param doc: xml fragment to search for variable usage
     :param localityPath: locality to explore (None for all)
+    :param excludeList: list of variable names to exclude from removal (even if unused)
+    :param simplify: try to simplify code (if we delete a declaration statement that used a
+                     variable as kind selector, and if this variable is not used else where,
+                     we also delete it)
     """
     if localityPath is None:
         localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
         if isinstance(localityPath, str): localityPath = [localityPath]
 
-    allVar = {loc: getVarList(doc, loc) for loc in localityPath}
-    varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in allVar[loc]])
-    varList = []
-    for loc in localityPath:
-        varList.extend([(loc, v['n']) for v in allVar[loc]
-                        if (not v['arg']) and
-                           (not varUsed[(loc, v['n'])])])
-    removeVar(doc, varList)
+    if excludeList is None:
+        excludeList = []
+    else:
+        excludeList = [item.upper() for item in excludeList]
 
+    allVar = [(loc, v['n']) for loc in localityPath
+                            for v in getVarList(doc, loc) if v['n'].upper() not in excludeList]
+
+    removeVarIfUnused(doc, allVar, excludeDummy=True, excludeModule=True, simplify=simplify)
 
 class Variables():
     @copy_doc(getVarList)
