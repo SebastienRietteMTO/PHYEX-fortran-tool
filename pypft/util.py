@@ -235,7 +235,7 @@ def ETnon_code(e):
     :param e: element
     :return: True if e is non code (comment, text...)
     """
-    return e.tag.split('}')[1] in {'#text', 'cnt', 'C'}
+    return e.tag.split('}')[1] in {'cnt', 'C'}
 
 def ETisExecutableStmt(e):
     """
@@ -257,28 +257,159 @@ def ETisStmt(e):
     """
     return e.tag.endswith('-stmt')
 
-def ETremoveFromList(item, l):
+def ETremoveFromList(doc, item, l):
     """
+    :param doc: etre to use (containing the list)
     :param item: item to remove from list
     :param l: the parent of item (the list)
     """
 
+    nodesToSuppress = [item]
+
     #Suppression of the comma
     i = list(l).index(item)
     if item.tail is not None and ',' in item.tail:
+        #There's a comma just after the node
         tail = item.tail
         item.tail = tail.replace(',', '')
     elif i != 0 and ',' in l[i - 1].tail:
+        #There's a comma just before the node
         tail = l[i - 1].tail
         l[i - 1].tail = tail.replace(',', '')
-    
-    # Get the tail of the previous children of the list and append the item's tail to be removed
-    tail=l[i-1].tail
-    if i != 0 and type(tail) is str and type(item.tail) is str:
-        l[i-1].tail=tail+item.tail
+    else:
+        found = False
+        #We look for a comma in the first node after the current node that
+        #is not after another item of the list
+        j = i + 1
+        while j < len(l) and not found:
+            if ETnon_code(l[j]):
+                #This is a candidate
+                if l[j].tail is not None and ',' in l[j].tail:
+                    #Comma found and suppressed
+                    found = True
+                    tail = l[j].tail
+                    l[j].tail = tail.replace(',', '')
+                else:
+                    j += 1
+            else:
+                #This is another item
+                break
 
-    #Suppression of the node
-    l.remove(item)
+        #We look for a comma in the last node before the current node that
+        #is not a comment or a contiuation character
+        j = i - 1
+        while j >= 0 and not found:
+            if l[j].tail is not None and ',' in l[j].tail:
+                #Comma found and suppressed
+                found = True
+                tail = l[j].tail
+                l[j].tail = tail.replace(',', '')
+            else:
+                if ETnon_code(l[j]):
+                    #We can search before
+                    j -= 1
+                else:
+                    #This is another item
+                    break
+               
+        if not found and \
+           len([e for e in l if not ETnon_code(e)]) != 1:
+            raise RuntimeError("Something went wrong here....")
+
+    #Suppression of continuation characters
+    if i + 1 < len(l) and l[i + 1].tag.endswith('}cnt'):
+        #Node is followed by a continuation character
+        reason = 'lastOnLine'
+        #If the node is followed by a continuation character and is just after another
+        #continuation character, we must supress the continuation character which is after.
+        #    USE MODD, ONLY: X, &
+        #                    Y, & !Variable to suppress, with its '&' character
+        #                    Z
+        #In addition, if the character found before is at the begining of the line,
+        #it must also be removed. To know if it is at the begining of the line,
+        #we can check if another continuation character is before.
+        #    USE MODD, ONLY: X, &
+        #                  & Y, & !Variable to suppress, with both '&' characters
+        #                  & Z
+    elif len([l[j] for j in range(i + 1, len(l)) if not ETnon_code(l[j])]) == 0:
+        #Node is the last of the list
+        reason = 'last'
+        #If the removed node is the last of the list and a continuation character is just before
+        #We must suppress it.
+        #    USE MODD, ONLY: X, &
+        #                    Y !Variable to suppress, with the preceding '&'
+        #In addition, if the character found before is at the begining of the line,
+        #the preceding one must also be removed.
+        #    USE MODD, ONLY: X, &
+        #                  & Y !Variable to suppress, with 2 '&'
+    else:
+        #We must not suppress '&' characters
+        reason = None
+    if reason is not None:
+        def _getPrecedingCnt(doc, l, i):
+            """
+            Return the index of the preceding node which is a continuation character
+            :param doc: etree containig the list
+            :param l: the list containig the node to suppress
+            :param i: the index of the current node, i-1 is the starting index for the search
+            :return: a tuple with three elements:
+                      - the node containing the preceding '&' character
+                      - the parent of the node containing the preceding '&' character
+                      - index of the preceding '&' in the parent (previsous element of the tuple)
+            Note:
+              - In the general case the preceding '&' belongs to the same list:
+                  USE MODD, ONLY: X, &
+                                  Y
+              - But it exists a special case, where the preceding '&' don't belong to
+                the same list (in the following example, both '&' are attached to the parent):
+                  USE MODD, ONLY: &
+                                & X
+            """
+            j = i - 1
+            while j >= 0 and l[j].tag.endswith('}C'):
+                j -= 1
+            if j >= 0 and l[j].tag.endswith('}cnt'):
+                return l[j], l, j
+            elif j == -1:
+                #In the following special case, the '&' don't belong to the list but are siblings
+                #of the list.
+                #    USE MODD, ONLY: &
+                #                  & X
+                siblings = ETgetSiblings(doc, l, before=True, after=False)
+                j2 = len(siblings) - 1
+                while j2 >= 0 and siblings[j2].tag.endswith('}C'):
+                    j2 -= 1
+                if j2 >= 0 and siblings[j2].tag.endswith('}cnt'):
+                    return siblings[j2], siblings, j2
+                else:
+                    return None, None, None
+            else:
+                return None, None, None
+        #We test if the preceding node (excluding comments) is a continuation character
+        precCnt, newl, j = _getPrecedingCnt(doc, l, i)
+        if precCnt is not None:
+            #Preceding node is a continuation character
+            nodesToSuppress.append(precCnt if reason == 'last' else l[i + 1])
+            if j is not None:
+                precCnt2, _, j2 = _getPrecedingCnt(doc, newl, j)
+                if precCnt2 is not None:
+                    #There is another continuation character before
+                    nodesToSuppress.append(precCnt2 if reason == 'last' else precCnt)
+
+    #Suppression of nodes
+    for e in nodesToSuppress:
+        #Get the tail of the previous children of the list and append the item's tail to be removed
+        if e in l:
+            parent = l
+        else:
+            #parent must be recomputed because previsous removal may have change it
+            parent = ETgetParent(doc, l)
+        i = list(parent).index(e)
+        if i != 0 and e.tail is not None:
+            if parent[i - 1].tail is None:
+                parent[i - 1].tail = ''
+            parent[i - 1].tail = parent[i - 1].tail + e.tail
+        parent.remove(e)
 
 def ETgetParent(doc, item, level=1):
     """

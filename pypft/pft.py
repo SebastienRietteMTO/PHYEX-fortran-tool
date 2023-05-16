@@ -159,6 +159,13 @@ if __name__ == '__main__':
                                  '(use the special locality name ALL to apply on the entire ' + \
                                  'code), excluding some variables (comma-separated list or NONE ' + \
                                  'to exclude nothing).')
+    gVariables.add_argument('--removePHYEXUnusedLocalVariables', nargs=2, action='append',
+                            metavar=('WHERE', 'EXCLUDE'), default=None,
+                            help='Remove unused local variables in the specified locality ' + \
+                                 '(use the special locality name ALL to apply on the entire ' + \
+                                 'code), excluding some variables (comma-separated list or NONE ' + \
+                                 'to exclude nothing). This option takes into account the ' + \
+                                 'mnh_expand directives to prevent from removing useful variables.')
 
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -239,6 +246,11 @@ if __name__ == '__main__':
             pft.removeUnusedLocalVar(where if where != 'ALL' else None,
                                      [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
                                      **simplify)
+    if args.removePHYEXUnusedLocalVariables is not None:
+        for where, exclude in args.removePHYEXUnusedLocalVariables:
+            pft.removePHYEXUnusedLocalVar(where if where != 'ALL' else None,
+                                          [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                          **simplify)
 
     #Applications
     if args.deleteDrHook: pft.deleteDrHook(**simplify)

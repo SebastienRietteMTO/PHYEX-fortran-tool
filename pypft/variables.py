@@ -151,7 +151,7 @@ def attachArraySpecToEntity(doc):
                 for elem in n:
                     elem.append(array_spec)
                 # Remove the dimension and array-spec elements
-                ETremoveFromList(attr_elem,decl)
+                ETremoveFromList(doc, attr_elem, decl)
 
 @debugDecor
 @needEtree
@@ -286,7 +286,7 @@ def removeVar(doc, varList, simplify=False):
                         name = ETn2name(arg.find('.//{*}N')).upper()
                         for varName in [v for v in varNames if v == name]:
                             #This dummy arg is a searched variable, we remove it from the list
-                            ETremoveFromList(arg, dummy_lst)
+                            ETremoveFromList(doc, arg, dummy_lst)
 
                 #In case the variable is declared
                 if node.tag.endswith('}' + declStmt):
@@ -297,7 +297,7 @@ def removeVar(doc, varList, simplify=False):
                         for varName in [v for v in varNames if v == name]:
                             #The argument is declared here, we suppress it from the declaration list
                             varNames.remove(varName)
-                            ETremoveFromList(en_decl, decl_lst)
+                            ETremoveFromList(doc, en_decl, decl_lst)
                     #In all the variables are suppressed from the declaration statement
                     if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
                         if simplify:
@@ -320,7 +320,7 @@ def removeVar(doc, varList, simplify=False):
                             for varName in [v for v in varNames if v == name]:
                                 varNames.remove(varName)
                                 #The variable is declared here, we remove it from the list
-                                ETremoveFromList(rename, use_lst)
+                                ETremoveFromList(doc, rename, use_lst)
                                 #In case the variable was alone
                                 attribute = node.find('{*}module-N').tail
                                 if attribute is None: attribute = ''
@@ -340,21 +340,6 @@ def removeVar(doc, varList, simplify=False):
                                     if previousTail is not None:
                                         moduleName.tail = previousTail.replace(',', '')
                                     ETgetParent(doc, use_lst).remove(use_lst)
-                        #Check if last object is not an & followed by nothing, if so, remove '&' and the last ','
-                        if use_lst is not None and len(use_lst)>0:
-                            if use_lst[-1].tag.endswith('}cnt'):
-                                use_lst.remove(use_lst[-1])
-                                use_lst[-1].tail=use_lst[-1].tail.replace(',','')
-                            #Remove multiple consecutive empty line with only '&', leave only the first one
-                            allcnt = use_lst.findall('./{*}cnt')
-                            if len(allcnt) > 1:
-                                size_use_lst = len(use_lst)
-                                index_torm = []
-                                for i in range(size_use_lst-1):
-                                    if use_lst[i].tag.endswith('}cnt') and use_lst[i+1].tag.endswith('}cnt'):
-                                        index_torm.append(i+1)
-                                for i in index_torm:
-                                    use_lst.remove(use_lst[i])
                 #end loop if all variables have been found
                 if len(varNames) == 0: break
                 #Store node for the following iteration
@@ -598,8 +583,8 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
             if not node.tag.endswith('}use-stmt'):
                 if node.tag.endswith('}T-decl-stmt'):
                     #We don't want the part with the list of declared variables, we only want
-                    #to capture variables used in the kind selector
-                    Nnodes = node.findall('.//{*}_T-spec_//{*}N')
+                    #to capture variables used in the kind selector or in the shape specification
+                    Nnodes = node.findall('.//{*}_T-spec_//{*}N') + node.findall('.//{*}shape-spec//{*}N')
                 else:
                     Nnodes = node.findall('.//{*}N')
 
