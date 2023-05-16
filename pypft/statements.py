@@ -2,13 +2,12 @@
 This module includes functions to act on statements
 """
 import xml.etree.ElementTree as ET
-from util import copy_doc, needEtree, ETn2name, ETgetParent, ETnon_code, ETgetSiblings, debugDecor, alltext
-from locality import (ETgetLocalityChildNodes, ETgetLocalityNode, getLocalitiesList,
-                      ETgetLocalityPath)
+from util import copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, alltext
+from locality import (getLocalityChildNodes, getLocalityNode, getLocalitiesList,
+                      getLocalityPath)
 from variables import removeVarIfUnused
 
 @debugDecor
-@needEtree
 def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     """
     Set to .FALSE. a given boolean fortran flag before removing the node
@@ -33,7 +32,7 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     setFalseNodes = []
     for loc in localityPath:
         #Loop on nodes composing the locality
-        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, loc)):
+        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
             #Multiple flags conditions
             Node_opE = node.findall('.//{*}condition-E/{*}op-E')
             for node_opE in Node_opE:
@@ -43,12 +42,12 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
                             node_opE.insert(0,FalseNode)
                         else:
                             node_opE.append(FalseNode)
-                        ETgetParent(node_opE,n).remove(n)
+                        getParent(node_opE,n).remove(n)
             #Solo condition
             Node_namedE = node.findall('.//{*}condition-E/{*}named-E')
             for n in Node_namedE:
                 if alltext(n).upper() in flags:
-                    par = ETgetParent(node,n)
+                    par = getParent(node,n)
                     par.append(FalseNode)
                     par.remove(n)
             for flag in flags:
@@ -57,7 +56,6 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
 
 
 @debugDecor
-@needEtree
 def removeCall(doc, callName, localityPath, simplify=False):
     """
     :param doc: xml fragment to use
@@ -78,15 +76,14 @@ def removeCall(doc, callName, localityPath, simplify=False):
     callNodes = []
     for loc in localityPath:
         #Loop on nodes composing the locality
-        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, loc)):
+        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
             callNodes += [node] if node.tag.endswith('}call-stmt') else [] #In case node is a call statement
             callNodes += [cn for cn in node.findall('.//{*}call-stmt')] #If node is a construct with call statements
     callNodes = [cn for cn in callNodes
-                 if ETn2name(cn.find('.//{*}named-E/{*}N')).upper() == callName] #filter by name
+                 if n2name(cn.find('.//{*}named-E/{*}N')).upper() == callName] #filter by name
     removeStmtNode(doc, callNodes, simplify, simplify)
 
 @debugDecor
-@needEtree
 def removePrints(doc, localityPath, simplify=False):
     """
     Removes all print statements
@@ -106,13 +103,12 @@ def removePrints(doc, localityPath, simplify=False):
     printNodes = []
     for loc in localityPath:
         #Loop on nodes composing the locality
-        for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, loc)):
+        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
             printNodes += [node] if node.tag.endswith('}print-stmt') else [] #In case node is a print statement
             printNodes += [cn for cn in node.findall('.//{*}print-stmt')] #If node is a construct with print statements
     removeStmtNode(doc, printNodes, simplify, simplify)
 
 @debugDecor
-@needEtree
 def removeConstructNode(doc, node, simplifyVar, simplifyStruct):
     """
     This function removes a construct node and:
@@ -172,7 +168,7 @@ def _nodesInIf(ifNode):
                                               i.tag.endswith('}else-if-stmt') or \
                                               i.tag.endswith('}else-stmt') or \
                                               i.tag.endswith('}end-if-stmt'))]:
-            if not ETnon_code(item): nodes.append(item)
+            if not non_code(item): nodes.append(item)
     return nodes
 
 def _nodesInWhere(whereNode):
@@ -184,7 +180,7 @@ def _nodesInWhere(whereNode):
         for item in [i for i in block if not (i.tag.endswith('}where-construct-stmt') or \
                                               i.tag.endswith('}else-where-stmt') or \
                                               i.tag.endswith('}end-where-stmt'))]:
-            if not ETnon_code(item): nodes.append(item)
+            if not non_code(item): nodes.append(item)
     return nodes
 
 def _nodesInDo(doNode):
@@ -194,7 +190,7 @@ def _nodesInDo(doNode):
     nodes = []
     for item in [i for i in doNode if not (i.tag.endswith('}do-stmt') or \
                                            i.tag.endswith('}end-do-stmt'))]:
-        if not ETnon_code(item): nodes.append(item)
+        if not non_code(item): nodes.append(item)
     return nodes
 
 def _nodesInCase(caseNode):
@@ -206,11 +202,10 @@ def _nodesInCase(caseNode):
         for item in [i for i in block if not (i.tag.endswith('}select-case-stmt') or \
                                               i.tag.endswith('}case-stmt') or \
                                               i.tag.endswith('}end-select-case-stmt'))]:
-            if not ETnon_code(item): nodes.append(item)
+            if not non_code(item): nodes.append(item)
     return nodes
 
 @debugDecor
-@needEtree
 def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     """
     This function removes a statement node and:
@@ -251,36 +246,36 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     if simplifyVar:
         #Loop to identify all the potential variables to remove
         for node in nodesToSuppress:
-            loc = ETgetLocalityPath(doc, node)
+            loc = getLocalityPath(doc, node)
             if node.tag.endswith('}do-construct'):
                 #Try to remove variables used in the loop
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.find('./{*}do-stmt').findall('.//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.find('./{*}do-stmt').findall('.//{*}N')])
             elif node.tag.endswith('}if-construct') or node.tag.endswith('}if-stmt'):
                 #Try to remove variables used in the conditions
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}condition-E//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('.//{*}condition-E//{*}N')])
             elif node.tag.endswith('}where-construct') or node.tag.endswith('}where-stmt'):
                 #Try to remove variables used in the conditions
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}mask-E//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('.//{*}mask-E//{*}N')])
             elif node.tag.endswith('}call-stmt'):
                 #We must check if we can suppress the variables used to call the subprogram
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('./{*}arg-spec//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('./{*}arg-spec//{*}N')])
                 #And maybe, the subprogram comes from a module
-                varToCheck.append((loc, ETn2name(node.find('./{*}procedure-designator//{*}N'))))
+                varToCheck.append((loc, n2name(node.find('./{*}procedure-designator//{*}N'))))
             elif node.tag.endswith('}a-stmt') or node.tag.endswith('}print-stmt'):
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('.//{*}N')])
             elif node.tag.endswith('}selectcase-construct'):
                 #Try to remove variables used in the selector and in conditions
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}case-E//{*}N')])
-                varToCheck.extend([(loc, ETn2name(arg)) for arg in node.findall('.//{*}case-value//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('.//{*}case-E//{*}N')])
+                varToCheck.extend([(loc, n2name(arg)) for arg in node.findall('.//{*}case-value//{*}N')])
     
     #Node suppression
     parents = {} #cache
     for node in nodesToSuppress:
-        parent = ETgetParent(doc, node)
+        parent = getParent(doc, node)
         parents[id(node)] = parent
         newlines = '\n' * (alltext(node).count('\n') if node.tag.endswith('-construct') else 0)
         if node.tail is not None or len(newlines) > 0:
-            previous = ETgetSiblings(doc, node, after=False)
+            previous = getSiblings(doc, node, after=False)
             if len(previous) == 0:
                 previous = parent
             else:
@@ -299,21 +294,21 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
         #If we have suppressed the statement in a if statement (one-line if) or where statement
         #we must suppress the entire if/where statement even when simplifyStruct is False
         if parent.tag.endswith('}action-stmt'):
-            newNodesToSuppress.append(ETgetParent(doc, parent))
+            newNodesToSuppress.append(getParent(doc, parent))
     
         elif simplifyStruct:
             if parent.tag.endswith('}do-construct') and len(_nodesInDo(parent)) == 0:
                 newNodesToSuppress.append(parent)
             elif parent.tag.endswith('}if-block'):
-                parPar = ETgetParent(doc, parent)
+                parPar = getParent(doc, parent)
                 if len(_nodesInIf(parPar)) == 0:
                     newNodesToSuppress.append(parPar)
             elif parent.tag.endswith('}where-block'):
-                parPar = ETgetParent(doc, parent)
+                parPar = getParent(doc, parent)
                 if len(_nodesInWhere(parPar)) == 0:
                     newNodesToSuppress.append(parPar)
             elif parent.tag.endswith('}selectcase-block'):
-                parPar = ETgetParent(doc, parent)
+                parPar = getParent(doc, parent)
                 if len(_nodesInCase(parPar)) == 0:
                     newNodesToSuppress.append(parPar)
 

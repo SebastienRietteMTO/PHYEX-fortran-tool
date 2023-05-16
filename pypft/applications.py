@@ -4,12 +4,11 @@ This module implements functions for high-to-moderate level transformation
 
 import xml.etree.ElementTree as ET
 from util import (copy_doc, debugDecor,
-                  alltext, needEtree, ETgetParent)
+                  alltext)
 from statements import removeCall, setFalseIfStmt
 from variables import removeUnusedLocalVar
 
 @debugDecor
-@needEtree
 def deleteDrHook(doc, simplify=False):
     """
     Remove DR_HOOK calls.
@@ -21,7 +20,6 @@ def deleteDrHook(doc, simplify=False):
     removeCall(doc, 'DR_HOOK', None, simplify=simplify)
 
 @debugDecor
-@needEtree
 def deleteBudgetDDH(doc, simplify=False):
     """
     Remove Budget calls.
@@ -39,7 +37,6 @@ def deleteBudgetDDH(doc, simplify=False):
 
 
 @debugDecor
-@needEtree
 def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify=False):
     """
     Remove unused local variables (dummy and module variables are not suppressed)

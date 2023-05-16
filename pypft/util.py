@@ -1,5 +1,4 @@
 import xml.etree.ElementTree as ET
-import xml.dom.minidom
 from functools import wraps
 import logging
 import tempfile
@@ -97,47 +96,6 @@ class PFTError(Exception): pass
 ################################################################################
 ### Conversions
 
-def minidom2etree(doc):
-    """
-    :param doc: minidom object
-    :return: ET object
-    """
-    return ET.fromstring(doc.toxml(encoding='UTF-8'), parser=ET.XMLParser(encoding='UTF-8'))
-
-def etree2minidom(doc):
-    """                             
-    :param doc: ET object     
-    :return: minidoc object             
-    """ 
-    return xml.dom.minidom.parseString(ET.tostring(doc, method='xml', encoding='UTF-8').decode('UTF-8'))
-
-def needEtree(func):
-    """
-    :param func: function that needs an ET object
-    :return a new func that can use a minidom object
-    """
-    @wraps(func)
-    def wrapper(doc, *args, **kwargs):
-        if isinstance(doc, xml.etree.ElementTree.Element):
-            return func(doc, *args, **kwargs)
-        else:
-            return func(minidom2etree(doc), *args, **kwargs)
-    return wrapper
-
-def needMinidom(func):
-    """
-    :param func: function that needs a minidom object
-    :return a new func that can use a ET object
-    """
-    @wraps(func)
-    def wrapper(doc, *args, **kwargs):
-        wrapper.__doc__ = func.__doc__
-        if isinstance(doc, xml.etree.ElementTree.Element):
-            return func(etree2minidom(doc), *args, **kwargs)
-        else:
-            return func(doc, *args, **kwargs)
-    return wrapper
-
 def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
     """
     :param fortranSource: a string containing a fortran source code
@@ -179,7 +137,6 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
 
     return ns, xml
 
-@needEtree
 def tostring(doc):
     """
     :param doc: an ET object
@@ -187,7 +144,6 @@ def tostring(doc):
     """
     return ET.tostring(doc, method='xml', encoding='UTF-8').decode('UTF-8')
 
-@needEtree
 def tofortran(doc):
     """
     :param doc: an ET object
@@ -207,7 +163,6 @@ def tofortran(doc):
 ################################################################################
 ### Helper functions acting on the xml
 
-@needEtree
 def getFileName(doc):
     """
     :param doc: an ET object
@@ -216,13 +171,12 @@ def getFileName(doc):
     """
     return doc.find('.//{*}file').attrib['name']
 
-def ETn2name(N):
+def n2name(N):
     """
     Helper function which returns the entity name enclosed in a N tag
     """
     return ''.join([e.text for e in N.findall('./{*}n')])
 
-@needEtree
 def alltext(doc):
     """ 
     Helper function to iterate on all text fragment and join them
@@ -230,19 +184,19 @@ def alltext(doc):
     """
     return ''.join(doc.itertext())
 
-def ETnon_code(e):
+def non_code(e):
     """ 
     :param e: element
     :return: True if e is non code (comment, text...)
     """
     return e.tag.split('}')[1] in {'cnt', 'C'}
 
-def ETisExecutableStmt(e):
+def isExecutableStmt(e):
     """
     :param e: element
     :return: True if element is an executable statement
     """
-    return ETisStmt(e) and \
+    return isStmt(e) and \
            not e.tag.split('}')[1] in {'subroutine-stmt', 'end-subroutine-stmt',
                                        'function-stmt', 'end-function-stmt',
                                        'use-stmt', 'T-decl-stmt', 'component-decl-stmt',
@@ -250,14 +204,14 @@ def ETisExecutableStmt(e):
                                        'data-stmt', 'save-stmt',
                                        'implicit-none-stmt'}
 
-def ETisStmt(e):
+def isStmt(e):
     """
     :param e: element
     :return: True if element is a statement
     """
     return e.tag.endswith('-stmt')
 
-def ETremoveFromList(doc, item, l):
+def removeFromList(doc, item, l):
     """
     :param doc: etre to use (containing the list)
     :param item: item to remove from list
@@ -282,7 +236,7 @@ def ETremoveFromList(doc, item, l):
         #is not after another item of the list
         j = i + 1
         while j < len(l) and not found:
-            if ETnon_code(l[j]):
+            if non_code(l[j]):
                 #This is a candidate
                 if l[j].tail is not None and ',' in l[j].tail:
                     #Comma found and suppressed
@@ -305,7 +259,7 @@ def ETremoveFromList(doc, item, l):
                 tail = l[j].tail
                 l[j].tail = tail.replace(',', '')
             else:
-                if ETnon_code(l[j]):
+                if non_code(l[j]):
                     #We can search before
                     j -= 1
                 else:
@@ -313,7 +267,7 @@ def ETremoveFromList(doc, item, l):
                     break
                
         if not found and \
-           len([e for e in l if not ETnon_code(e)]) != 1:
+           len([e for e in l if not non_code(e)]) != 1:
             raise RuntimeError("Something went wrong here....")
 
     #Suppression of continuation characters
@@ -331,7 +285,7 @@ def ETremoveFromList(doc, item, l):
         #    USE MODD, ONLY: X, &
         #                  & Y, & !Variable to suppress, with both '&' characters
         #                  & Z
-    elif len([l[j] for j in range(i + 1, len(l)) if not ETnon_code(l[j])]) == 0:
+    elif len([l[j] for j in range(i + 1, len(l)) if not non_code(l[j])]) == 0:
         #Node is the last of the list
         reason = 'last'
         #If the removed node is the last of the list and a continuation character is just before
@@ -375,7 +329,7 @@ def ETremoveFromList(doc, item, l):
                 #of the list.
                 #    USE MODD, ONLY: &
                 #                  & X
-                siblings = ETgetSiblings(doc, l, before=True, after=False)
+                siblings = getSiblings(doc, l, before=True, after=False)
                 j2 = len(siblings) - 1
                 while j2 >= 0 and siblings[j2].tag.endswith('}C'):
                     j2 -= 1
@@ -403,7 +357,7 @@ def ETremoveFromList(doc, item, l):
             parent = l
         else:
             #parent must be recomputed because previsous removal may have change it
-            parent = ETgetParent(doc, l)
+            parent = getParent(doc, l)
         i = list(parent).index(e)
         if i != 0 and e.tail is not None:
             if parent[i - 1].tail is None:
@@ -411,7 +365,7 @@ def ETremoveFromList(doc, item, l):
             parent[i - 1].tail = parent[i - 1].tail + e.tail
         parent.remove(e)
 
-def ETgetParent(doc, item, level=1):
+def getParent(doc, item, level=1):
     """
     :param doc: xml fragment in which parent must be searched
     :param item: item whose parent is to be searched
@@ -421,9 +375,9 @@ def ETgetParent(doc, item, level=1):
     assert level >= 1
     for p in doc.iter():
         if item in list(p):
-            return p if level == 1 else ETgetParent(doc, p, level - 1)
+            return p if level == 1 else getParent(doc, p, level - 1)
 
-def ETgetSiblings(doc, item, before=True, after=True):
+def getSiblings(doc, item, before=True, after=True):
     """
     :param doc: xml fragment in which siblings must be found
     :param item: item whose siblings are to be searched
@@ -432,14 +386,14 @@ def ETgetSiblings(doc, item, before=True, after=True):
     By default before and after are True so that all siblings are returned
     """
 
-    siblings = ETgetParent(doc, item).findall('./{*}*')
+    siblings = getParent(doc, item).findall('./{*}*')
     if not after:
         siblings = siblings[:siblings.index(item)]
     if not before:
         siblings = siblings[siblings.index(item) + 1:]
     return [s for s in siblings if s != item]
 
-def ETinsertInList(pos, item, l):
+def insertInList(pos, item, l):
     """
     :param pos: insertion position
     :param item: item to add to the list

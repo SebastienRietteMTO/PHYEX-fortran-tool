@@ -1,5 +1,5 @@
-from util import (copy_doc, needEtree, PFTError, debugDecor,
-                  alltext, ETgetParent, ETn2name)
+from util import (copy_doc, PFTError, debugDecor,
+                  alltext, getParent, n2name)
 
 """
 This module implements the locality stuff
@@ -28,7 +28,7 @@ def _localityStmt(blocType):
     return construct, beginStmt, endStmt
 
 @debugDecor
-def ETisLocalityNode(node):
+def isLocalityNode(node):
     """
     :param node: node to test
     :return: True if node is a locality node (construct node around a
@@ -37,7 +37,7 @@ def ETisLocalityNode(node):
     return any([node.tag.endswith('}' + construct) for construct in localityConstruct.values()])
 
 @debugDecor
-def ETgetLocalityNode(doc, localityPath):
+def getLocalityNode(doc, localityPath):
     """
     :param doc: xml fragment in which the locality path must be found
     :param localityPath: locality path (see the locality concept in documentation)
@@ -59,15 +59,15 @@ def ETgetLocalityNode(doc, localityPath):
         top = doc
     for bloc in top.findall('./{*}' + construct + '/{*}' + beginStmt) + \
                 top.findall('./{*}interface-construct/{*}' + construct + '/{*}' + beginStmt):
-        if ETn2name(bloc.find('.//{*}N')).upper() == blocName:
+        if n2name(bloc.find('.//{*}N')).upper() == blocName:
             if remainingPath is None:
-                return ETgetParent(doc, bloc)
+                return getParent(doc, bloc)
             else:
-                return ETgetLocalityNode(ETgetParent(doc, bloc), remainingPath)
+                return getLocalityNode(getParent(doc, bloc), remainingPath)
     raise PFTError("The locality path {path} has not been found.".format(path=where))
 
 @debugDecor
-def ETgetLocalityChildNodes(doc, locality):
+def getLocalityChildNodes(doc, locality):
     """
     :param doc: xml fragment in which the nodes must be found
     :param locality: path or node reprensenting the locality
@@ -80,7 +80,7 @@ def ETgetLocalityChildNodes(doc, locality):
     result contains the 'END' statement of the module/subroutine or function.
     """
     if isinstance(locality, str):
-        locality = ETgetLocalityNode(doc, locality)
+        locality = getLocalityNode(doc, locality)
     assert len(locality) != 0, 'The locality construct is empty'
     assert locality[0].tag.endswith('-stmt'), 'The node is not a locality node'
     result = []
@@ -95,7 +95,7 @@ def ETgetLocalityChildNodes(doc, locality):
     return result
 
 @debugDecor
-def ETgetParentLocalityNode(doc, item, mustRaise=True):
+def getParentLocalityNode(doc, item, mustRaise=True):
     """
     :param doc: xml fragment in which parent must be searched
     :param item: item whose locality parent is to be searched
@@ -104,9 +104,9 @@ def ETgetParentLocalityNode(doc, item, mustRaise=True):
     Example: if item is a call statement, result is the program-unit node
              in which the call statement is
     """
-    result = ETgetParent(doc, item)
-    while result is not None and not ETisLocalityNode(result):
-        result = ETgetParent(doc, result)
+    result = getParent(doc, item)
+    while result is not None and not isLocalityNode(result):
+        result = getParent(doc, result)
     if result is None and mustRaise:
         raise PFTError("The locality parent has not been found.")
     return result
@@ -118,29 +118,28 @@ def _getNodePath(node):
     :return: path part (e.g. module:MODU)
     """
     stmt = node[0].tag.split('}')[1]
-    name = ETn2name(node[0].find('.//{*}N')).upper()
+    name = n2name(node[0].find('.//{*}N')).upper()
     return {v: k for (k, v) in localityStmt.items()}[stmt] + ':' + name
 
 @debugDecor
-def ETgetLocalityPath(doc, item, includeItself=True):
+def getLocalityPath(doc, item, includeItself=True):
     """
     :param doc: xml fragment in which the path must be found
     :param item: item whose path must be determined
     :param includeItself: include the item if it is a locality node
     :return: the full path of the structure containing item
     """
-    if includeItself and ETisLocalityNode(item):
+    if includeItself and isLocalityNode(item):
         result = [_getNodePath(item)]
     else:
         result = []
-    item = ETgetParentLocalityNode(doc, item, mustRaise=False)
+    item = getParentLocalityNode(doc, item, mustRaise=False)
     while item is not None:
         result = [_getNodePath(item)] + result
-        item = ETgetParentLocalityNode(doc, item, mustRaise=False)
+        item = getParentLocalityNode(doc, item, mustRaise=False)
     return '/'.join(result)
 
 @debugDecor
-@needEtree
 def getLocalitiesList(doc, withNodes=False):
     """
     :param doc: xml document in which localities must be found

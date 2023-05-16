@@ -3,14 +3,13 @@ This module implements functions to deal with variables
 """
 
 from util import (copy_doc, PFTError, debugDecor,
-                  tostring, alltext, needEtree, getFileName, ETremoveFromList, ETgetParent,
-                  ETgetSiblings, ETinsertInList, fortran2xml, ETisExecutableStmt, ETn2name)
-from locality import ETgetLocalityNode, ETgetLocalityChildNodes, getLocalitiesList
+                  tostring, alltext, getFileName, removeFromList, getParent,
+                  getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
+from locality import getLocalityNode, getLocalityChildNodes, getLocalitiesList
 from xml.etree.ElementTree import Element
 import logging
 
 @debugDecor
-@needEtree
 def getVarList(doc, localityPath=None):
     """
     :param doc: etree to use
@@ -49,10 +48,10 @@ def getVarList(doc, localityPath=None):
     result = []
     for loc in localityPath:
         #We search for declaration  only in the nodes corresponding to the locality
-        stmts = ETgetLocalityChildNodes(doc, loc)
+        stmts = getLocalityChildNodes(doc, loc)
         
         #Find dummy arguments
-        dummy_args = [ETn2name(e).upper() for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
+        dummy_args = [n2name(e).upper() for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
 
         decl_stmts = [stmt for stmt in stmts
                       if stmt.tag.endswith('}T-decl-stmt') or stmt.tag.endswith('}component-decl-stmt')]
@@ -69,7 +68,7 @@ def getVarList(doc, localityPath=None):
             #Loop on each declared variables
             en_decls = decl_stmt.findall('.//{*}EN-decl')
             for en_decl in en_decls:
-                n = ETn2name(en_decl.find('.//{*}N')).upper()
+                n = n2name(en_decl.find('.//{*}N')).upper()
                 #Dimensions declared after the variable name
                 array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
                 as_list, asx_list = decode_array_specs(array_specs)
@@ -82,9 +81,9 @@ def getVarList(doc, localityPath=None):
         #Loop on each use statement
         use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
         for use_stmt in use_stmts:
-            module = ETn2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
+            module = n2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
             for v in use_stmt.findall('.//{*}use-N'):
-                n = ETn2name(v.find('.//{*}N'))
+                n = n2name(v.find('.//{*}N'))
                 result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
                                'n': n, 'use': module})
 
@@ -121,7 +120,6 @@ def showVarList(doc, localityPath=None):
             print()
 
 @debugDecor
-@needEtree
 def attachArraySpecToEntity(doc):
     """
     Find all T-decl-stmt elements that have a child element 'attribute' with attribute-N="DIMENSION" and
@@ -151,10 +149,9 @@ def attachArraySpecToEntity(doc):
                 for elem in n:
                     elem.append(array_spec)
                 # Remove the dimension and array-spec elements
-                ETremoveFromList(doc, attr_elem, decl)
+                removeFromList(doc, attr_elem, decl)
 
 @debugDecor
-@needEtree
 def getImplicitNoneText(doc, loc):
     """
     :param doc: etree to use
@@ -162,8 +159,8 @@ def getImplicitNoneText(doc, loc):
     :return: the "IMPLICIT NONE" text
     """
     if isinstance(loc, str):
-        loc = ETgetLocalityNode(doc, loc)
-    for node in ETgetLocalityChildNodes(doc, loc):
+        loc = getLocalityNode(doc, loc)
+    for node in getLocalityChildNodes(doc, loc):
         if node.tag.endswith('}implicit-none-stmt'):
             return node.text
     return None
@@ -235,7 +232,6 @@ def _normalizeUniqVarList(varList):
     return list(set(_normalizeVarList(varList)))
 
 @debugDecor
-@needEtree
 def removeVar(doc, varList, simplify=False):
     """
     :param doc: xml fragment to use
@@ -270,12 +266,12 @@ def removeVar(doc, varList, simplify=False):
             #Variables searched in this locality
             varNames = list(set([v for (w, v) in sortedVarList[nb] if w == where]))
             declStmt = _getDeclStmtTag(where)
-            #If where is "module:XX/sub:YY", ETgetLocalityNode returns the "program-unit" node
+            #If where is "module:XX/sub:YY", getLocalityNode returns the "program-unit" node
             #just above the subroutine declaration statement.
-            #ETgetLocalityChildNodes returns all the node contained in the subroutine
+            #getLocalityChildNodes returns all the node contained in the subroutine
             #excluding the subroutine and functions potentially included after a "contains" statement
             previous = None
-            for node in ETgetLocalityChildNodes(doc, ETgetLocalityNode(doc, where)):
+            for node in getLocalityChildNodes(doc, getLocalityNode(doc, where)):
                 deleted = False
 
                 #Checks if variable is a dummy argument
@@ -283,32 +279,32 @@ def removeVar(doc, varList, simplify=False):
                 if dummy_lst is not None:
                     #Loop over all dummy arguments
                     for arg in dummy_lst.findall('.//{*}arg-N'):
-                        name = ETn2name(arg.find('.//{*}N')).upper()
+                        name = n2name(arg.find('.//{*}N')).upper()
                         for varName in [v for v in varNames if v == name]:
                             #This dummy arg is a searched variable, we remove it from the list
-                            ETremoveFromList(doc, arg, dummy_lst)
+                            removeFromList(doc, arg, dummy_lst)
 
                 #In case the variable is declared
                 if node.tag.endswith('}' + declStmt):
                     #We are in a declaration statement
                     decl_lst = node.find('./{*}EN-decl-LT') #list of declaration in the current statment
                     for en_decl in decl_lst.findall('.//{*}EN-decl'):
-                        name = ETn2name(en_decl.find('.//{*}N')).upper()
+                        name = n2name(en_decl.find('.//{*}N')).upper()
                         for varName in [v for v in varNames if v == name]:
                             #The argument is declared here, we suppress it from the declaration list
                             varNames.remove(varName)
-                            ETremoveFromList(doc, en_decl, decl_lst)
+                            removeFromList(doc, en_decl, decl_lst)
                     #In all the variables are suppressed from the declaration statement
                     if len(list(decl_lst.findall('./{*}EN-decl'))) == 0:
                         if simplify:
-                            varToRemoveIfUnused.extend([[where, ETn2name(N)] for N in node.findall('.//{*}N')])
+                            varToRemoveIfUnused.extend([[where, n2name(N)] for N in node.findall('.//{*}N')])
                         #We will delete the current node but we don't want to lose
                         #any text. So, we put the node's text in the tail of the previous node
                         if previous is not None and node.tail is not None:
                             if previous.tail is None: previous.tail = ''
                             previous.tail += node.tail
                         deleted = True
-                        ETgetParent(doc, node).remove(node)
+                        getParent(doc, node).remove(node)
 
                 #In case the variable is a module variable
                 if node.tag.endswith('}use-stmt'):
@@ -316,11 +312,11 @@ def removeVar(doc, varList, simplify=False):
                     use_lst = node.find('./{*}rename-LT')
                     if use_lst is not None:
                         for rename in use_lst.findall('.//{*}rename'):
-                            name = ETn2name(rename.find('.//{*}N')).upper()
+                            name = n2name(rename.find('.//{*}N')).upper()
                             for varName in [v for v in varNames if v == name]:
                                 varNames.remove(varName)
                                 #The variable is declared here, we remove it from the list
-                                ETremoveFromList(doc, rename, use_lst)
+                                removeFromList(doc, rename, use_lst)
                                 #In case the variable was alone
                                 attribute = node.find('{*}module-N').tail
                                 if attribute is None: attribute = ''
@@ -332,14 +328,14 @@ def removeVar(doc, varList, simplify=False):
                                         if previous.tail is None: previous.tail = ''
                                         previous.tail += node.tail
                                     deleted = True
-                                    ETgetParent(doc, node).remove(node)
+                                    getParent(doc, node).remove(node)
                                 elif len(use_lst) == 0:
                                     #there is no 'ONLY' attribute
-                                    moduleName = ETgetSiblings(doc, use_lst, before=True, after=False)[-1]
+                                    moduleName = getSiblings(doc, use_lst, before=True, after=False)[-1]
                                     previousTail = moduleName.tail
                                     if previousTail is not None:
                                         moduleName.tail = previousTail.replace(',', '')
-                                    ETgetParent(doc, use_lst).remove(use_lst)
+                                    getParent(doc, use_lst).remove(use_lst)
                 #end loop if all variables have been found
                 if len(varNames) == 0: break
                 #Store node for the following iteration
@@ -386,7 +382,6 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, excludeModule=False, sim
     return varListToRemove
 
 @debugDecor
-@needEtree
 def addVar(doc, varList):
     """
     :param doc: xml fragment to use
@@ -399,7 +394,7 @@ def addVar(doc, varList):
                       None for a local variable
     """
     for (path, name, declStmt, pos) in varList:
-        locNode = ETgetLocalityNode(doc, path)
+        locNode = getLocalityNode(doc, path)
 
         #Add variable to the argument list
         if pos is not None:
@@ -410,7 +405,7 @@ def addVar(doc, varList):
             N.append(n)
             argN.append(N)
             #search for a potential node, within the scope, with a list of dummy arguments
-            argLst = [node.find('.//{*}dummy-arg-LT') for node in ETgetLocalityChildNodes(doc, locNode)]
+            argLst = [node.find('.//{*}dummy-arg-LT') for node in getLocalityChildNodes(doc, locNode)]
             argLst = [node for node in argLst if node is not None]
             argLst = None if len(argLst) == 0 else argLst[0]
             if argLst is None:
@@ -419,7 +414,7 @@ def addVar(doc, varList):
                argLst = Element('f:dummy-arg-LT')
                argLst.tail = ')'
                locNode[0].insert(1, argLst)
-            ETinsertInList(pos, argN, argLst)
+            insertInList(pos, argN, argLst)
 
         #Declare the variable
         #The following test is needed in case several variables are added in the argument list
@@ -434,7 +429,7 @@ def addVar(doc, varList):
                 fortranSource = "MODULE MODU_{var}\nTYPE TYP_{var}\n{decl}\nEND TYPE\nEND MODULE".format(var=name, decl=declStmt)
                 _, xml = fortran2xml(fortranSource)
                 ds = xml.find('.//{*}' + declStmtTag)
-                previousTail = ETgetSiblings(xml, ds, after=False)[-1].tail
+                previousTail = getSiblings(xml, ds, after=False)[-1].tail
                 #node insertion
                 #locNode[0] is the T-stmt node, locNode[-1] is the end-T-stmt node
                 #locNode[-2] is the last node before the end-T-stmt node (last component, comment or the T-stmt node)
@@ -448,16 +443,16 @@ def addVar(doc, varList):
                 fortranSource = "SUBROUTINE SUB_{var}\n{decl}\nEND SUBROUTINE".format(var=name, decl=declStmt)
                 _, xml = fortran2xml(fortranSource)
                 ds = xml.find('.//{*}' + declStmtTag)
-                previousTail = ETgetSiblings(xml, ds, after=False)[-1].tail
+                previousTail = getSiblings(xml, ds, after=False)[-1].tail
 
                 #node insertion index
-                declLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
+                declLst = [node for node in getLocalityChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
                 if len(declLst) != 0:
                     #There already have declaration statements, we add the new one after them
                     index = list(locNode).index(declLst[-1]) + 1
                 else:
                     #There is no declaration statement
-                    stmtLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if ETisExecutableStmt(node)] #list of executable nodes
+                    stmtLst = [node for node in getLocalityChildNodes(doc, locNode) if isExecutableStmt(node)] #list of executable nodes
                     if len(stmtLst) == 0:
                         #There is no executable statement, we insert the declaration at the end
                         index = len(locNode) - 1 #Last node is the ending node (e.g. end-subroutine-stmt)
@@ -472,7 +467,6 @@ def addVar(doc, varList):
                 locNode.insert(index, ds)
 
 @debugDecor
-@needEtree
 def addModuleVar(doc, moduleVarList):
     """
     :param doc: xml fragment to use
@@ -485,7 +479,7 @@ def addModuleVar(doc, moduleVarList):
     USE MODD_XX, ONLY: Y
     """
     for (path, moduleName, varName) in moduleVarList:
-        locNode = ETgetLocalityNode(doc, path)
+        locNode = getLocalityNode(doc, path)
 
         #Statement building
         fortranSource = "SUBROUTINE FOO598756\nUSE {}".format(moduleName)
@@ -494,10 +488,10 @@ def addModuleVar(doc, moduleVarList):
         fortranSource += "\nEND SUBROUTINE"
         _, xml = fortran2xml(fortranSource)
         us = xml.find('.//{*}use-stmt')
-        previousTail = ETgetSiblings(xml, us, after=False)[-1].tail
+        previousTail = getSiblings(xml, us, after=False)[-1].tail
 
         #node insertion index
-        useLst = [node for node in ETgetLocalityChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
+        useLst = [node for node in getLocalityChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
         if len(useLst) != 0:
             #There already have use statements, we add the new one after them
             index = list(locNode).index(useLst[-1]) + 1
@@ -510,7 +504,6 @@ def addModuleVar(doc, moduleVarList):
         locNode.insert(index, us)
 
 @debugDecor
-@needEtree
 def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
     """
     :param doc: xml fragment to search for variable usage
@@ -578,7 +571,7 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
     for loc in list(set([item for sublist in locsVar.values() for item in sublist])):
         usedVar[loc] = []
         #Loop on all child in the locality
-        for node in ETgetLocalityChildNodes(doc, allLocalities[loc]):
+        for node in getLocalityChildNodes(doc, allLocalities[loc]):
             #we don't want use statement, it could be where the variable is declared, not a usage place
             if not node.tag.endswith('}use-stmt'):
                 if node.tag.endswith('}T-decl-stmt'):
@@ -594,13 +587,13 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
                         #No need to check if the variable is a dummy argument; because if it is one
                         #it will be found in the argument list of the subroutine/function and will
                         #be considered as used
-                        usedVar[loc].append(ETn2name(N).upper())
+                        usedVar[loc].append(n2name(N).upper())
                     else:
-                        parPar = ETgetParent(doc, N, 2) #parent of parent
+                        parPar = getParent(doc, N, 2) #parent of parent
                         #We exclude dummy argument list to really check if the variable is used
                         #and do not only appear as an argument of the subroutine/function
                         if parPar is None or not parPar.tag.endswith('}dummy-arg-LT'):
-                            usedVar[loc].append(ETn2name(N).upper())
+                            usedVar[loc].append(n2name(N).upper())
 
     
     result = {}

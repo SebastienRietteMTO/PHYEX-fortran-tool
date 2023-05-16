@@ -2,30 +2,28 @@
 This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
-from util import (copy_doc, ETgetParent, debugDecor,
-                  ETnon_code, needEtree)
+from util import (copy_doc, getParent, debugDecor,
+                  non_code)
 
 @debugDecor
-@needEtree
 def upperCase(doc):
     """
     :param doc: etree to use
     :return: same doc but with upper case letters for FORTRAN code
     """
     for elem in doc.iter():
-        if (not ETnon_code(elem)) and  elem is not None and elem.text is not None:
+        if (not non_code(elem)) and  elem is not None and elem.text is not None:
             elem.text = elem.text.upper()
     return doc
 
 @debugDecor
-@needEtree
 def lowerCase(doc):
     """
     :param doc: etree to use
     :return: same doc but with lower case letters for FORTRAN code
     """
     for elem in doc.iter():
-        if (not ETnon_code(elem)) and  elem is not None and elem.text is not None:
+        if (not non_code(elem)) and  elem is not None and elem.text is not None:
             elem.text = elem.text.lower()
     return doc
 
@@ -44,7 +42,7 @@ def changeIfStatementsInIfConstructs(doc):
     """
     ifstmt = doc.findall('.//{*}if-stmt')
     for item in ifstmt:
-        par = ETgetParent(doc,item)
+        par = getParent(doc,item)
         # Convert if-stmt to if-then-stmt and save current indentation from last sibling
         item.tag = '{http://fxtran.net/#syntax}if-then-stmt'
         curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
