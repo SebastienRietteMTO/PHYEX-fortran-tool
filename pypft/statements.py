@@ -16,33 +16,36 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
                          having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                          'func:<name of the function>'
-    :param simplify: try to simplify code (if we delete "print*, X" and if X is not used else where,
-                     we also delete it; or if the print was alone inside a if-then-endif construct,
-                     the construct is also removed, and variables used in the if condition are also
-                     checked...)
+    :param simplify: try to simplify code (if the .FALSE. was alone inside a if-then-endif construct,
+                     the construct is removed, and variables used in the if condition are also
+                     checked)
     """
-    xmlstring = '''<my_element xmlns:f="http://fxtran.net/#syntax"><f:literal-E> .FALSE. </f:literal-E></my_element>'''
-    FalseNode = ET.fromstring(xmlstring)[0]
+    FalseNode = ET.Element('{http://fxtran.net/#syntax}literal-E')
+    FalseNode.text = ' .FALSE. '
     for flag in flags:
         flag = flag.upper()
     if localityPath is None:
         localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
         if isinstance(localityPath, str): localityPath = [localityPath]
-    setFalseNodes = []
+    singleFalseBlock,multipleFalseBlock = [], []
     for loc in localityPath:
         #Loop on nodes composing the locality
         for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
             #Multiple flags conditions
             Node_opE = node.findall('.//{*}condition-E/{*}op-E')
             for node_opE in Node_opE:
+                found = False
                 for i,n in enumerate(node_opE):
                     if n.tag.endswith('}named-E') and alltext(n).upper() in flags:
+                        found = True
                         if i == 0: # Append at first object of parent
                             node_opE.insert(0,FalseNode)
                         else:
                             node_opE.append(FalseNode)
                         getParent(node_opE,n).remove(n)
+                if found:
+                    multipleFalseBlock.append(node_opE)
             #Solo condition
             Node_namedE = node.findall('.//{*}condition-E/{*}named-E')
             for n in Node_namedE:
@@ -50,10 +53,31 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
                     par = getParent(node,n)
                     par.append(FalseNode)
                     par.remove(n)
-            for flag in flags:
-                setFalseNodes += [node] if node.tag.endswith('}if-then-stmt') else [] #In case node is a call statement
-    #removeStmtNode(doc, printNodes, simplify, simplify)
-
+                    singleFalseBlock.append(getParent(node,getParent(node,par))) # <if-block><if-then-stmt>
+    if simplify:
+        removeStmtNode(doc, singleFalseBlock, simplify, simplify)
+        evalFalseIfStmt(doc, multipleFalseBlock, simplify)
+    
+def evalFalseIfStmt(doc, nodes, simplify=False):
+    """
+    Evaluate if-stmt with multiple op-E and remove the nodes if only .FALSE. are present
+    :param doc: xml fragment to use
+    :param nodes: list of nodes of type op-E to evaluate (containing .FALSE.)
+    :param simplify: try to simplify code (if if-block is removed, variables used in the if condition are also
+                     checked)
+    """
+    nodes_torm = []
+    for node in nodes:
+        toRemove = True
+        for n in node:
+            if n.tag.endswith('}op') or (n.tag.endswith('}literal-E') and '.FALSE.' in alltext(n)):
+                pass
+            else:
+                toRemove = False
+                break
+        if toRemove: 
+            nodes_torm.append(getParent(doc,getParent(doc,getParent(doc,node)))) #<if-block><if-then-stmt><condition-E>
+    removeStmtNode(doc, nodes_torm, simplify, simplify)
 
 @debugDecor
 def removeCall(doc, callName, localityPath, simplify=False):
