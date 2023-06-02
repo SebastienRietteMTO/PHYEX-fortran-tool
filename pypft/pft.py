@@ -173,6 +173,14 @@ if __name__ == '__main__':
                                help='Delete DR HOOK use')
     gApplications.add_argument('--deleteBudgetDDH', default=False, action='store_true',
                                help='Delete Budget/DDH use')
+    gApplications.add_argument('--expandDoLoops', default=False, action='store_true',
+                               help='Expand array syntax into explicit DO loops' + \
+                               'apply changeIfStatementsInIfConstructs as well')
+    gApplications.add_argument('--expandWhere', default=False, action='store_true',
+                               help='Expand where into explicit DO loops')
+    gApplications.add_argument('--expandAllArrays', default=False, action='store_true',
+                               help='Expand all array syntax (computing and where block)' + \
+                               'apply changeIfStatementsInIfConstructs as well')
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -255,6 +263,9 @@ if __name__ == '__main__':
     #Applications
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
+    if args.expandDoLoops: pft.removeArraySyntax(expandDoLoops = True)
+    if args.expandWhere: pft.removeArraySyntax(expandWhere = True)
+    if args.expandAllArrays: pft.removeArraySyntax(expandDoLoops = True, expandWhere = True)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()

@@ -393,6 +393,40 @@ def getSiblings(doc, item, before=True, after=True):
         siblings = siblings[siblings.index(item) + 1:]
     return [s for s in siblings if s != item]
 
+def moveInGrandParent(doc,node,nestedObj=[]):
+    """
+    :param node: move the node in its great-parent and remove the parent node
+    :param nestedObj: if present, move nestedObj[0] instead of node. The nestedObj must be contained such as node>...>...>nestedObj
+    """
+    par = getParent(doc,node)
+    allsiblings = par.findall('./{*}*')
+    ind=allsiblings.index(node)
+    if nestedObj:
+        par.insert(ind,nestedObj[0])
+    else:
+        par.insert(ind,node)
+    par.remove(node)
+    
+def getIndexLoop(lowerBound,upperBound):
+    print(lowerBound,upperBound)
+    if 'KSIZE' in upperBound:
+        n = 'IC'
+    elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
+        n = 'JIJ'
+    elif 'KT' in upperBound:
+        n = 'JK'
+    elif 'SV' in lowerBound or 'SV' in upperBound:
+        n = 'JSV'
+    elif 'KRR' in upperBound:
+        n = 'JRR'
+    elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound:
+        n = 'JI'
+    elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound:
+        n = 'JJ'
+    else:
+        exit
+    return n
+
 def insertInList(pos, item, l):
     """
     :param pos: insertion position

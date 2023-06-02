@@ -2,15 +2,166 @@
 This module includes functions to act on statements
 """
 import xml.etree.ElementTree as ET
-from util import copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, alltext
+from util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
+                  alltext,tostring, getIndexLoop)
 from locality import (getLocalityChildNodes, getLocalityNode, getLocalitiesList,
                       getLocalityPath)
 from variables import removeVarIfUnused
 
 @debugDecor
+def arrayRtoparensR(doc,arrayR):
+    """
+    Return a parensR node from an array-R
+    :param loopIndex: string for the fortran loop index 
+    :param lowerBound: string for the fortran lower bound of the do loop
+    :param upperBound: string for the fortran upper bound of the do loop
+    """
+    
+    subs=arrayR.findall('.//{*}section-subscript')
+    parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
+    parensR.text = '('
+    parensR.tail = ')'
+    elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
+    for i,sub in enumerate(subs): 
+        element = ET.Element('{http://fxtran.net/#syntax}element')
+        if alltext(sub) == ':': # (:) only
+            pass
+            #try to guess from the dimension declaration (need to first find the element from varList)
+        elif sub.text == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
+            upperBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
+            element.insert(0,createNamedENn(getIndexLoop('1',upperBound)))      
+        elif len(sub.findall('.//{*}upper-bound')) == 0:
+            if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
+                print('sub tail')
+                pass
+            else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
+                element.insert(0,sub.findall('.//{*}lower-bound')[0]) 
+        else:
+            lowerBounds=sub.findall('.//{*}lower-bound')
+            upperBounds=sub.findall('.//{*}upper-bound')
+            lowerBound=alltext(lowerBounds[0])
+            upperBound=alltext(upperBounds[0])
+            element.insert(0,createNamedENn(getIndexLoop(lowerBound,upperBound)))
+        elementLT.append(element)
+
+    for i in range(len(elementLT)-1):
+        elementLT[i].tail = ','
+    parensR.insert(0,elementLT)
+    return parensR
+            
+#<f:R-LT><f:parens-R>(<f:element-LT><f:element><f:named-E><f:N><f:n>JIJ</f:n></f:N></f:named-E></f:element>,
+#                     <f:element><f:named-E><f:N><f:n>JK</f:n></f:N></f:named-E></f:element></f:element-LT>)</f:parens-R></f:R-LT>
+
+@debugDecor
+def createDoStmt(loopIndexstr, lowerBoundstr, upperBoundstr):
+    """
+    Return a Do-construct node
+    :param loopIndexstr: string for the fortran loop index 
+    :param lowerBoundstr: string for the fortran lower bound of the do loop
+    :param upperBoundstr: string for the fortran upper bound of the do loop
+    """
+    doConstruct = ET.Element('{http://fxtran.net/#syntax}do-construct')
+    doStmt = ET.Element('{http://fxtran.net/#syntax}do-stmt')
+    doStmt.text = 'DO '
+    enddoStmt = ET.Element('{http://fxtran.net/#syntax}end-do-stmt')
+    enddoStmt.text = 'END DO '
+    enddoStmt.tail = '\n'
+    doV = ET.Element('{http://fxtran.net/#syntax}do-V')
+    doV.tail = '='
+    doV.insert(0,createNamedENn(loopIndexstr))
+    lowerBound, upperBound = createArrayBounds(lowerBoundstr, upperBoundstr,forDoLoop=True)
+    doConstruct.insert(0,doStmt)
+    doStmt.insert(0,doV)
+    doStmt.insert(1,lowerBound)
+    doStmt.insert(2,upperBound)
+    doStmt.insert(3,enddoStmt)
+    return doConstruct
+
+@debugDecor
+def createArrayBounds(lowerBoundstr, upperBoundstr, forDoLoop=False):
+    """
+    Return a lower-bound and upper-bound node
+    :param lowerBoundstr: string for the fortran lower bound of an array
+    :param upperBoundstr: string for the fortran upper bound of an array
+    :param forDoLoop: True for do loops; False for arrays
+    """
+    lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
+    lowerBound.insert(0,createNamedENn(lowerBoundstr))
+    upperBound = ET.Element('{http://fxtran.net/#syntax}upper-bound')
+    upperBound.insert(0,createNamedENn(upperBoundstr))
+    if forDoLoop:
+        lowerBound.tail = ','
+        upperBound.tail = '\n  '
+    else:
+        lowerBound.tail = ':'
+    return lowerBound,upperBound    
+    
+@debugDecor
+def createNamedENn(text=' '):
+    """
+    Return a <named-E/><N><n>text</n></N></named-E> node
+    :param text: string
+    """
+    namedE = ET.Element('{http://fxtran.net/#syntax}named-E')
+    N = ET.Element('{http://fxtran.net/#syntax}N')
+    n = ET.Element('{http://fxtran.net/#syntax}n')
+    n.text = text
+    namedE.insert(0,N)
+    N.insert(0,n)
+    return namedE
+
+@debugDecor
+def createIfThenConstruct(nodeConditionE):
+    """
+    Return a if-construct IF THEN ENDIF <if-construct/><if-block><if-then-stmt><condition-E>conditionE node</condition-E></if-then-stmt></if-block></if-construct> node
+    :param nodeConditionE: node that will be inserted as condition-E
+    """
+    ifConstruct = ET.Element('{http://fxtran.net/#syntax}if-construct')
+    ifBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
+    ifThenStmt = ET.Element('{http://fxtran.net/#syntax}if-then-stmt')
+    ifThenStmt.text = 'IF ('
+    conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
+    conditionE.tail = ') THEN\n'
+    endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
+    endifStmt.text = 'END IF\n'
+    conditionE.insert(0,nodeConditionE)
+    ifThenStmt.insert(0,conditionE)
+    ifBlock.insert(0,ifThenStmt)
+    ifBlock.insert(1,endifStmt)
+    ifConstruct.insert(0,ifBlock)
+    return ifConstruct
+
+@debugDecor
+def createIfThenElseConstruct(nodeConditionE):
+    """
+    Return a if-construct IF THEN ELSE ENDIF <if-construct/><if-block><if-then-stmt><condition-E>conditionE node
+    </condition-E></if-then-stmt>
+    </if-block><if-block>ELSE ENDIF</if-block></if-construct> node
+    :param nodeConditionE: node that will be inserted as condition-E
+    """
+    ifConstruct = ET.Element('{http://fxtran.net/#syntax}if-construct')
+    ifBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
+    ifThenStmt = ET.Element('{http://fxtran.net/#syntax}if-then-stmt')
+    ifThenStmt.text = 'IF ('
+    conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
+    conditionE.tail = ') THEN\n'
+    elseBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
+    elseStmt = ET.Element('{http://fxtran.net/#syntax}else-stmt')
+    elseStmt.text = 'ELSE\n'
+    endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
+    endifStmt.text = 'END IF\n'
+    conditionE.insert(0,nodeConditionE)
+    ifThenStmt.insert(0,conditionE)
+    ifBlock.insert(0,ifThenStmt)
+    elseBlock.insert(0,elseStmt)
+    elseBlock.insert(1,endifStmt)
+    ifConstruct.insert(0,ifBlock)
+    ifConstruct.insert(1,elseBlock)
+    return ifConstruct
+@debugDecor
 def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     """
-    Set to .FALSE. a given boolean fortran flag before removing the node
+    Set to .FALSE. a given boolean fortran flag before removing the node if simplify is True
     :param doc: xml fragment to use
     :param flags: list of strings of flags to set to .FALSE.
     :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
