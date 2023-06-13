@@ -28,19 +28,23 @@ def lowerCase(doc):
     return doc
 
 @debugDecor
-def changeIfStatementsInIfConstructs(doc):
+def changeIfStatementsInIfConstructs(doc,singleItem=''):
     """
-    Find all if-stmt and convert it to if-then-stmt
+    Convert if-stmt to if-then-stmt. If singleItem is not filled, conversion to all doc is performed.
     E.g., before :
     IF(A=B) print*,"C
     after :
     IF(A=B) THEN
         print*,"C
     END IF
-    :param doc: etree to use
+    :param doc: etree to use or parent of singleItem
+    :param singleItem: single item in case transformation is applied on one if-stmt only
     :return: modified doc
     """
-    ifstmt = doc.findall('.//{*}if-stmt')
+    if singleItem:
+        ifstmt = [singleItem]
+    else:
+        ifstmt = doc.findall('.//{*}if-stmt')
     for item in ifstmt:
         par = getParent(doc,item)
         # Convert if-stmt to if-then-stmt and save current indentation from last sibling
