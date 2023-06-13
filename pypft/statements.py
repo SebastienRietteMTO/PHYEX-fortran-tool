@@ -8,6 +8,7 @@ from locality import (getLocalityChildNodes, getLocalityNode, getLocalitiesList,
                       getLocalityPath)
 from variables import removeVarIfUnused
 
+
 @debugDecor
 def arrayRtoparensR(doc,arrayR):
     """
@@ -48,9 +49,6 @@ def arrayRtoparensR(doc,arrayR):
         elementLT[i].tail = ','
     parensR.insert(0,elementLT)
     return parensR
-            
-#<f:R-LT><f:parens-R>(<f:element-LT><f:element><f:named-E><f:N><f:n>JIJ</f:n></f:N></f:named-E></f:element>,
-#                     <f:element><f:named-E><f:N><f:n>JK</f:n></f:N></f:named-E></f:element></f:element-LT>)</f:parens-R></f:R-LT>
 
 @debugDecor
 def createDoStmt(loopIndexstr, lowerBoundstr, upperBoundstr):
@@ -121,9 +119,10 @@ def createIfThenConstruct(nodeConditionE):
     ifThenStmt = ET.Element('{http://fxtran.net/#syntax}if-then-stmt')
     ifThenStmt.text = 'IF ('
     conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
-    conditionE.tail = ') THEN\n'
+    conditionE.tail = ' ) THEN\n'
     endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
     endifStmt.text = 'END IF\n'
+    nodeConditionE.tail = '' # Original condition-E .tail from WHERE-condition has a comma
     conditionE.insert(0,nodeConditionE)
     ifThenStmt.insert(0,conditionE)
     ifBlock.insert(0,ifThenStmt)
@@ -150,6 +149,7 @@ def createIfThenElseConstruct(nodeConditionE):
     elseStmt.text = 'ELSE\n'
     endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
     endifStmt.text = 'END IF\n'
+    nodeConditionE.tail = '' # Original condition-E .tail from WHERE-condition has a comma
     conditionE.insert(0,nodeConditionE)
     ifThenStmt.insert(0,conditionE)
     ifBlock.insert(0,ifThenStmt)
