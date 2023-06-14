@@ -178,9 +178,14 @@ if __name__ == '__main__':
                                'apply changeIfStatementsInIfConstructs as well')
     gApplications.add_argument('--expandWhere', default=False, action='store_true',
                                help='Expand where into explicit DO loops')
+    gApplications.add_argument('--removeIJLoops', default=False, action='store_true',
+                               help='Remove DO loops on I and J dimensions (1,KLON)')
     gApplications.add_argument('--expandAllArrays', default=False, action='store_true',
                                help='Expand all array syntax (computing and where block)' + \
                                'apply changeIfStatementsInIfConstructs as well')
+    gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
+                               help='Inline containted subroutines in main routine')
+    
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
     gCosmetics.add_argument('--upperCase', default=False, action='store_true',
@@ -189,7 +194,8 @@ if __name__ == '__main__':
                             help='Put FORTRAN code in lower case letters')
     gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
                             help='Find all if-statement and convert it to if-then-statement')
-
+    gCosmetics.add_argument('--reDimKlonArrayToScalar', default=False, action='store_true',
+                               help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -263,6 +269,8 @@ if __name__ == '__main__':
     #Applications
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
+    if args.removeIJLoops: pft.removeIJLoops()
+    if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
     if args.expandDoLoops: pft.removeArraySyntax(expandDoLoops = True)
     if args.expandWhere: pft.removeArraySyntax(expandWhere = True)
     if args.expandAllArrays: pft.removeArraySyntax(expandDoLoops = True, expandWhere = True)
@@ -271,6 +279,7 @@ if __name__ == '__main__':
     if args.upperCase: pft.upperCase()
     if args.lowerCase: pft.lowerCase()
     if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
+    if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')

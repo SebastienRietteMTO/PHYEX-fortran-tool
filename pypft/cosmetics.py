@@ -3,7 +3,7 @@ This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
 from util import (copy_doc, getParent, debugDecor,
-                  non_code)
+                  non_code, alltext)
 
 @debugDecor
 def upperCase(doc):
@@ -61,6 +61,35 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
         for i in item.findall('./{*}cnt'):
             item.remove(i)
 
+@debugDecor
+def reDimKlonArrayToScalar(doc):
+    """
+    Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar.
+    To apply after applications:removeIJLoops and attachArraySpecToEntity
+    Applied on computation (index loop removal) and variable declarations (dimension removal)
+    :param doc: xml fragment
+    """
+    # Remove dimensions in variable statements
+    decls = doc.findall('.//{*}T-decl-stmt/{*}EN-decl-LT/{*}EN-decl')
+    for decl in decls:
+        varsShape= decl.findall('.//{*}shape-spec-LT')
+        for varShape in varsShape:
+            n = varShape.findall('.//{*}shape-spec')
+            if (len(n) == 1 and (alltext(n[0]) == 'D%NIJT' or alltext(n[0]) == 'D%NJT' or alltext(n[0]) == 'D%NIT')) \
+            or (len(n) == 2 and (alltext(n[0]) == 'D%NIT' and alltext(n[1]) == 'D%NJT')):
+                par = getParent(doc,varShape,level=2)
+                par.remove(getParent(doc,varShape))
+                break
+    # Remove in index loop in computation (possible after removeIJLoops has been applied) 
+    parensR = doc.findall('.//{*}parens-R')
+    for el in parensR:
+        n = el.findall('.//{*}n')
+        if (len(n) == 1 and (alltext(n[0]) == 'JI' or alltext(n[0]) == 'JJ' or alltext(n[0]) == 'JIJ')) \
+        or (len(n) == 2 and (alltext(n[0]) == 'JI' and alltext(n[1]) == 'JJ')):
+            par = getParent(doc,el)
+            par.remove(el)
+                
+                
 class Cosmetics():
     @copy_doc(upperCase)
     def upperCase(self):
@@ -69,6 +98,10 @@ class Cosmetics():
     @copy_doc(lowerCase)
     def lowerCase(self):
         self._xml = lowerCase(doc=self._xml)
+        
+    @copy_doc(reDimKlonArrayToScalar)
+    def reDimKlonArrayToScalar(self, *args, **kwargs):
+        return reDimKlonArrayToScalar(self._xml, *args, **kwargs)
 
     @copy_doc(changeIfStatementsInIfConstructs)
     def changeIfStatementsInIfConstructs(self):
