@@ -408,8 +408,8 @@ def moveInGrandParent(doc,node,nestedObj=[]):
     par.remove(node)
     
 def getIndexLoop(lowerBound,upperBound):
-    if 'KSIZE' in upperBound:
-        n = 'IC'
+    if 'KSIZE' in upperBound or 'KPROMA' in upperBound:
+        n = 'JL'
     elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
         n = 'JIJ'
     elif 'KT' in upperBound:

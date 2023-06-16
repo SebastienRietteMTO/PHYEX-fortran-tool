@@ -7,7 +7,7 @@ from util import (copy_doc, debugDecor,getIndexLoop,
                   alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
 from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR,createArrayBounds,
                         createIfThenConstruct, createIfThenElseConstruct,removeStmtNode)
-from variables import removeUnusedLocalVar, getVarList, addVar
+from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, showVarList
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
 import copy
@@ -39,6 +39,67 @@ def deleteBudgetDDH(doc, simplify=False):
     'BUCONF%LBUDGET_RC','BUCONF%LBUDGET_U','BUCONF%LBUDGET_V','BUCONF%LBUDGET_W']
     setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
 
+@debugDecor
+def addStack(doc):
+    """
+    Add specific allocations of local arrays on the fly for GPU
+    :param doc: etree to use
+    :param simplify : if True, remove variables that are now unused
+    """
+    locations  = getLocalitiesList(doc,withNodes='tuple')
+    addVar(doc,[[locations[0][0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
+    addModuleVar(doc, [[locations[0][0], 'STACK_MOD',None]])
+    
+    # Add include stack.h after the USE STACK_MOD
+    modules = doc.findall('.//{*}use-stmt/{*}module-N/{*}N/{*}n')
+    fortranSource = "SUBROUTINE FOO598756\n #include \"stack.h\" \nEND SUBROUTINE"
+    _, xmlIncludeStack = fortran2xml(fortranSource)
+    for mod in modules:
+        if alltext(mod) == 'STACK_MOD':
+            par = getParent(doc, mod, level=4)
+            index = par[:].index(getParent(doc, mod, level=3))
+            par.insert(index+1, xmlIncludeStack.find('.//{*}include'))
+
+    # Add !$acc routine (ROUTINE_NAME) seq after subroutine-stmt
+    routineName = doc.find('.//{*}subroutine-stmt/{*}subroutine-N/{*}N/{*}n')
+    fortranSource = "SUBROUTINE FOO598756\n !$acc routine ("+ alltext(routineName) + ") seq \nEND SUBROUTINE"
+    _, xmlAccRoutine = fortran2xml(fortranSource)
+    routineStmt = doc.find('.//{*}subroutine-stmt')
+    par = getParent(doc, routineStmt)
+    index = par[:].index(routineStmt)
+    par.insert(index+1, xmlAccRoutine.find('.//{*}C'))
+    
+    # Add YLSTACK = YDSTACK
+    decls = doc.findall('.//{*}T-decl-stmt')
+    lastDecl = decls[-1]
+    par = getParent(doc,lastDecl)
+    index = par[:].index(lastDecl)
+    fortranSource = "SUBROUTINE FOO598756\n YLSTACK=YDSTACK \nEND SUBROUTINE"
+    _, xml = fortran2xml(fortranSource)
+    par.insert(index+1,xml.find('.//{*}a-stmt'))
+ 
+    # Add alloc (local array)
+    #fortranSource = "SUBROUTINE FOO598756\n alloc (ZTLK) \nEND SUBROUTINE"
+    #_, xml = fortran2xml(fortranSource)
+    #par.insert(index+2, xml.find('.//{*}broken-stmt'))
+    
+    # Add temp (local array)
+    varList = getVarList(doc, locations[0][0])
+    # First remove PARAMETER variable (containing literal-E in asx)
+    #for var in varList:
+    #    if  var['as']:
+    #        for asx in var['asx'][0]:
+    #            if asx and 'literal-E' in asx:
+    #                print(var)   
+    # Look for local arrays
+    #for var in varList:
+    #    if not var['arg'] and var['as']:
+    #        print(var['n'])
+
+    
+    
+    
+    
 @debugDecor
 def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
     """
@@ -302,8 +363,15 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
                 ifBlocks = ifConstruct.findall('./{*}if-block')
                 for i,whereBlock in enumerate(whereBlocks):
                     Node_opE = whereBlock.findall('.//{*}a-stmt')
-                    for j,node_opE in enumerate(Node_opE):
-                        ifBlocks[i].insert(1+j,node_opE) # 1 is for if-stmt or else-stmt already present
+                    k=0
+                    for node_opE in Node_opE:
+                        ifBlocks[i].insert(1+k,node_opE) # 1 is for if-stmt or else-stmt already present
+                        k += 1
+                        # If a comment is next to the a-stmt, i.e. next sibling = <C>, keep it
+                        siblings = getSiblings(doc,node_opE,after=True,before=False)
+                        if siblings[0].tag.endswith('}C'):
+                            ifBlocks[i].insert(1+k,siblings[0]) # 1 is for if-stmt or else-stmt already present                  
+                            k += 1
     
                 # Insert the ifConstruct into the last object of finalToBuild before nesting the DO loop
                 finalToBuild[-1][0].insert(3,ifConstruct) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
@@ -527,6 +595,10 @@ def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify
     return removeUnusedLocalVar(doc, localityPath=localityPath, excludeList=excludeList, simplify=simplify)
 
 class Applications():
+    @copy_doc(addStack)
+    def addStack(self, *args, **kwargs):
+        return addStack(self._xml, *args, **kwargs)
+    
     @copy_doc(deleteDrHook)
     def deleteDrHook(self, *args, **kwargs):
         return deleteDrHook(self._xml, *args, **kwargs)

@@ -167,6 +167,17 @@ if __name__ == '__main__':
                                  'to exclude nothing). This option takes into account the ' + \
                                  'mnh_expand directives to prevent from removing useful variables.')
 
+    #Cosmetics
+    gCosmetics = parser.add_argument_group('Cosmetics options')
+    gCosmetics.add_argument('--upperCase', default=False, action='store_true',
+                            help='Put FORTRAN code in upper case letters')
+    gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
+                            help='Put FORTRAN code in lower case letters')
+    gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
+                            help='Find all if-statement and convert it to if-then-statement')
+    gCosmetics.add_argument('--reDimKlonArrayToScalar', default=False, action='store_true',
+                               help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
+    
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
     gApplications.add_argument('--deleteDrHook', default=False, action='store_true',
@@ -185,17 +196,9 @@ if __name__ == '__main__':
                                'apply changeIfStatementsInIfConstructs as well')
     gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
                                help='Inline containted subroutines in main routine')
-    
-    #Cosmetics
-    gCosmetics = parser.add_argument_group('Cosmetics options')
-    gCosmetics.add_argument('--upperCase', default=False, action='store_true',
-                            help='Put FORTRAN code in upper case letters')
-    gCosmetics.add_argument('--lowerCase', default=False, action='store_true',
-                            help='Put FORTRAN code in lower case letters')
-    gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
-                            help='Find all if-statement and convert it to if-then-statement')
-    gCosmetics.add_argument('--reDimKlonArrayToScalar', default=False, action='store_true',
-                               help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
+    gApplications.add_argument('--addStack', default=False, action='store_true',
+                               help='Add allocation of local array and stack variable')    
+
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -267,6 +270,7 @@ if __name__ == '__main__':
                                           **simplify)
 
     #Applications
+    if args.addStack: pft.addStack()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
     if args.removeIJLoops: pft.removeIJLoops()
