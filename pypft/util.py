@@ -406,9 +406,26 @@ def moveInGrandParent(doc,node,nestedObj=[]):
     else:
         par.insert(ind,node)
     par.remove(node)
-    
+
+def checkInDoWhile(doc,node):
+    """
+    :param doc: check if the doc node's parent is a DO WHILE 
+    """    
+    parentFound = True
+    doWhileFound = False
+    par = getParent(doc,node)
+    while parentFound:
+        if not par:
+            parentFound = False
+        elif par.tag.endswith('}do-construct') and (len(par.findall('.//{*}do-stmt/{*}test-E}')) > 0):
+            doWhileFound = True
+            parentFound = False
+        else:        
+            par = getParent(doc,par)
+    return doWhileFound
+        
 def getIndexLoop(lowerBound,upperBound):
-    if 'KSIZE' in upperBound or 'KPROMA' in upperBound:
+    if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound:
         n = 'JL'
     elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
         n = 'JIJ'

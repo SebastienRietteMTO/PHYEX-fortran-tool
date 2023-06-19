@@ -4,10 +4,10 @@ This module implements functions for high-to-moderate level transformation
 
 import xml.etree.ElementTree as ET
 from util import (copy_doc, debugDecor,getIndexLoop,
-                  alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
+                  alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml,checkInDoWhile)
 from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR,createArrayBounds,
-                        createIfThenConstruct, createIfThenElseConstruct,removeStmtNode)
-from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, showVarList
+                        createIfThenElseConstruct,removeStmtNode)
+from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
 import copy
@@ -106,14 +106,21 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
     Remove all the array syntax and replace it by do loops (WHERE not included for now)
     If index are present in fortran code, e.g. A(IIB:IIE), the DO loops index limits are kept
     If index are not present, e.g. A(:,;), the DO loops index limits are the complete size of the array
+    TODO: If the array-syntax is present in a DO WHILE loop, the transformation is not applied.
+    TODO: Double nested WHERE are not transformed
     :param doc: etree to use
     :param expandDoLoops: if True, expand Do loops
-    :param expandWhere: if True, expand Where (TODO : does not work with nested where)
+    :param expandWhere: if True, expand Where
     """
     # If-Statements must be expanded first : may be applied locally (TODO adapt the function changeIfStatementsInIfConstructs)
     if expandDoLoops: changeIfStatementsInIfConstructs(doc)
     
     locations  = getLocalitiesList(doc,withNodes='tuple')
+    # work on subroutines or functions only
+    for loc in locations:
+        if '/sub:' not in loc[0] or '/func:' not in loc[0]:
+            locations.remove(loc)
+
     for loc in locations:
         varList = getVarList(doc, loc)
         locNode = loc[1]
@@ -130,38 +137,75 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
         
         loopIndexToCheck = []
         
-        # Convert where-construct-stmt
+        # Convert where-construct statements and else-where statements
         if expandWhere:
             whereConstruct = locNode.findall('.//{*}where-construct')
             for node_where in whereConstruct:
-                node_opE = node_where.findall('.//{*}where-construct-stmt/{*}*/{*}*')[0] # The last * is for finding op-E but also single array-R masks
-                # If found, convert all ':' alone to declared dimensions array 1:D%...
-                subs=node_opE.findall('.//{*}section-subscript')
-                for sub in subs:
-                    if alltext(sub) == ':': # ':' alone
-                        # Get the i sub-index of the current object of E-2
-                        subPar = getParent(locNode,sub)
-                        for j,el in enumerate(subPar):
-                            if el == sub:
-                                indextoTransform=j
-                                break
-                        # Get the variable object to find its declaration dimension
-                        varName = alltext(getParent(node_opE,sub,level=4).findall('.//{*}N/{*}n')[0])
-                        ind=varArrayNamesList.index(varName)
-                        lowerBound = '1'
-                        upperBound = str(varArray[ind]['as'][indextoTransform][1])
-                        lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
-                        sub.insert(0,lowerXml)
-                        sub.insert(1,upperXml)
-                        sub.text = '' # Delete the initial ':'
-                
-                # Replace the array-like index selection by index loop on all variables (array-R)
-                arrayR = node_opE.findall('.//{*}array-R')
-                for node in arrayR:
-                    parensR=arrayRtoparensR(locNode,node)
-                    par = getParent(node_opE,node)
-                    par.insert(1,parensR)
-                    par.remove(node)
+                inDoWhile = checkInDoWhile(locNode,node_where)
+                if not inDoWhile:
+                    node_opE = node_where.findall('.//{*}where-construct-stmt/{*}*/{*}*')[0] # The last * is for finding op-E but also single array-R masks
+                    #node_opE.extend(node_where.findall('.//{*}else-where-stmt/{*}*'))
+                    # If found, convert all ':' alone to declared dimensions array 1:D%...
+                    subs=node_opE.findall('.//{*}section-subscript')
+                    for sub in subs:
+                        if alltext(sub) == ':': # ':' alone
+                            # Get the i sub-index of the current object of E-2
+                            subPar = getParent(locNode,sub)
+                            for j,el in enumerate(subPar):
+                                if el == sub:
+                                    indextoTransform=j
+                                    break
+                            # Get the variable object to find its declaration dimension
+                            varName = alltext(getParent(node_opE,sub,level=4).findall('.//{*}N/{*}n')[0])
+                            ind=varArrayNamesList.index(varName)
+                            lowerBound = '1'
+                            upperBound = str(varArray[ind]['as'][indextoTransform][1])
+                            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+                            sub.insert(0,lowerXml)
+                            sub.insert(1,upperXml)
+                            sub.text = '' # Delete the initial ':'
+                    
+                    # Replace the array-like index selection by index loop on all variables (array-R)
+                    arrayR = node_opE.findall('.//{*}array-R')
+                    for node in arrayR:
+                        parensR=arrayRtoparensR(locNode,node)
+                        par = getParent(node_opE,node)
+                        par.insert(1,parensR)
+                        par.remove(node)
+            
+            # Else-where statements (to factorize with above)
+            for node_where in whereConstruct:
+                inDoWhile = checkInDoWhile(locNode,node_where)
+                if not inDoWhile:
+                    node_opEs = node_where.findall('.//{*}else-where-stmt/{*}*')
+                    for node_opE in node_opEs:
+                        # If found, convert all ':' alone to declared dimensions array 1:D%...
+                        subs=node_opE.findall('.//{*}section-subscript')
+                        for sub in subs:
+                            if alltext(sub) == ':': # ':' alone
+                                # Get the i sub-index of the current object of E-2
+                                subPar = getParent(locNode,sub)
+                                for j,el in enumerate(subPar):
+                                    if el == sub:
+                                        indextoTransform=j
+                                        break
+                                # Get the variable object to find its declaration dimension
+                                varName = alltext(getParent(node_opE,sub,level=4).findall('.//{*}N/{*}n')[0])
+                                ind=varArrayNamesList.index(varName)
+                                lowerBound = '1'
+                                upperBound = str(varArray[ind]['as'][indextoTransform][1])
+                                lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+                                sub.insert(0,lowerXml)
+                                sub.insert(1,upperXml)
+                                sub.text = '' # Delete the initial ':'
+                        
+                        # Replace the array-like index selection by index loop on all variables (array-R)
+                        arrayR = node_opE.findall('.//{*}array-R')
+                        for node in arrayR:
+                            parensR=arrayRtoparensR(locNode,node)
+                            par = getParent(node_opE,node)
+                            par.insert(1,parensR)
+                            par.remove(node)
         
         # expandDoLoops if possible
         for node_opE in Node_opE:
@@ -169,7 +213,8 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
             if len(anyArrayR) > 0:
                 nodePar = getParent(locNode,node_opE)
                 onlyNumbers = False
-                if not nodePar.tag.endswith('}where-block') and expandDoLoops:
+                inDoWhile = checkInDoWhile(locNode,node_opE)
+                if not nodePar.tag.endswith('}where-block') and expandDoLoops and not inDoWhile:
                     found_goldIndex = False
                     for n in node_opE.findall('.//{*}n'): #Premiere façon de faire : on cherche si les indices existent et si ils sont strictement égaux à JIJ,JK, JI ou JJ  
                         if alltext(n) == 'JK' or alltext(n) == 'JIJ' \
@@ -208,6 +253,12 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
                                 ind=varArrayNamesList.index(varName)
                                 lowerBound = '1'
                                 upperBound = str(varArray[ind]['as'][i][1])
+                                try: # If upperBound is an integer found in the variable declaration, then the expansion is not done (in general, small numbers)
+                                    int(upperBound)
+                                    onlyNumbers = True
+                                    break
+                                except:
+                                    pass
                                 lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
                                 sub.insert(0,lowerXml)
                                 sub.insert(1,upperXml)
@@ -228,8 +279,7 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
                                     sub.insert(0,lowerXml)
                                     sub.insert(1,upperXml)
                                     sub.text = '' # Delete the initial ':'
-                                    indexLoop = getIndexLoop(lowerBound, upperBound)
-                                    doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
+                                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
                                 else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
                                     pass
                             else:
@@ -241,8 +291,7 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
                                     onlyNumbers = True
                                     break
                                 else:
-                                    indexLoop = getIndexLoop(lowerBound, upperBound)
-                                    doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
+                                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
                         doToBuild.reverse() # To write first loops from the latest index (K or SV)
 
                         for dostmt in doToBuild:
@@ -275,116 +324,129 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
         # expandWhere if possible
         if expandWhere:
             for node_where in whereConstruct:
-                nodePar = getParent(locNode,node_where)
-                Node_opE = node_where.findall('.//{*}a-stmt')
-                doToBuild,finalToBuild = [], []
-                for node_opE in Node_opE:
-                    varName = alltext(node_opE.findall('.//{*}E-1/{*}*/{*}*/{*}n')[0])
-                    # convert all ':' alone to declared dimensions array 1:D%...
-                    subsE2=node_opE.findall('.//{*}E-2//{*}section-subscript')
-                    for sub in subsE2:
-                        if alltext(sub) == ':': # ':' alone
-                            # Get the i sub-index of the current object of E-2
-                            subPar = getParent(locNode,sub)
-                            for j,el in enumerate(subPar):
-                                if el == sub:
-                                    indextoTransform=j
-                                    break
-                            # Get the variable object to find its declaration dimension
-                            ind=varArrayNamesList.index(varName) #TODO varName is probably wrong here because multiple objects can be in E-2 and varName is from E-1
-                            lowerBound = '1'
-                            upperBound = str(varArray[ind]['as'][indextoTransform][1])
-                            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
-                            sub.insert(0,lowerXml)
-                            sub.insert(1,upperXml)
-                            sub.text = '' # Delete the initial ':'
-                    
-                    # Build Do statement based on the type of section-subscript of E-1 and Convert E-1 element with ':' alone to array-R for next step
-                    # TODO : pas propre, on créer des doToBuild qui ne servent à rien (seulement la première fois créé est sauvegardée)
-                    # Ceci est pour faire une unique boucle nestée et y placer le IF-THEN stmt. Les indices des boucles sont basées sur E-1
-                    # Ce qui n'est pas toujours correct mais devrait l'être (à vérifier)
-                    subsE1=node_opE.findall('.//{*}E-1//{*}section-subscript')
-                    for i,sub in enumerate(subsE1):
-                        if alltext(sub) == ':': # ':' alone
-                            # Creation of the array-R object needed to be converted futher in parens-R
-                            ind=varArrayNamesList.index(varName)
-                            lowerBound = '1'
-                            upperBound = str(varArray[ind]['as'][i][1])
-                            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
-                            sub.insert(0,lowerXml)
-                            sub.insert(1,upperXml)
-                            sub.text = '' # Delete the initial ':'
-                            # Create the DO statement
-                            indexLoop = getIndexLoop(lowerBound, upperBound)
-                            doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
-                        elif sub.text == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
-                            upperBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-                            doToBuild.append(createDoStmt(getIndexLoop('1',upperBound),'1',upperBound))
-                        elif len(sub.findall('.//{*}upper-bound')) == 0:
-                            if ':' in alltext(sub): # INDEX: e.g. (IKTB:) ==> IKTB:size(node_opE)
-                                # Creation of the array-R object needed to be converted futher in parens-R
-                                ind=varArrayNamesList.index(varName)
-                                lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-                                upperBound = str(varArray[ind]['as'][i][1])
+                inDoWhile = checkInDoWhile(locNode,node_where)
+                if not inDoWhile:
+                    nodePar = getParent(locNode,node_where)
+                    Node_opE = node_where.findall('.//{*}a-stmt')
+                    doToBuild,finalToBuild = [], []
+                    for node_opE in Node_opE:
+                        varName = alltext(node_opE.findall('.//{*}E-1/{*}*/{*}*/{*}n')[0])
+                        # convert all ':' alone to declared dimensions array 1:D%...
+                        subsE2=node_opE.findall('.//{*}E-2//{*}section-subscript')
+                        for sub in subsE2:
+                            if alltext(sub) == ':': # ':' alone
+                                # Get the i sub-index of the current object of E-2
+                                subPar = getParent(locNode,sub)
+                                for j,el in enumerate(subPar):
+                                    if el == sub:
+                                        indextoTransform=j
+                                        break
+                                # Get the variable object to find its declaration dimension
+                                ind=varArrayNamesList.index(varName) #TODO varName is probably wrong here because multiple objects can be in E-2 and varName is from E-1
+                                lowerBound = '1'
+                                upperBound = str(varArray[ind]['as'][indextoTransform][1])
                                 lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
                                 sub.insert(0,lowerXml)
                                 sub.insert(1,upperXml)
                                 sub.text = '' # Delete the initial ':'
+                        
+                        # Build Do statement based on the type of section-subscript of E-1 and Convert E-1 element with ':' alone to array-R for next step
+                        # TODO : pas propre, on créer des doToBuild qui ne servent à rien (seulement la première fois créé est sauvegardée)
+                        # Ceci est pour faire une unique boucle nestée et y placer le IF-THEN stmt. Les indices des boucles sont basées sur E-1
+                        # Ce qui n'est pas toujours correct mais devrait l'être (à vérifier)
+                        subsE1=node_opE.findall('.//{*}E-1//{*}section-subscript')
+                        for i,sub in enumerate(subsE1):
+                            if alltext(sub) == ':': # ':' alone
+                                # Creation of the array-R object needed to be converted futher in parens-R
+                                ind=varArrayNamesList.index(varName)
+                                lowerBound = '1'
+                                upperBound = str(varArray[ind]['as'][i][1])
+                                try: # If upperBound is an integer found in the variable declaration, then the expansion is not done (in general, small numbers)
+                                    int(upperBound)
+                                    onlyNumbers = True
+                                    break
+                                except:
+                                    pass
+                                lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+                                sub.insert(0,lowerXml)
+                                sub.insert(1,upperXml)
+                                sub.text = '' # Delete the initial ':'
+                                # Create the DO statement
                                 indexLoop = getIndexLoop(lowerBound, upperBound)
                                 doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
-                            else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
-                                pass
-                        else:
-                            lowerBounds=sub.findall('.//{*}lower-bound')
-                            upperBounds=sub.findall('.//{*}upper-bound')
-                            lowerBound=alltext(lowerBounds[0])
-                            upperBound=alltext(upperBounds[0])
-                            doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
-                    doToBuild.reverse() # To write first loops from the latest index (K or SV)
-                    if len(finalToBuild) == 0:
-                        for do in doToBuild:
-                            finalToBuild.append(do)
-                    # Replace the array-like index selection by index loop on all variables (array-R)
-                    arrayR = node_opE.findall('.//{*}array-R')
-                    for node in arrayR:
-                        parensR=arrayRtoparensR(locNode,node)
-                        par = getParent(node_opE,node)
-                        par.insert(1,parensR)
-                        par.remove(node)
+                            elif sub.text == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
+                                upperBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
+                                doToBuild.append(createDoStmt(getIndexLoop('1',upperBound),'1',upperBound))
+                            elif len(sub.findall('.//{*}upper-bound')) == 0:
+                                if ':' in alltext(sub): # INDEX: e.g. (IKTB:) ==> IKTB:size(node_opE)
+                                    # Creation of the array-R object needed to be converted futher in parens-R
+                                    ind=varArrayNamesList.index(varName)
+                                    lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
+                                    upperBound = str(varArray[ind]['as'][i][1])
+                                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+                                    sub.insert(0,lowerXml)
+                                    sub.insert(1,upperXml)
+                                    sub.text = '' # Delete the initial ':'
+                                    indexLoop = getIndexLoop(lowerBound, upperBound)
+                                    doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
+                                else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
+                                    pass
+                            else:
+                                lowerBounds=sub.findall('.//{*}lower-bound')
+                                upperBounds=sub.findall('.//{*}upper-bound')
+                                lowerBound=alltext(lowerBounds[0])
+                                upperBound=alltext(upperBounds[0])
+                                if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
+                                    onlyNumbers = True
+                                    break
+                                else:
+                                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                        doToBuild.reverse() # To write first loops from the latest index (K or SV)
+                        if len(finalToBuild) == 0:
+                            for do in doToBuild:
+                                finalToBuild.append(do)
+                        # Replace the array-like index selection by index loop on all variables (array-R)
+                        if not onlyNumbers:
+                            arrayR = node_opE.findall('.//{*}array-R')
+                            for node in arrayR:
+                                parensR=arrayRtoparensR(locNode,node)
+                                par = getParent(node_opE,node)
+                                par.insert(1,parensR)
+                                par.remove(node)
+                            
+                    # Create an Ifconstruct object from the condition in the WHERE statement
+                    whereBlocks = node_where.findall('.//{*}where-block')
+                    conditionsInWhere = node_where.findall('.//{*}where-construct-stmt/{*}mask-E')
+                    conditionsInWhere.extend(node_where.findall('.//{*}else-where-stmt/{*}mask-E'))
+                    ifConstruct = createIfThenElseConstruct(conditionsInWhere,nbelseBlock=len(whereBlocks)-1)
                         
-                # Create an Ifconstruct object from the condition in the WHERE statement
-                whereBlocks = node_where.findall('.//{*}where-block')
-                if len(whereBlocks) == 2: #ELSEWHERE present
-                    ifConstruct = createIfThenElseConstruct(node_where.findall('.//{*}where-construct-stmt/{*}mask-E')[0])            
-                else:
-                    ifConstruct = createIfThenConstruct(node_where.findall('.//{*}where-construct-stmt/{*}mask-E')[0])
-    
-                # Loop on a-stmt object inserted in the if-construct
-                ifBlocks = ifConstruct.findall('./{*}if-block')
-                for i,whereBlock in enumerate(whereBlocks):
-                    Node_opE = whereBlock.findall('.//{*}a-stmt')
-                    k=0
-                    for node_opE in Node_opE:
-                        ifBlocks[i].insert(1+k,node_opE) # 1 is for if-stmt or else-stmt already present
-                        k += 1
-                        # If a comment is next to the a-stmt, i.e. next sibling = <C>, keep it
-                        siblings = getSiblings(doc,node_opE,after=True,before=False)
-                        if siblings[0].tag.endswith('}C'):
-                            ifBlocks[i].insert(1+k,siblings[0]) # 1 is for if-stmt or else-stmt already present                  
+                    # Loop on a-stmt object inserted in the if-construct
+                    ifBlocks = ifConstruct.findall('./{*}if-block')
+                    for i,whereBlock in enumerate(whereBlocks):
+                        Node_opE = whereBlock.findall('.//{*}a-stmt')
+                        k=0
+                        for node_opE in Node_opE:
+                            ifBlocks[i].insert(1+k,node_opE) # 1 is for if-stmt or else-stmt already present
                             k += 1
+                            # If a comment is next to the a-stmt, i.e. next sibling = <C>, keep it
+                            siblings = getSiblings(doc,node_opE,after=True,before=False)
+                            if len(siblings)>0:
+                                if siblings[0].tag.endswith('}C'):
+                                    ifBlocks[i].insert(1+k,siblings[0]) # 1 is for if-stmt or else-stmt already present                  
+                                    k += 1
     
-                # Insert the ifConstruct into the last object of finalToBuild before nesting the DO loop
-                finalToBuild[-1][0].insert(3,ifConstruct) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
-                # Insert nested DO-loops into the previous object of finalToBuild until reach the 0e object
-                for i in range(len(finalToBuild)-1):
-                    finalToBuild[len(finalToBuild)-1-(i+1)][0].insert(3,finalToBuild[len(finalToBuild)-1-i])
-                moveInGrandParent(locNode,node_opE,nestedObj=finalToBuild)
-    
-                # Clean where-blocks and move first Do-stmt to where-construct parent
-                allsiblings = nodePar.findall('./{*}*')
-                ind=allsiblings.index(node_where)
-                nodePar.insert(ind,node_where.findall('.//{*}do-construct')[0])
-                nodePar.remove(node_where)
+                    # Insert the ifConstruct into the last object of finalToBuild before nesting the DO loop
+                    finalToBuild[-1][0].insert(3,ifConstruct) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
+                    # Insert nested DO-loops into the previous object of finalToBuild until reach the 0e object
+                    for i in range(len(finalToBuild)-1):
+                        finalToBuild[len(finalToBuild)-1-(i+1)][0].insert(3,finalToBuild[len(finalToBuild)-1-i])
+                    moveInGrandParent(locNode,node_opE,nestedObj=finalToBuild)
+        
+                    # Clean where-blocks and move first Do-stmt to where-construct parent
+                    allsiblings = nodePar.findall('./{*}*')
+                    ind=allsiblings.index(node_where)
+                    nodePar.insert(ind,node_where.findall('.//{*}do-construct')[0])
+                    nodePar.remove(node_where)
     
         # Before leaving the locality, check loop index presence
         for loopIndex in loopIndexToCheck:
