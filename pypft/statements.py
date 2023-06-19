@@ -109,34 +109,13 @@ def createNamedENn(text=' '):
     return namedE
 
 @debugDecor
-def createIfThenConstruct(nodeConditionE):
+def createIfThenElseConstruct(nodeConditionE, nbelseBlock):
     """
-    Return a if-construct IF THEN ENDIF <if-construct/><if-block><if-then-stmt><condition-E>conditionE node</condition-E></if-then-stmt></if-block></if-construct> node
-    :param nodeConditionE: node that will be inserted as condition-E
-    """
-    ifConstruct = ET.Element('{http://fxtran.net/#syntax}if-construct')
-    ifBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
-    ifThenStmt = ET.Element('{http://fxtran.net/#syntax}if-then-stmt')
-    ifThenStmt.text = 'IF ('
-    conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
-    conditionE.tail = ' ) THEN\n'
-    endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
-    endifStmt.text = 'END IF\n'
-    nodeConditionE.tail = '' # Original condition-E .tail from WHERE-condition has a comma
-    conditionE.insert(0,nodeConditionE)
-    ifThenStmt.insert(0,conditionE)
-    ifBlock.insert(0,ifThenStmt)
-    ifBlock.insert(1,endifStmt)
-    ifConstruct.insert(0,ifBlock)
-    return ifConstruct
-
-@debugDecor
-def createIfThenElseConstruct(nodeConditionE):
-    """
-    Return a if-construct IF THEN ELSE ENDIF <if-construct/><if-block><if-then-stmt><condition-E>conditionE node
+    Return a if-construct IF THEN ELSE IF.. x number of nbelseBlock... ENDIF <if-construct/><if-block><if-then-stmt><condition-E>conditionE node
     </condition-E></if-then-stmt>
     </if-block><if-block>ELSE ENDIF</if-block></if-construct> node
-    :param nodeConditionE: node that will be inserted as condition-E
+    :param nodeConditionE: list of nodes that will be inserted as condition-E
+    :param nbelseBlock: number of ELSE blocks needed
     """
     ifConstruct = ET.Element('{http://fxtran.net/#syntax}if-construct')
     ifBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
@@ -144,20 +123,38 @@ def createIfThenElseConstruct(nodeConditionE):
     ifThenStmt.text = 'IF ('
     conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
     conditionE.tail = ') THEN\n'
-    elseBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
-    elseStmt = ET.Element('{http://fxtran.net/#syntax}else-stmt')
-    elseStmt.text = 'ELSE\n'
     endifStmt =  ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
     endifStmt.text = 'END IF\n'
-    nodeConditionE.tail = '' # Original condition-E .tail from WHERE-condition has a comma
-    conditionE.insert(0,nodeConditionE)
+    nodeConditionE[0].tail = '' # Original condition-E .tail from WHERE-condition has a comma
+    conditionE.insert(0,nodeConditionE[0][0])
     ifThenStmt.insert(0,conditionE)
     ifBlock.insert(0,ifThenStmt)
-    elseBlock.insert(0,elseStmt)
-    elseBlock.insert(1,endifStmt)
     ifConstruct.insert(0,ifBlock)
-    ifConstruct.insert(1,elseBlock)
+    if nbelseBlock > 0:
+        for n in range(nbelseBlock):
+            if n < nbelseBlock - 1:
+                print(alltext(nodeConditionE[n+1]))
+                ifConstruct.append(createElseBlock(nodeConditionE[n+1]))
+            else:
+                ifConstruct.append(createElseBlock(None))
+    ifConstruct.append(endifStmt)
     return ifConstruct
+
+@debugDecor
+def createElseBlock(nodeconditionE):
+    elseBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
+    elseStmt = ET.Element('{http://fxtran.net/#syntax}else-stmt')
+    if nodeconditionE:
+        elseStmt.text = 'ELSE IF ('
+        conditionE = ET.Element('{http://fxtran.net/#syntax}condition-E')
+        conditionE.tail = ' THEN \n'
+        conditionE.insert(0,nodeconditionE)
+        elseStmt.insert(1,conditionE)
+    else:
+        elseStmt.text = 'ELSE\n'
+    elseBlock.insert(0,elseStmt)     
+    return elseBlock
+
 @debugDecor
 def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     """
