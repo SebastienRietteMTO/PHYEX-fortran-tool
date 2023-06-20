@@ -38,7 +38,7 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
         print*,"C
     END IF
     :param doc: etree to use or parent of singleItem
-    :param singleItem: single item in case transformation is applied on one if-stmt only
+    :param singleItem: single if-stmt; in case transformation is applied on one if-stmt only
     :return: modified doc
     """
     if singleItem:
@@ -49,7 +49,10 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
         par = getParent(doc,item)
         # Convert if-stmt to if-then-stmt and save current indentation from last sibling
         item.tag = '{http://fxtran.net/#syntax}if-then-stmt'
-        curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
+        if par[par[:].index(item)-1].tail: # if tail of previous sibling exists
+            curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
+        else: # no tail = no indentation
+            curr_indent = ""
         # Indentation is applied on current item.tail (for next Fortran line)
         item[0].tail += 'THEN\n' + curr_indent + '  '
         # Add end-if-stmt to the parent of the if-stmt
