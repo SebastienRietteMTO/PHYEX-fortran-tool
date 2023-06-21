@@ -183,8 +183,9 @@ def inlineContainedSubroutines(doc):
 
     #Remove original containted subroutines and 'CONTAINS' statement
     contains = doc.find('.//{*}contains-stmt')
-    par = getParent(doc,contains)
-    par.remove(contains)
+    if contains:
+        par = getParent(doc,contains)
+        par.remove(contains)
     for loc in locations:
         if loc[0][:4] == 'sub:' and '/' in loc[0] and loc[1].tag.endswith('}program-unit'):
             par = getParent(doc,loc[1])
