@@ -131,6 +131,7 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
             if expandDoLoops:
                 for node_opE in Node_opE:
                     inDoWhile = checkInDoWhile(locNode,node_opE)
+                    print(alltext(node_opE))
                     if not inDoWhile:
                         # Expand single-line if-statement if any in front of an a-stmt with section-subscript (locally)
                         if getParent(doc,node_opE,level=2).tag.endswith('}if-stmt') and len(node_opE.findall('.//{*}section-subscript')) > 0: # level=1 is action-stmt, need level=2 to get the if-stmt node
@@ -183,7 +184,7 @@ def inlineContainedSubroutines(doc):
 
     #Remove original containted subroutines and 'CONTAINS' statement
     contains = doc.find('.//{*}contains-stmt')
-    if contains:
+    if contains is not None:
         par = getParent(doc,contains)
         par.remove(contains)
     for loc in locations:
@@ -288,8 +289,8 @@ def inline(doc, subContained, callStmt):
 @debugDecor            
 def removeIJLoops(doc):
     """
-    Remove all Do loops on JI and JJ : preparation to computation on Klev only
-    and init former indexes JI,JJ,JIJ to first array element (= 1) JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
+    Remove all Do loops on JI and JJ for preparation to compute on Klev only
+    and initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
     WARNING : executed transformed-code will work only if inlineContainedSubroutines is applied first
     :param doc: xml fragment to search for variable usage
     """
@@ -299,18 +300,18 @@ def removeIJLoops(doc):
         localNode = loc[1]
         doNodes = localNode.findall('.//{*}do-construct')  
         indexRemoved = []
+        # Look for all do-nodes, check if the loop-index is one of the authorized list (indexToCheck), if found, removes it
         for doNode in doNodes:
             loopIndex = doNode.findall('.//{*}do-stmt/{*}do-V/{*}named-E/{*}N/{*}n')
             for loopI in loopIndex:
                 if alltext(loopI) in indexToCheck.keys():
-                    removeStmtNode(localNode,getParent(localNode,loopI,level=4),False,False) #TODO: the call to removeStmtNode alone adds an empty line after the END-DO stmt + add extra spaces to first children stmt (and end-stmt). Try on turb.F90
+                    removeStmtNode(localNode, getParent(localNode,loopI,level=4), False, False) #TODO: the call to removeStmtNode alone adds an empty line after the END-DO stmt + add extra spaces to first children stmt (and end-stmt). Try on turb.F90
                     endDo = doNode.findall('.//{*}end-do-stmt')
-                    getParent(localNode,endDo[0]).remove(endDo[0]) #remove end-do statement
+                    getParent(localNode,endDo[-1]).remove(endDo[-1]) #remove end-do statement, the last END-DO corresponds to the first DO LOOP we remove, in case of nested DO-loops
                     if alltext(loopI) not in indexRemoved:
                         indexRemoved.append(alltext(loopI))
         
         # Add initialization of old index loop to D%NJB or D%NIB or D%NIJB
-        # Not yet tested because, need to have inlined containted routines first
         if len(indexRemoved) > 0:
             lastDecl = localNode.findall('.//{*}T-decl-stmt')[-1] # The case where no T-decl-stmt is found, is not handled (it should not exist !)
             par = getParent(localNode,lastDecl)

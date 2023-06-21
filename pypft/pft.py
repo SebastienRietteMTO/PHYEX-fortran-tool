@@ -273,11 +273,11 @@ if __name__ == '__main__':
     if args.addStack: pft.addStack()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
-    if args.removeIJLoops: pft.removeIJLoops()
     if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
     if args.expandDoLoops: pft.removeArraySyntax(expandDoLoops = True)
     if args.expandWhere: pft.removeArraySyntax(expandWhere = True)
     if args.expandAllArrays: pft.removeArraySyntax(expandDoLoops = True, expandWhere = True)
+    if args.removeIJLoops: pft.removeIJLoops()
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
