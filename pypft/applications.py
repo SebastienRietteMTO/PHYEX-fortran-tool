@@ -300,13 +300,14 @@ def removeIJLoops(doc):
         localNode = loc[1]
         doNodes = localNode.findall('.//{*}do-construct')  
         indexRemoved = []
+        doNodes.reverse()
         # Look for all do-nodes, check if the loop-index is one of the authorized list (indexToCheck), if found, removes it
         for doNode in doNodes:
             loopIndex = doNode.findall('.//{*}do-stmt/{*}do-V/{*}named-E/{*}N/{*}n')
             for loopI in loopIndex:
                 if alltext(loopI) in indexToCheck.keys():
+                    endDo = getParent(localNode,loopI,level=5).findall('.//{*}end-do-stmt') # loopI's parent level=5 is a do-construct
                     removeStmtNode(localNode, getParent(localNode,loopI,level=4), False, False) #TODO: the call to removeStmtNode alone adds an empty line after the END-DO stmt + add extra spaces to first children stmt (and end-stmt). Try on turb.F90
-                    endDo = doNode.findall('.//{*}end-do-stmt')
                     getParent(localNode,endDo[-1]).remove(endDo[-1]) #remove end-do statement, the last END-DO corresponds to the first DO LOOP we remove, in case of nested DO-loops
                     if alltext(loopI) not in indexRemoved:
                         indexRemoved.append(alltext(loopI))

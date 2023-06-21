@@ -209,14 +209,17 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
     if len(anyArrayR) > 0:
         nodePar = getParent(locNode,node_opE)
         if not nodePar.tag.endswith('}where-block'): # Array syntax in where-blocks are transformed in expandWhere function
-            found_goldIndex = False
-            for n in node_opE.findall('.//{*}n'): #Premiere façon de faire : on cherche si les indices existent et si ils sont strictement égaux à JIJ,JK, JI ou JJ  
+            allIndex = False
+            braketsContent = node_opE.findall('.//{*}n')
+            count = 0
+            for n in braketsContent: #Premiere façon de faire : on cherche si les indices existent et si ils sont strictement égaux à JIJ,JK, JI ou JJ  
                 if alltext(n) == 'JK' or alltext(n) == 'JIJ' \
                 or alltext(n) == 'JI' or alltext(n) == 'JJ' :
-                    found_goldIndex = True
-                    break
+                    count += 1
+            if count == len(braketsContent): # all brakets content are index loop : no need to expand
+                allIndex = True
             varName = alltext(node_opE.findall('.//{*}E-1/{*}*/{*}*/{*}n')[0])
-            if not found_goldIndex and varName in varArrayNamesList:
+            if not allIndex and varName in varArrayNamesList:
                 doToBuild, onlyNumbers = aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyNumbers)
                 doToBuild.reverse() # To write first loops from the latest index (K or SV)
 
