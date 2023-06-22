@@ -131,7 +131,6 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
             if expandDoLoops:
                 for node_opE in Node_opE:
                     inDoWhile = checkInDoWhile(locNode,node_opE)
-                    print(alltext(node_opE))
                     if not inDoWhile:
                         # Expand single-line if-statement if any in front of an a-stmt with section-subscript (locally)
                         if getParent(doc,node_opE,level=2).tag.endswith('}if-stmt') and len(node_opE.findall('.//{*}section-subscript')) > 0: # level=1 is action-stmt, need level=2 to get the if-stmt node
@@ -183,10 +182,10 @@ def inlineContainedSubroutines(doc):
                             par.insert(index,nodeInlined)
 
     #Remove original containted subroutines and 'CONTAINS' statement
-    contains = doc.find('.//{*}contains-stmt')
-    if contains is not None:
-        par = getParent(doc,contains)
-        par.remove(contains)
+    #contains = doc.find('.//{*}contains-stmt')
+    #if contains is not None:
+    #    par = getParent(doc,contains)
+    #    par.remove(contains)
     for loc in locations:
         if loc[0][:4] == 'sub:' and '/' in loc[0] and loc[1].tag.endswith('}program-unit'):
             par = getParent(doc,loc[1])
@@ -295,6 +294,7 @@ def removeIJLoops(doc):
     :param doc: xml fragment to search for variable usage
     """
     locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations.reverse()
     indexToCheck = {'JI':'D%NIB','JJ':'D%NJB','JIJ':'D%NIJB'}
     for loc in locations:
         localNode = loc[1]
@@ -322,7 +322,9 @@ def removeIJLoops(doc):
                 #Statement building
                  fortranSource = "SUBROUTINE FOO598756\n " + indexToAdd + "=" + indexToCheck[indexToAdd] + "\nEND SUBROUTINE"
                  _, xml = fortran2xml(fortranSource)
-                 par.insert(index+1,xml.find('.//{*}a-stmt'))
+                 newIndex = xml.find('.//{*}a-stmt')
+                 newIndex.text = '\n'
+                 par.insert(index+1,newIndex)
             
     
 @debugDecor
