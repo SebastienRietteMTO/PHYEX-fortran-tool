@@ -37,6 +37,7 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
     IF(A=B) THEN
         print*,"C
     END IF
+    Conversion is not done if 'CYLE' is found in action-stmt 
     :param doc: etree to use or parent of singleItem
     :param singleItem: single if-stmt; in case transformation is applied on one if-stmt only
     :return: modified doc
@@ -46,23 +47,26 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
     else:
         ifstmt = doc.findall('.//{*}if-stmt')
     for item in ifstmt:
-        par = getParent(doc,item)
-        # Convert if-stmt to if-then-stmt and save current indentation from last sibling
-        item.tag = '{http://fxtran.net/#syntax}if-then-stmt'
-        if par[par[:].index(item)-1].tail: # if tail of previous sibling exists
-            curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
-        else: # no tail = no indentation
-            curr_indent = ""
-        # Indentation is applied on current item.tail (for next Fortran line)
-        item[0].tail += 'THEN\n' + curr_indent + '  '
-        # Add end-if-stmt to the parent of the if-stmt
-        endiftag = ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
-        endiftag.tail = '\n' + curr_indent + 'END IF'
-        item.append(endiftag)
-        par[par[:].index(item)].extend(endiftag)
-        # Remove cnt tag if any
-        for i in item.findall('./{*}cnt'):
-            item.remove(i)
+        cycleStmt = item.findall('.//{*}cycle-stmt')
+        print(len(cycleStmt))
+        if len(cycleStmt) == 0:
+            par = getParent(doc,item)
+            # Convert if-stmt to if-then-stmt and save current indentation from last sibling
+            item.tag = '{http://fxtran.net/#syntax}if-then-stmt'
+            if par[par[:].index(item)-1].tail: # if tail of previous sibling exists
+                curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
+            else: # no tail = no indentation
+                curr_indent = ""
+            # Indentation is applied on current item.tail (for next Fortran line)
+            item[0].tail += 'THEN\n' + curr_indent + '  '
+            # Add end-if-stmt to the parent of the if-stmt
+            endiftag = ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
+            endiftag.tail = '\n' + curr_indent + 'END IF'
+            item.append(endiftag)
+            par[par[:].index(item)].extend(endiftag)
+            # Remove cnt tag if any
+            for i in item.findall('./{*}cnt'):
+                item.remove(i)
 
 @debugDecor
 def reDimKlonArrayToScalar(doc):
