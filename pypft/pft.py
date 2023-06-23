@@ -184,6 +184,8 @@ if __name__ == '__main__':
                                help='Delete DR HOOK use')
     gApplications.add_argument('--deleteBudgetDDH', default=False, action='store_true',
                                help='Delete Budget/DDH use')
+    gApplications.add_argument('--deleteNonColumnCalls', default=False, action='store_true',
+                               help='Delete call to routines that needs information on horizontal points (multiple column dependency')
     gApplications.add_argument('--expandDoLoops', default=False, action='store_true',
                                help='Expand array syntax into explicit DO loops' + \
                                'apply changeIfStatementsInIfConstructs as well')
@@ -273,6 +275,7 @@ if __name__ == '__main__':
     if args.addStack: pft.addStack()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
+    if args.deleteNonColumnCalls: pft.deleteNonColumnCalls(**simplify)
     if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
     if args.expandDoLoops: pft.removeArraySyntax(expandDoLoops = True)
     if args.expandWhere: pft.removeArraySyntax(expandWhere = True)

@@ -13,6 +13,18 @@ from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, 
 import copy
 
 @debugDecor
+def deleteNonColumnCalls(doc, simplify=False):
+    """
+    Remove Routines that compute with different vertical columns not needed for AROME
+    MODE_ROTATE_WIND, UPDATE_ROTATE_WIND
+    If Simplify is True, also remove all variables only needed for these calls
+    :param doc: etree to use
+    :param simplify : if True, remove variables that are now unused
+    """
+    removeCall(doc, 'ROTATE_WIND', None, simplify=simplify)
+    removeCall(doc, 'UPDATE_ROTATE_WIND', None, simplify=simplify)
+
+@debugDecor
 def deleteDrHook(doc, simplify=False):
     """
     Remove DR_HOOK calls.
@@ -361,6 +373,10 @@ class Applications():
     @copy_doc(deleteBudgetDDH)
     def deleteBudgetDDH(self, *args, **kwargs):
         return deleteBudgetDDH(self._xml, *args, **kwargs)
+
+    @copy_doc(deleteNonColumnCalls)
+    def deleteNonColumnCalls(self, *args, **kwargs):
+        return deleteNonColumnCalls(self._xml, *args, **kwargs)
 
     @copy_doc(removeIJLoops)
     def removeIJLoops(self, *args, **kwargs):
