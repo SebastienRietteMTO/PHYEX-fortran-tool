@@ -5,8 +5,9 @@ This module implements functions for high-to-moderate level transformation
 import xml.etree.ElementTree as ET
 from util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
                   alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
-from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR,createArrayBounds,
-                        createIfThenElseConstruct,removeStmtNode,expandWhereConstruct,expandArrays)
+from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
+                        createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
+                        placeArrayRtoparensR, createNamedENn)
 from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
@@ -23,6 +24,10 @@ def deleteNonColumnCalls(doc, simplify=False):
     """
     removeCall(doc, 'ROTATE_WIND', None, simplify=simplify)
     removeCall(doc, 'UPDATE_ROTATE_WIND', None, simplify=simplify)
+    removeCall(doc, 'BL_DEPTH_DIAG_3D', None, simplify=simplify)
+    removeCall(doc, 'TM06_H', None, simplify=simplify)
+
+
 
 @debugDecor
 def deleteDrHook(doc, simplify=False):
@@ -129,6 +134,7 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
             varArray,varArrayNamesList,localIntegers, loopIndexToCheck = [], [], [], []
             Node_opE = locNode.findall('.//{*}a-stmt')
             whereConstruct = locNode.findall('.//{*}where-construct')
+#            arginCalls = locNode.findall('.//{*}call-stmt/{*}arg-spec/{*}arg')
             for var in varList:
                 if not var['as'] and var['t'] == 'INTEGER' and not var['arg']:
                     localIntegers.append(var['n'])
@@ -300,8 +306,10 @@ def inline(doc, subContained, callStmt):
 @debugDecor            
 def removeIJLoops(doc):
     """
-    Remove all Do loops on JI and JJ for preparation to compute on Klev only
-    and initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
+    ComputeInSingleColumn :
+    - Remove all Do loops on JI and JJ for preparation to compute on Klev only
+    - Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
+    - Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements, e.g. CALL FOO(D, A(:,:,1), B(:,:)) ==> CALL FOO(D, A(JIJ,:,1), B(JIJ,:))
     WARNING : executed transformed-code will work only if inlineContainedSubroutines is applied first
     :param doc: xml fragment to search for variable usage
     """
@@ -310,6 +318,7 @@ def removeIJLoops(doc):
     indexToCheck = {'JI':'D%NIB','JJ':'D%NJB','JIJ':'D%NIJB'}
     for loc in locations:
         localNode = loc[1]
+        # Remove all Do loops on JI and JJ for preparation to compute on Klev only 
         doNodes = localNode.findall('.//{*}do-construct')  
         indexRemoved = []
         doNodes.reverse()
@@ -323,8 +332,40 @@ def removeIJLoops(doc):
                     getParent(localNode,endDo[-1]).remove(endDo[-1]) #remove end-do statement, the last END-DO corresponds to the first DO LOOP we remove, in case of nested DO-loops
                     if alltext(loopI) not in indexRemoved:
                         indexRemoved.append(alltext(loopI))
-        
-        # Add initialization of old index loop to D%NJB or D%NIB or D%NIJB
+        # Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements
+        if 'sub:' in loc[0]:
+            varArray, varArrayNamesList, localIntegers = [], [], []
+            varList = getVarList(doc, loc)
+            for var in varList:
+                if not var['as'] and var['t'] == 'INTEGER' and not var['arg']:
+                    localIntegers.append(var['n'])
+                if var['as']:
+                    varArray.append(var)
+                    varArrayNamesList.append(var['n'])
+            calls = loc[1].findall('.//{*}call-stmt')
+            for call in calls:
+                namedEs = call.findall('.//{*}named-E')
+                for namedE in namedEs:
+                    subs=namedE.findall('.//{*}section-subscript')
+                    if '%' in alltext(namedE):
+                        print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
+                    else:
+                        if len(subs) > 1: # sub = 1 is treated on reDimKlonArrayToScalar
+                            varName = alltext(namedE.find('.//{*}n'))
+                            ind=varArrayNamesList.index(varName)
+                            for i,sub in enumerate(subs):
+                                if alltext(sub) == ':': # ':' alone
+                                    upperBound = str(varArray[ind]['as'][i][1])
+                                    if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
+                                        sub.text = '' # remove the ':'
+                                        lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
+                                        loopIndex = 'J' + upperBound.replace('D%N','')
+                                        loopIndex = loopIndex.replace('T','')
+                                        lowerBound.insert(0,createNamedENn(loopIndex))
+                                        sub.insert(0,lowerBound)
+                                        if loopIndex not in indexRemoved:
+                                            indexRemoved.append(loopIndex)
+        # Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
         if len(indexRemoved) > 0:
             lastDecl = localNode.findall('.//{*}T-decl-stmt')[-1] # The case where no T-decl-stmt is found, is not handled (it should not exist !)
             par = getParent(localNode,lastDecl)
@@ -337,6 +378,12 @@ def removeIJLoops(doc):
                  newIndex = xml.find('.//{*}a-stmt')
                  newIndex.text = '\n'
                  par.insert(index+1,newIndex)
+        # Check loop index presence at declaration of the locality
+        for loopIndex in indexRemoved:
+            if loopIndex not in localIntegers:
+                addVar(doc,[[loc[0],loopIndex,'INTEGER :: '+loopIndex,None]]) #TODO minor issue: le 2e argument ne semble pas s'appliquer ? il faut ajouter loopIndex dans le 3e argument pour effectivement l'ecrire
+
+       
             
     
 @debugDecor
