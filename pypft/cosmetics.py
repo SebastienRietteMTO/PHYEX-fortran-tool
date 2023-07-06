@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from util import (copy_doc, getParent, debugDecor,
                   non_code, alltext, tostring)
 from variables import getVarList
-from locality import getLocalitiesList
+from locality import getLocalitiesList, getLocalityPath
 
 @debugDecor
 def upperCase(doc):
@@ -78,11 +78,13 @@ def reDimKlonArrayToScalar(doc):
     :param doc: xml fragment
     """
     locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations.reverse()
     for loc in locations:
-        # For all subroutines
-        if 'sub:' in loc[0]:
+        # For all subroutines or modi_ interface (but not mode)
+        if 'sub:' in loc[0] or 'MODI_' in loc[0]:
             varArray,varArrayNamesList = [], []
-            varList = getVarList(doc, loc)
+            localitypath = getLocalityPath(doc,loc[1])
+            varList = getVarList(doc,localitypath)
             for var in varList:
                 if var['as']:
                     varArray.append(var)
@@ -122,9 +124,7 @@ def reDimKlonArrayToScalar(doc):
                                 if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
                                     RLT = namedE.find('.//{*}R-LT')
                                     par = getParent(namedE,RLT)
-                                    par.remove(RLT)
-                
-                
+                                    par.remove(RLT)    
 class Cosmetics():
     @copy_doc(upperCase)
     def upperCase(self):
