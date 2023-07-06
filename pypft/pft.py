@@ -10,7 +10,7 @@ from pypft.statements import Statements
 from pypft.util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
 
 class PFT(Variables, Cosmetics, Applications, Locality, Statements):
-    DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-line-length', '9999']
+    DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None):
@@ -200,7 +200,8 @@ if __name__ == '__main__':
                                help='Inline containted subroutines in main routine')
     gApplications.add_argument('--addStack', default=False, action='store_true',
                                help='Add allocation of local array and stack variable')    
-
+    gApplications.add_argument('--addIncludes', default=False, action='store_true',
+                               help='Add .h includes in the file and remove the INCLUDE statement')  
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -273,6 +274,7 @@ if __name__ == '__main__':
 
     #Applications
     if args.addStack: pft.addStack()
+    if args.addIncludes: pft.addIncludes()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
     if args.deleteNonColumnCalls: pft.deleteNonColumnCalls(**simplify)
