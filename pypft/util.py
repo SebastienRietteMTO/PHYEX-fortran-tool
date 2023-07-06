@@ -425,7 +425,9 @@ def checkInDoWhile(doc,node):
     return doWhileFound
         
 def getIndexLoop(lowerBound,upperBound):
-    if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound:
+    if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
+    or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\
+    or 'IGWET' in upperBound:
         n = 'JL'
     elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
         n = 'JIJ'
