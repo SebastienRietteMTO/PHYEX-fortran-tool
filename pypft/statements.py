@@ -210,16 +210,17 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
         nodePar = getParent(locNode,node_opE)
         if not nodePar.tag.endswith('}where-block'): # Array syntax in where-blocks are transformed in expandWhere function
             allIndex = False
-            braketsContent = node_opE.findall('.//{*}n')
+            braketsContent = node_opE.findall('.//{*}lower-bound')
+            braketsContent.extend(node_opE.findall('.//{*}upper-bound'))
             count = 0
-            for n in braketsContent: #Premiere façon de faire : on cherche si les indices existent et si ils sont strictement égaux à JIJ,JK, JI ou JJ  
-                if alltext(n) == 'JK' or alltext(n) == 'JIJ' \
-                or alltext(n) == 'JI' or alltext(n) == 'JJ' :
+            for n in braketsContent: # On cherche si les indices existent et si ils sont strictement égaux à des indices standard (JIJ, JL, etc) ou des indices exotiques (ex ici pour mode_ice4_fast_*.F90) ou un nombre
+                if alltext(n) == 'JK' or alltext(n) == 'JIJ' or alltext(n) == 'JI' or alltext(n) == 'JJ' or alltext(n) ==' JL':# \
                     count += 1
-            if count == len(braketsContent): # all brakets content are index loop : no need to expand
+            if count == len(braketsContent): # All brakets content are index loop : no need to expand
                 allIndex = True
+            allIndex = len(node_opE.findall('.//{*}array-R')) > 0
             varName = alltext(node_opE.findall('.//{*}E-1/{*}*/{*}*/{*}n')[0])
-            if not allIndex and varName in varArrayNamesList:
+            if allIndex and varName in varArrayNamesList:
                 doToBuild, onlyNumbers = aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyNumbers)
                 doToBuild.reverse() # To write first loops from the latest index (K or SV)
 
