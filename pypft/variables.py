@@ -26,6 +26,7 @@ def getVarList(doc, localityPath=None):
                      argument position otherwise
               - use: false if variable is not a module variable
                      module name otherwise
+              - opt: true if variable is optional
     Notes: - variables are found in modules only if the 'ONLY' attribute is used
            - array specification and type is unknown for module variables
            - function is not able to follow the 'ASSOCIATE' statements
@@ -60,7 +61,10 @@ def getVarList(doc, localityPath=None):
             t_spec = alltext(decl_stmt.find('.//{*}_T-spec_'))
             i_spec = decl_stmt.find('.//{*}intent-spec')
             if i_spec is not None: i_spec = i_spec.text
-
+            opt_spec = False
+            allattributes = decl_stmt.findall('.//{*}attribute/{*}attribute-N')
+            for attribute in allattributes:
+                if alltext(attribute).upper() == 'OPTIONAL': opt_spec = True
             #Dimensions declared with the DIMENSION attribute
             array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
             as0_list, asx0_list = decode_array_specs(array_specs)
@@ -76,7 +80,7 @@ def getVarList(doc, localityPath=None):
                 result.append({'as': as_list if len(as0_list) == 0 else as0_list,
                                'asx': asx_list if len(asx0_list) == 0 else asx0_list,
                                'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
-                               'use':False})
+                               'use':False, 'opt': opt_spec})
 
         #Loop on each use statement
         use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
