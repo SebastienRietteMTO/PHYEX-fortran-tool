@@ -177,15 +177,19 @@ def checkImplicitNone(doc, mustRaise=False):
     Issue a logging.warning if the "IMPLICIT NONE" statment is missing
     If mustRaise is True, issue a logging.error instead and raise an error
     """
-    for loc, node in [(loc, node) for (loc, node) in getLocalitiesList(doc, withNodes='tuple') if loc.count('/') == 0]:
-        if getImplicitNoneText(doc, node) is None:
-            message = "The 'IMPLICIT NONE' statment is missing in file '{file}' for {loc}."
-            message = message.format(file=getFileName(doc), loc=loc)
-            if mustRaise:
-                logging.error(message)
-                raise PFTError(message)
-            else:
-                logging.warning(message)
+    for loc, node in getLocalitiesList(doc, withNodes='tuple'):
+        #The IMPLICIT NONE statement is inherited from the top unit, control at top unit is enough
+        #apart for INTERFACE blocs
+        if loc.count('/') == 0 or \
+           (loc.count('/') >= 2 and loc.split('/')[-2].startswith('interface:')):
+          if getImplicitNoneText(doc, node) is None:
+              message = "The 'IMPLICIT NONE' statment is missing in file '{file}' for {loc}."
+              message = message.format(file=getFileName(doc), loc=loc)
+              if mustRaise:
+                  logging.error(message)
+                  raise PFTError(message)
+              else:
+                  logging.warning(message)
 
 @debugDecor
 def checkIntent(doc, mustRaise=False): 

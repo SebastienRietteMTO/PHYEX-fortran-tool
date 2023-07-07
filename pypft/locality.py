@@ -9,12 +9,14 @@ localityStmt = {'module':'module-stmt',
                'func': 'function-stmt',
                'sub': 'subroutine-stmt',
                'type': 'T-stmt',
-               'prog': 'program-stmt'}
+               'prog': 'program-stmt',
+               'interface': 'interface-stmt'}
 localityConstruct = {'module':'program-unit',
                      'func': 'program-unit',
                      'sub': 'program-unit',
                      'type': 'T-construct',
-                     'prog': 'program-unit'}
+                     'prog': 'program-unit',
+                     'interface': 'interface-construct'}
 def _localityStmt(blocType):
     """
     Internal method
@@ -59,7 +61,7 @@ def getLocalityNode(doc, localityPath):
         top = doc
     for bloc in top.findall('./{*}' + construct + '/{*}' + beginStmt) + \
                 top.findall('./{*}interface-construct/{*}' + construct + '/{*}' + beginStmt):
-        if n2name(bloc.find('.//{*}N')).upper() == blocName:
+        if _getNodeName(bloc) == blocName:
             if remainingPath is None:
                 return getParent(doc, bloc)
             else:
@@ -111,6 +113,24 @@ def getParentLocalityNode(doc, item, mustRaise=True):
         raise PFTError("The locality parent has not been found.")
     return result
 
+def _getNodeName(node):
+    """
+    Internal methode to compute the name of a locality
+    :param node: program-unit node
+    :return: name
+    """
+    #If there was no interface bloc, code could be n2name(node[0].find('.//{*}N'))
+    #But (as of 7 Jul 2023), interface have two nested N
+    N = node.find('.//{*}N')
+    if N is not None and N.find('.//{*}N') is not None:
+        #As of 7 Jul 2023, this is the case for interface statements
+        N = N.find('.//{*}N')
+    if N is not None:
+        name = n2name(N).upper()
+    else:
+        name = '--UNKNOWN--'
+    return name
+
 def _getNodePath(node):
     """
     Internal methode to compute a path part from a node
@@ -118,7 +138,7 @@ def _getNodePath(node):
     :return: path part (e.g. module:MODU)
     """
     stmt = node[0].tag.split('}')[1]
-    name = n2name(node[0].find('.//{*}N')).upper()
+    name = _getNodeName(node[0])
     return {v: k for (k, v) in localityStmt.items()}[stmt] + ':' + name
 
 @debugDecor
