@@ -482,6 +482,7 @@ def removeIJLoops(doc):
     """
     locations  = getLocalitiesList(doc,withNodes='tuple')
     locations.reverse()
+    locations = [item for item in locations if 'func:' not in item[0]] # Remove elemental function (essentially FWSED from ice4_sedimentation_stat)
     indexToCheck = {'JI':'D%NIB','JJ':'D%NJB','JIJ':'D%NIJB'}
     for loc in locations:
         localNode = loc[1]
