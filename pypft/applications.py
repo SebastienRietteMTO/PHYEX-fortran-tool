@@ -176,7 +176,6 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
 def inlineContainedSubroutines(doc):
     """
     Inline all contained subroutines in the main subroutine
-    Local variables in contained subroutines must have been removed first
     Steps :
         - Identify contained subroutines
         - Inline within contained subroutines look for all CALL statements, check if it is a containted routines; if yes, inline :
@@ -196,6 +195,7 @@ def inlineContainedSubroutines(doc):
     for loc in locations: # For all subroutines (main + contained)
         if loc[0].count('sub:') >= 1:
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
+            mainVarList = getVarList(doc,getLocalityPath(doc,loc[1]))
             for callStmtNn in callStmtsNn: # For all CALL statements
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
@@ -203,9 +203,13 @@ def inlineContainedSubroutines(doc):
                         par = getParent(doc,callStmt)
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
-                        localitypath = getLocalityPath(doc,containedRoutines[containedRoutine])
-                        varList = getVarList(doc,localitypath)
-                        nodeInlined = inline(doc, containedRoutines[containedRoutine], callStmt,varList)
+                        subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
+                        # Inline
+                        nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
+                        # Add local var to main routine
+                        for var in localVarToAdd:
+                            addVar(doc,[[loc[0], var['n'], var['t']+' :: '+var['n'], None]])
+                        # Remove call statement of the contained routines
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)
                         par.remove(callStmt)
@@ -214,9 +218,9 @@ def inlineContainedSubroutines(doc):
                 # Update containedRoutines
                 containedRoutines = {}
                 # Inline contained subroutines : look for sub: / sub:
-                for loc in locations:
-                    if loc[0].count('sub:') >= 2:
-                        containedRoutines[alltext(loc[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = loc[1]
+                for locs in locations:
+                    if locs[0].count('sub:') >= 2:
+                        containedRoutines[alltext(locs[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = locs[1]
 
     #Remove original containted subroutines and 'CONTAINS' statement
     #contains = doc.find('.//{*}contains-stmt')
@@ -229,18 +233,19 @@ def inlineContainedSubroutines(doc):
             par.remove(loc[1])
 
 
-def inline(doc, subContained, callStmt, varList):
+def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList):
     """
     Inline a subContainted subroutine
-    Local variables in contained subroutines must have been removed first
     Steps :
         - copy the subContained node
         - remove everything before the declarations variables and the variables declarations
         - from the callStmt, replace all the arguments by their names 
-        - return the node to inline
+        - return the node to inline and the local variables to be added in the calling routine
     :param doc: xml fragment containing main and contained subroutine
     :param subContained: xml fragment corresponding to the sub: to inline
     :param callStmt : the call-stmt to get the values of the intent args
+    :param subContaintedVarList: var list of the subContained subroutine
+    :param mainVarList: var list of the main (calling) subroutine
     """
     def setPRESENTbyTrue(node, var, varsNamedNn):
         """
@@ -271,6 +276,16 @@ def inline(doc, subContained, callStmt, varList):
     node = copy.deepcopy(subContained)
     nodeToRemove, varPermutted = [], []
     declStmtFound = False # used to remove everything before a variable declaration
+    
+    # Get local variables that are not present in the main routine for later addition
+    localVarToAdd = []
+    for var in subContaintedVarList:
+        if not var['arg']: # for local variables only
+            localVarToAdd.append(var)
+            for mainVar in mainVarList:
+                if var['n'] == mainVar['n']: # the local variable name in the subcontained is already present in the main routine, we do not add it
+                    localVarToAdd.remove(var)
+
     # if any variable declaration (only local, declared in main routine), go directly to 2nd part of the removing algo
     if not node.findall('.//{*}T-decl-stmt'):
         declStmtFound = True
@@ -299,7 +314,7 @@ def inline(doc, subContained, callStmt, varList):
         varsRoutine.append(alltext(args))
     # List of Optional arguments
     varsOpt = []
-    for var in varList:
+    for var in subContaintedVarList:
         if var['arg']:
             if var['opt']: varsOpt.append(var['n'])
     # Permute args
@@ -433,7 +448,7 @@ def inline(doc, subContained, callStmt, varList):
                             par.insert(index,copyvar)
 
     # Remove all statements related to optional arguments not given by the CALL statement in the main routine to the inlined-contained routine
-    for var in varList:
+    for var in subContaintedVarList:
         if var['arg']:
             if var['opt'] and var['n'] not in varPermutted:
                 namedEs = node.findall('.//{*}named-E/{*}N/{*}n')
@@ -468,7 +483,7 @@ def inline(doc, subContained, callStmt, varList):
                             else:
                                 level +=1
                             par = getParent(node, namedE, level=level)
-    return node
+    return node, localVarToAdd
     
 @debugDecor            
 def removeIJLoops(doc):
