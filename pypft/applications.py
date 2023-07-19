@@ -7,7 +7,7 @@ from util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
                   alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
 from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
                         createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
-                        placeArrayRtoparensR, createNamedENn)
+                        placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
 from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
@@ -184,6 +184,27 @@ def inlineContainedSubroutines(doc):
         - Delete the containted routines
     :param doc: xml fragment containing main and contained subroutine
     """
+    def addExplicitArrayBounds(node, callNode, varList):
+        """
+        Add explicit arrays bounds (for further arrays expansion) in Call arguments.
+        Used in call of elemental subroutine
+        :param node: xml node to work on (the calling subroutine)
+        :param callNode: xml node of the call statement
+        :param varList: var list of node
+        """
+        varArray,varArrayNamesList,localIntegers = [], [], []
+        for var in varList:
+            if not var['as'] and var['t'] == 'INTEGER' and not var['arg']:
+                localIntegers.append(var['n'])
+            if var['as']:
+                varArray.append(var)
+                varArrayNamesList.append(var['n'])
+        subs=callNode.findall('.//{*}section-subscript')
+        for sub in subs:
+            if alltext(sub) == ':': # ':' alone
+                varName = alltext(getParent(callNode, sub, level=4).find('.//{*}N/{*}n'))
+                convertColonArrayinDim(sub, callNode, varArrayNamesList, varArray, varName)
+                
     locations  = getLocalitiesList(doc,withNodes='tuple')
     containedRoutines = {}
     # Inline contained subroutines : look for sub: / sub:
@@ -203,12 +224,45 @@ def inlineContainedSubroutines(doc):
                         par = getParent(doc,callStmt)
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
+                        # Specific case for ELEMENTAL subroutines: need to add explicit arrays bounds for further arrays expansion
+                        prefix = containedRoutines[containedRoutine].find('.//{*}prefix')
+                        if prefix:
+                            if 'ELEMENTAL' in alltext(prefix): 
+                                addExplicitArrayBounds(loc[1], callStmt, mainVarList)
+                        #
                         subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
                         # Inline
                         nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
                         # Add local var to main routine
                         for var in localVarToAdd:
                             addVar(doc,[[loc[0], var['n'], var['t']+' :: '+var['n'], None]])
+                            
+                        # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
+                        if prefix:
+                            if 'ELEMENTAL' in alltext(prefix):
+                                loopIndexToCheck = []
+                                Node_opE = nodeInlined.findall('.//{*}a-stmt')
+                                doToBuild = []
+                                doI=0
+                                # Loof for the Do loops to build
+                                while len(doToBuild) == 0:
+                                    doToBuild = E2StmtToDoStmt(Node_opE[doI])
+                                    doToBuild.reverse() # To write first loops from the latest index (K or SV)
+                                    for dostmt in doToBuild:
+                                        if alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]) not in loopIndexToCheck:
+                                            loopIndexToCheck.append(alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]))
+                                    doI += 1
+                                # Replace the array-syntax by loop index in every a-stmt node
+                                ArrayRLT = nodeInlined.findall('.//{*}R-LT') # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
+                                for node_opE in ArrayRLT: 
+                                    placeArrayRtoparensR(doc, nodeInlined, node_opE) 
+                                # Place the Do loops on top of the inlined routine
+                                doToBuild[-1][-1].insert(-1,nodeInlined) # place the nodeInlined in the last object (inner loop)
+                                # Insert nested DO-loops into the previous object of doToBuild until reach the 0e object
+                                for i in range(len(doToBuild)-1):
+                                    doToBuild[len(doToBuild)-1-(i+1)][0].insert(3,doToBuild[len(doToBuild)-1-i])
+                                nodeInlined = doToBuild[0]
+                            
                         # Remove call statement of the contained routines
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)

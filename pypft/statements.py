@@ -8,11 +8,10 @@ from locality import (getLocalityChildNodes, getLocalityNode, getLocalitiesList,
                       getLocalityPath)
 from variables import removeVarIfUnused
         
-def convertColonArrayinDim(sub, locNode, node_opE, varArrayNamesList, varArray, varName):
+def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
     """
     Convert ':' in full array dimensions. Example if SIZE(A)=D%NKT, A(:) is converted to A(1:D%NKT) 
     :param sub: section-subscript node from the working node
-    :param node_opE: working node
     :param locNode: locality of the working node
     :param varArrayNamesList: list of all variable arrays names (list of string)
     :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
@@ -52,7 +51,7 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
     subsE2=node_opE.findall('.//{*}E-2//{*}section-subscript')
     for sub in subsE2:
         if alltext(sub) == ':': # ':' alone
-            convertColonArrayinDim(sub, locNode, node_opE, varArrayNamesList, varArray, varName)
+            convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName)
     
     # Build the Do-statement based on the type of section-subscript of E-1 and Convert E-1 element with ':' alone to array-R for next step
     subsE1=node_opE.findall('.//{*}E-1//{*}section-subscript')
@@ -104,6 +103,29 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
     return doToBuild, onlyNumbers
 
 @debugDecor
+def E2StmtToDoStmt(node_opE):
+    """
+    Conversion function to remove the array syntax on the first arrayR of E-2 node for elemental subroutine
+    For now, this function is used only to adapt array-syntax in CALL of an ELEMENTAL SUBROUTINE: 
+    a lot of the functionnality taken from aStmtToDoStmt is not useful (such as onlyNumbers and the if + 2 elif cases within for loop on subsE2)
+    :param node_opE: a-stmt node to work on
+    """
+    doToBuild = []
+    arrayR = node_opE.findall('.//{*}E-2//{*}array-R')
+    if len(arrayR) > 0:
+        subsE2=arrayR[0].findall('.//{*}section-subscript')
+        for i,sub in enumerate(subsE2):
+            lowerBounds=sub.findall('.//{*}lower-bound')
+            upperBounds=sub.findall('.//{*}upper-bound')
+            lowerBound=alltext(lowerBounds[0])
+            upperBound=alltext(upperBounds[0])
+            if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
+                break
+            else:
+                doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+    return doToBuild
+
+@debugDecor
 def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
     """
     Remove the array syntax on WHERE blocks
@@ -125,7 +147,7 @@ def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
         # If found, convert all ':' alone to declared dimensions array 1:D%...
         if alltext(sub) == ':': # '(:)' alone
             varName = alltext(getParent(node_opE,sub,level=4).findall('.//{*}N/{*}n')[0])
-            convertColonArrayinDim(sub, locNode, node_opE, varArrayNamesList, varArray, varName)
+            convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName)
     # Replace the array-like index selection by index loop on all variables (array-R)
     placeArrayRtoparensR(doc, locNode, node_opE)
     
@@ -137,7 +159,7 @@ def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
         for sub in subs:
             if alltext(sub) == ':': # ':' alone
                 varName = alltext(getParent(node_opE,sub,level=4).findall('.//{*}N/{*}n')[0])
-                convertColonArrayinDim(sub, locNode, node_opE, varArrayNamesList, varArray, varName)      
+                convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName)      
         # Replace the array-like index selection by index loop on all variables (array-R)
         placeArrayRtoparensR(doc, locNode, node_opE)
         
