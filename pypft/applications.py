@@ -228,7 +228,9 @@ def inlineContainedSubroutines(doc):
                         prefix = containedRoutines[containedRoutine].findall('.//{*}prefix')
                         if len(prefix)>0:
                             if 'ELEMENTAL' in alltext(prefix[0]): 
-                                addExplicitArrayBounds(loc[1], callStmt, mainVarList)
+                                arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
+                                if len(arrayRincallStmt) > 0:
+                                    addExplicitArrayBounds(loc[1], callStmt, mainVarList)
                         #
                         subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
                         # Inline
@@ -239,14 +241,14 @@ def inlineContainedSubroutines(doc):
                             
                         # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
                         if len(prefix)>0:
-                            if 'ELEMENTAL' in alltext(prefix[0]):
+                            if 'ELEMENTAL' in alltext(prefix[0]) and len(arrayRincallStmt) > 0:
                                 loopIndexToCheck = []
-                                Node_opE = nodeInlined.findall('.//{*}a-stmt')
+                                Node_aStmt = nodeInlined.findall('.//{*}a-stmt')
                                 doToBuild = []
                                 doI=0
-                                # Loof for the Do loops to build
+                                # Loop for the Do loops to build
                                 while len(doToBuild) == 0:
-                                    doToBuild = E2StmtToDoStmt(Node_opE[doI])
+                                    doToBuild = E2StmtToDoStmt(Node_aStmt[doI])
                                     doToBuild.reverse() # To write first loops from the latest index (K or SV)
                                     for dostmt in doToBuild:
                                         if alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]) not in loopIndexToCheck:
@@ -545,7 +547,8 @@ def removeIJLoops(doc):
     ComputeInSingleColumn :
     - Remove all Do loops on JI and JJ for preparation to compute on Klev only
     - Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
-    - Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements, e.g. CALL FOO(D, A(:,:,1), B(:,:)) ==> CALL FOO(D, A(JIJ,:,1), B(JIJ,:))
+    - Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements:
+        e.g. CALL FOO(D, A(:,JK,1), B(:,:)) ==> CALL FOO(D, A(JIJ,JK,1), B(:,:)) only if the target argument is not an array
     WARNING : executed transformed-code will work only if inlineContainedSubroutines is applied first
     :param doc: xml fragment to search for variable usage
     """
@@ -569,7 +572,8 @@ def removeIJLoops(doc):
                     getParent(localNode,endDo[-1]).remove(endDo[-1]) #remove end-do statement, the last END-DO corresponds to the first DO LOOP we remove, in case of nested DO-loops
                     if alltext(loopI) not in indexRemoved:
                         indexRemoved.append(alltext(loopI))
-        # Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements
+        # Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements (only if * are literal-E or string-E) ==> the target arg is not an array
+        # Examples : PRM(:,JK,1) becomes PRM(JIJ,JK,1) ; but PRM(:,:,1) is not changed as the INTENT arg is an array, so the call argument is keeping as an array.
         if 'sub:' in loc[0]:
             varArray, varArrayNamesList, localIntegers = [], [], []
             varList = getVarList(doc, loc)
@@ -588,20 +592,25 @@ def removeIJLoops(doc):
                         print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
                     else:
                         if len(subs) > 1: # sub = 1 is treated on reDimKlonArrayToScalar
-                            varName = alltext(namedE.find('.//{*}n'))
-                            ind=varArrayNamesList.index(varName)
-                            for i,sub in enumerate(subs):
-                                if alltext(sub) == ':': # ':' alone
-                                    upperBound = str(varArray[ind]['as'][i][1])
-                                    if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
-                                        sub.text = '' # remove the ':'
-                                        lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
-                                        loopIndex = 'J' + upperBound.replace('D%N','')
-                                        loopIndex = loopIndex.replace('T','')
-                                        lowerBound.insert(0,createNamedENn(loopIndex))
-                                        sub.insert(0,lowerBound)
-                                        if loopIndex not in indexRemoved:
-                                            indexRemoved.append(loopIndex)
+                            nb_subarray = 0  # Count all arrays in subs to check if there is no more than one on horizontal dimension (we assume horizontal dim. are packed in calling statements)
+                            for sub in subs:
+                                if ':' in alltext(sub):  # ':' alone or partial array such as IKB: or :IKE
+                                    nb_subarray += 1
+                            if nb_subarray == 1:
+                                for i,sub in enumerate(subs):
+                                    if alltext(sub) == ':': # ':' alone
+                                        varName = alltext(namedE.find('.//{*}n'))
+                                        ind=varArrayNamesList.index(varName)
+                                        upperBound = str(varArray[ind]['as'][i][1])
+                                        if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
+                                            sub.text = '' # remove the ':'
+                                            lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
+                                            loopIndex = 'J' + upperBound.replace('D%N','')
+                                            loopIndex = loopIndex.replace('T','')
+                                            lowerBound.insert(0,createNamedENn(loopIndex))
+                                            sub.insert(0,lowerBound)
+                                            if loopIndex not in indexRemoved:
+                                                indexRemoved.append(loopIndex)
         # Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
         if len(indexRemoved) > 0:
             lastDecl = localNode.findall('.//{*}T-decl-stmt')[-1] # The case where no T-decl-stmt is found, is not handled (it should not exist !)

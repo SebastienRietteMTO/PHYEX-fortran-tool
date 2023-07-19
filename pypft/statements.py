@@ -103,26 +103,41 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
     return doToBuild, onlyNumbers
 
 @debugDecor
-def E2StmtToDoStmt(node_opE):
+def E2StmtToDoStmt(node_astmt):
     """
     Conversion function to remove the array syntax on the first arrayR of E-2 node for elemental subroutine
     For now, this function is used only to adapt array-syntax in CALL of an ELEMENTAL SUBROUTINE: 
     a lot of the functionnality taken from aStmtToDoStmt is not useful (such as onlyNumbers and the if + 2 elif cases within for loop on subsE2)
-    :param node_opE: a-stmt node to work on
+    :param node_astmt: a-stmt node to work on
     """
     doToBuild = []
-    arrayR = node_opE.findall('.//{*}E-2//{*}array-R')
+    arrayR = node_astmt.findall('.//{*}E-2//{*}array-R')
     if len(arrayR) > 0:
         subsE2=arrayR[0].findall('.//{*}section-subscript')
         for i,sub in enumerate(subsE2):
-            lowerBounds=sub.findall('.//{*}lower-bound')
-            upperBounds=sub.findall('.//{*}upper-bound')
-            lowerBound=alltext(lowerBounds[0])
-            upperBound=alltext(upperBounds[0])
-            if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
-                break
+            if len(sub.findall('.//{*}upper-bound')) == 0:
+                if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
+                    # Creation of the array-R object needed to be converted futher in parens-R
+#                    ind=varArrayNamesList.index(varName)
+#                    lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
+#                    upperBound = str(varArray[ind]['as'][i][1])
+#                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+#                    sub.insert(0,lowerXml)
+#                    sub.insert(1,upperXml)
+#                    sub.text = '' # Delete the initial ':'
+#                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                    pass # This case does not exit yet in the form of PHYEX 0.5.0 : case of calling an elemental subroutine with calling arg such as A(IKTB:)
+                else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
+                    pass
             else:
-                doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                lowerBounds=sub.findall('.//{*}lower-bound')
+                upperBounds=sub.findall('.//{*}upper-bound')
+                lowerBound=alltext(lowerBounds[0])
+                upperBound=alltext(upperBounds[0])
+                if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
+                    break
+                else:
+                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
     return doToBuild
 
 @debugDecor
