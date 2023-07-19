@@ -225,9 +225,9 @@ def inlineContainedSubroutines(doc):
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
                         # Specific case for ELEMENTAL subroutines: need to add explicit arrays bounds for further arrays expansion
-                        prefix = containedRoutines[containedRoutine].find('.//{*}prefix')
-                        if prefix:
-                            if 'ELEMENTAL' in alltext(prefix): 
+                        prefix = containedRoutines[containedRoutine].findall('.//{*}prefix')
+                        if len(prefix)>0:
+                            if 'ELEMENTAL' in alltext(prefix[0]): 
                                 addExplicitArrayBounds(loc[1], callStmt, mainVarList)
                         #
                         subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
@@ -238,8 +238,8 @@ def inlineContainedSubroutines(doc):
                             addVar(doc,[[loc[0], var['n'], var['t']+' :: '+var['n'], None]])
                             
                         # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
-                        if prefix:
-                            if 'ELEMENTAL' in alltext(prefix):
+                        if len(prefix)>0:
+                            if 'ELEMENTAL' in alltext(prefix[0]):
                                 loopIndexToCheck = []
                                 Node_opE = nodeInlined.findall('.//{*}a-stmt')
                                 doToBuild = []
