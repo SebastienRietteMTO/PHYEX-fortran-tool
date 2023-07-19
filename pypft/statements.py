@@ -52,7 +52,6 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
     for sub in subsE2:
         if alltext(sub) == ':': # ':' alone
             convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName)
-    
     # Build the Do-statement based on the type of section-subscript of E-1 and Convert E-1 element with ':' alone to array-R for next step
     subsE1=node_opE.findall('.//{*}E-1//{*}section-subscript')
     for i,sub in enumerate(subsE1):
@@ -91,15 +90,21 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
             else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
                 pass
         else:
-            lowerBounds=sub.findall('.//{*}lower-bound')
-            upperBounds=sub.findall('.//{*}upper-bound')
-            lowerBound=alltext(lowerBounds[0])
-            upperBound=alltext(upperBounds[0])
-            if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
+            lowerBounds = sub.findall('.//{*}lower-bound')
+            upperBounds = sub.findall('.//{*}upper-bound')
+            lowerBound = alltext(lowerBounds[0])
+            upperBound = alltext(upperBounds[0])
+            lowerBoundvar = lowerBound
+            upperBoundvar = upperBound
+            if len(lowerBounds[0].findall('.//{*}op')) > 0: #The case of op of two variables is not handled (e.g. IKB+toto:IKE+toto)
+                lowerBoundvar = alltext(lowerBounds[0].find('.//{*}named-E'))
+            if len(upperBounds[0].findall('.//{*}op')) > 0: #The case of op of two variables is not handled (e.g. IKB+toto:IKE+toto)
+                upperBoundvar = alltext(upperBounds[0].find('.//{*}named-E'))                                
+            if len(sub.findall('.//{*}literal-E')) == 2 and len(sub.findall('.//{*}named-E')) == 0: #lower and upper Bounds are numbers with no variables
                 onlyNumbers = True
                 break
             else:
-                doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                doToBuild.append(createDoStmt(getIndexLoop(lowerBoundvar, upperBoundvar),lowerBound,upperBound))
     return doToBuild, onlyNumbers
 
 @debugDecor

@@ -431,15 +431,15 @@ def getIndexLoop(lowerBound,upperBound):
         n = 'JL'
     elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
         n = 'JIJ'
-    elif 'KT' in upperBound:
+    elif 'IKB' in upperBound or 'IKE' in upperBound or 'KT' in upperBound:
         n = 'JK'
     elif 'SV' in lowerBound or 'SV' in upperBound:
         n = 'JSV'
     elif 'KRR' in upperBound:
         n = 'JRR'
-    elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound:
+    elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound or 'IIU' in upperBound:
         n = 'JI'
-    elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound:
+    elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
         n = 'JJ'
     else:
         exit
