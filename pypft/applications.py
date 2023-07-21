@@ -216,8 +216,8 @@ def inlineContainedSubroutines(doc):
     for loc in locations: # For all subroutines (main + contained)
         if loc[0].count('sub:') >= 1:
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
-            mainVarList = getVarList(doc,getLocalityPath(doc,loc[1]))
             for callStmtNn in callStmtsNn: # For all CALL statements
+                mainVarList = getVarList(doc,getLocalityPath(doc,loc[1]))
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
                         callStmt = getParent(doc,callStmtNn,level=4)
@@ -269,6 +269,7 @@ def inlineContainedSubroutines(doc):
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)
                         par.remove(callStmt)
+                        nodeInlined.tail='\n' #to avoid extra spaces in tail for #ifdef #else statements
                         par.insert(index,nodeInlined)
                         exit
                 # Update containedRoutines

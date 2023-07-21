@@ -357,7 +357,7 @@ def createDoStmt(loopIndexstr, lowerBoundstr, upperBoundstr):
     doStmt = ET.Element('{http://fxtran.net/#syntax}do-stmt')
     doStmt.text = 'DO '
     enddoStmt = ET.Element('{http://fxtran.net/#syntax}end-do-stmt')
-    enddoStmt.text = 'END DO '
+    enddoStmt.text = 'END DO'
     enddoStmt.tail = '\n'
     doV = ET.Element('{http://fxtran.net/#syntax}do-V')
     doV.tail = '='
@@ -747,7 +747,8 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
             else:
                 previous = previous[-1]
             if previous.tail is None: previous.tail = ''
-            previous.tail = previous.tail + newlines + (node.tail if node.tail is not None else '')
+            #previous.tail = previous.tail + newlines + (node.tail if node.tail is not None else '')
+            previous.tail = ''
         parent.remove(node)
     
     #Variable simplification
