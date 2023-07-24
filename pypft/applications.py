@@ -7,7 +7,7 @@ from util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
                   alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
 from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
                         createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
-                        placeArrayRtoparensR, createNamedENn)
+                        placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
 from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
@@ -125,61 +125,6 @@ def addStack(doc):
     #        print(var['n'])
 
 @debugDecor
-def applyCPP(doc):
-    """
-    Apply #ifdef for PHYEXMERGE
-    WARNING : this functions is in a basic form. It handles only :
-        #ifdef <KEY>
-        #ifndef <KEY>
-        #else
-        #endif
-    :param doc: etree to use
-    """
-    ifdefKeys = doc.findall('.//{*}cpp')
-    toRemove = []
-    wasIfdef, isInRightKey = False, False
-    for cppNode in ifdefKeys:
-        par = getParent(doc,cppNode)
-        allsiblings = par.findall('./{*}*')
-        index = allsiblings.index(cppNode)
-        cppTxt=alltext(cppNode).replace('#','') #e.g. ['ifndef', 'PHYEXMERGE']
-        cppTxt=cppTxt.split(' ')
-        if len(cppTxt) == 1: cppTxt.append('') #case #else and #endif
-        if cppTxt[0] == 'ifdef' and cppTxt[1] == 'PHYEXMERGE':
-            # Keep the block between #ifdef and next cppNode
-            wasIfdef, isInRightKey = True, True
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'ifndef' and cppTxt[1] == 'PHYEXMERGE':
-            # Remove everything between #ifndef and next cppNode
-            for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
-                if j==0 and el.tag.endswith('}cpp'): #case with empty ifndef
-                    break
-                if not el.tag.endswith('}cpp'):
-                    par.remove(el)
-                    break
-            wasIfdef, isInRightKey = False, True
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'else' and isInRightKey:
-            if wasIfdef:
-                # Remove everything between #else and #endif
-                for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
-                    if j==0 and el.tag.endswith('}cpp'): #case with empty ifdef
-                        break
-                    if not el.tag.endswith('}cpp'):
-                        par.remove(el)
-                        break
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'endif' and isInRightKey:
-            isInRightKey = False
-            toRemove.append(cppNode)
-        else:
-            pass         
-    # Remove all cpp keys
-    for cppNode in toRemove:         
-        par = getParent(doc,cppNode)
-        par.remove(cppNode)
-
-@debugDecor
 def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
     """
     Remove all the array syntax and replace it by do loops
@@ -231,7 +176,6 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
 def inlineContainedSubroutines(doc):
     """
     Inline all contained subroutines in the main subroutine
-    Local variables in contained subroutines must have been removed first
     Steps :
         - Identify contained subroutines
         - Inline within contained subroutines look for all CALL statements, check if it is a containted routines; if yes, inline :
@@ -240,6 +184,27 @@ def inlineContainedSubroutines(doc):
         - Delete the containted routines
     :param doc: xml fragment containing main and contained subroutine
     """
+    def addExplicitArrayBounds(node, callNode, varList):
+        """
+        Add explicit arrays bounds (for further arrays expansion) in Call arguments.
+        Used in call of elemental subroutine
+        :param node: xml node to work on (the calling subroutine)
+        :param callNode: xml node of the call statement
+        :param varList: var list of node
+        """
+        varArray,varArrayNamesList,localIntegers = [], [], []
+        for var in varList:
+            if not var['as'] and var['t'] == 'INTEGER' and not var['arg']:
+                localIntegers.append(var['n'])
+            if var['as']:
+                varArray.append(var)
+                varArrayNamesList.append(var['n'])
+        subs=callNode.findall('.//{*}section-subscript')
+        for sub in subs:
+            if alltext(sub) == ':': # ':' alone
+                varName = alltext(getParent(callNode, sub, level=4).find('.//{*}N/{*}n'))
+                convertColonArrayinDim(sub, callNode, varArrayNamesList, varArray, varName)
+                
     locations  = getLocalitiesList(doc,withNodes='tuple')
     containedRoutines = {}
     # Inline contained subroutines : look for sub: / sub:
@@ -252,26 +217,67 @@ def inlineContainedSubroutines(doc):
         if loc[0].count('sub:') >= 1:
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
             for callStmtNn in callStmtsNn: # For all CALL statements
+                mainVarList = getVarList(doc,getLocalityPath(doc,loc[1]))
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
                         callStmt = getParent(doc,callStmtNn,level=4)
                         par = getParent(doc,callStmt)
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
-                        localitypath = getLocalityPath(doc,containedRoutines[containedRoutine])
-                        varList = getVarList(doc,localitypath)
-                        nodeInlined = inline(doc, containedRoutines[containedRoutine], callStmt,varList)
+                        # Specific case for ELEMENTAL subroutines: need to add explicit arrays bounds for further arrays expansion
+                        prefix = containedRoutines[containedRoutine].findall('.//{*}prefix')
+                        if len(prefix)>0:
+                            if 'ELEMENTAL' in alltext(prefix[0]): 
+                                arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
+                                if len(arrayRincallStmt) > 0:
+                                    addExplicitArrayBounds(loc[1], callStmt, mainVarList)
+                        #
+                        subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
+                        # Inline
+                        nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
+                        # Add local var to main routine
+                        for var in localVarToAdd:
+                            addVar(doc,[[loc[0], var['n'], var['t']+' :: '+var['n'], None]])
+                            
+                        # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
+                        if len(prefix)>0:
+                            if 'ELEMENTAL' in alltext(prefix[0]) and len(arrayRincallStmt) > 0:
+                                loopIndexToCheck = []
+                                Node_aStmt = nodeInlined.findall('.//{*}a-stmt')
+                                doToBuild = []
+                                doI=0
+                                # Loop for the Do loops to build
+                                while len(doToBuild) == 0:
+                                    doToBuild = E2StmtToDoStmt(Node_aStmt[doI])
+                                    doToBuild.reverse() # To write first loops from the latest index (K or SV)
+                                    for dostmt in doToBuild:
+                                        if alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]) not in loopIndexToCheck:
+                                            loopIndexToCheck.append(alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]))
+                                    doI += 1
+                                # Replace the array-syntax by loop index in every a-stmt node
+                                ArrayRLT = nodeInlined.findall('.//{*}R-LT') # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
+                                for node_opE in ArrayRLT: 
+                                    placeArrayRtoparensR(doc, nodeInlined, node_opE) 
+                                # Place the Do loops on top of the inlined routine
+                                doToBuild[-1][-1].insert(-1,nodeInlined) # place the nodeInlined in the last object (inner loop)
+                                # Insert nested DO-loops into the previous object of doToBuild until reach the 0e object
+                                for i in range(len(doToBuild)-1):
+                                    doToBuild[len(doToBuild)-1-(i+1)][0].insert(3,doToBuild[len(doToBuild)-1-i])
+                                nodeInlined = doToBuild[0]
+                            
+                        # Remove call statement of the contained routines
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)
                         par.remove(callStmt)
+                        nodeInlined.tail='\n' #to avoid extra spaces in tail for #ifdef #else statements
                         par.insert(index,nodeInlined)
                         exit
                 # Update containedRoutines
                 containedRoutines = {}
                 # Inline contained subroutines : look for sub: / sub:
-                for loc in locations:
-                    if loc[0].count('sub:') >= 2:
-                        containedRoutines[alltext(loc[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = loc[1]
+                for locs in locations:
+                    if locs[0].count('sub:') >= 2:
+                        containedRoutines[alltext(locs[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = locs[1]
 
     #Remove original containted subroutines and 'CONTAINS' statement
     #contains = doc.find('.//{*}contains-stmt')
@@ -284,18 +290,19 @@ def inlineContainedSubroutines(doc):
             par.remove(loc[1])
 
 
-def inline(doc, subContained, callStmt, varList):
+def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList):
     """
     Inline a subContainted subroutine
-    Local variables in contained subroutines must have been removed first
     Steps :
         - copy the subContained node
         - remove everything before the declarations variables and the variables declarations
         - from the callStmt, replace all the arguments by their names 
-        - return the node to inline
+        - return the node to inline and the local variables to be added in the calling routine
     :param doc: xml fragment containing main and contained subroutine
     :param subContained: xml fragment corresponding to the sub: to inline
     :param callStmt : the call-stmt to get the values of the intent args
+    :param subContaintedVarList: var list of the subContained subroutine
+    :param mainVarList: var list of the main (calling) subroutine
     """
     def setPRESENTbyTrue(node, var, varsNamedNn):
         """
@@ -326,6 +333,16 @@ def inline(doc, subContained, callStmt, varList):
     node = copy.deepcopy(subContained)
     nodeToRemove, varPermutted = [], []
     declStmtFound = False # used to remove everything before a variable declaration
+    
+    # Get local variables that are not present in the main routine for later addition
+    localVarToAdd = []
+    for var in subContaintedVarList:
+        if not var['arg']: # for local variables only
+            localVarToAdd.append(var)
+            for mainVar in mainVarList:
+                if var['n'] == mainVar['n']: # the local variable name in the subcontained is already present in the main routine, we do not add it
+                    localVarToAdd.remove(var)
+
     # if any variable declaration (only local, declared in main routine), go directly to 2nd part of the removing algo
     if not node.findall('.//{*}T-decl-stmt'):
         declStmtFound = True
@@ -354,7 +371,7 @@ def inline(doc, subContained, callStmt, varList):
         varsRoutine.append(alltext(args))
     # List of Optional arguments
     varsOpt = []
-    for var in varList:
+    for var in subContaintedVarList:
         if var['arg']:
             if var['opt']: varsOpt.append(var['n'])
     # Permute args
@@ -488,7 +505,7 @@ def inline(doc, subContained, callStmt, varList):
                             par.insert(index,copyvar)
 
     # Remove all statements related to optional arguments not given by the CALL statement in the main routine to the inlined-contained routine
-    for var in varList:
+    for var in subContaintedVarList:
         if var['arg']:
             if var['opt'] and var['n'] not in varPermutted:
                 namedEs = node.findall('.//{*}named-E/{*}N/{*}n')
@@ -523,7 +540,7 @@ def inline(doc, subContained, callStmt, varList):
                             else:
                                 level +=1
                             par = getParent(node, namedE, level=level)
-    return node
+    return node, localVarToAdd
     
 @debugDecor            
 def removeIJLoops(doc):
@@ -531,12 +548,14 @@ def removeIJLoops(doc):
     ComputeInSingleColumn :
     - Remove all Do loops on JI and JJ for preparation to compute on Klev only
     - Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
-    - Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements, e.g. CALL FOO(D, A(:,:,1), B(:,:)) ==> CALL FOO(D, A(JIJ,:,1), B(JIJ,:))
+    - Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements:
+        e.g. CALL FOO(D, A(:,JK,1), B(:,:)) ==> CALL FOO(D, A(JIJ,JK,1), B(:,:)) only if the target argument is not an array
     WARNING : executed transformed-code will work only if inlineContainedSubroutines is applied first
     :param doc: xml fragment to search for variable usage
     """
     locations  = getLocalitiesList(doc,withNodes='tuple')
     locations.reverse()
+    locations = [item for item in locations if 'func:' not in item[0]] # Remove elemental function (essentially FWSED from ice4_sedimentation_stat)
     indexToCheck = {'JI':'D%NIB','JJ':'D%NJB','JIJ':'D%NIJB'}
     for loc in locations:
         localNode = loc[1]
@@ -554,7 +573,8 @@ def removeIJLoops(doc):
                     getParent(localNode,endDo[-1]).remove(endDo[-1]) #remove end-do statement, the last END-DO corresponds to the first DO LOOP we remove, in case of nested DO-loops
                     if alltext(loopI) not in indexRemoved:
                         indexRemoved.append(alltext(loopI))
-        # Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements
+        # Replace (:,*) on I,J/IJ dimension on argument with explicit (:,*) on CALL statements (only if * are literal-E or string-E) ==> the target arg is not an array
+        # Examples : PRM(:,JK,1) becomes PRM(JIJ,JK,1) ; but PRM(:,:,1) is not changed as the INTENT arg is an array, so the call argument is keeping as an array.
         if 'sub:' in loc[0]:
             varArray, varArrayNamesList, localIntegers = [], [], []
             varList = getVarList(doc, loc)
@@ -573,20 +593,25 @@ def removeIJLoops(doc):
                         print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
                     else:
                         if len(subs) > 1: # sub = 1 is treated on reDimKlonArrayToScalar
-                            varName = alltext(namedE.find('.//{*}n'))
-                            ind=varArrayNamesList.index(varName)
-                            for i,sub in enumerate(subs):
-                                if alltext(sub) == ':': # ':' alone
-                                    upperBound = str(varArray[ind]['as'][i][1])
-                                    if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
-                                        sub.text = '' # remove the ':'
-                                        lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
-                                        loopIndex = 'J' + upperBound.replace('D%N','')
-                                        loopIndex = loopIndex.replace('T','')
-                                        lowerBound.insert(0,createNamedENn(loopIndex))
-                                        sub.insert(0,lowerBound)
-                                        if loopIndex not in indexRemoved:
-                                            indexRemoved.append(loopIndex)
+                            nb_subarray = 0  # Count all arrays in subs to check if there is no more than one on horizontal dimension (we assume horizontal dim. are packed in calling statements)
+                            for sub in subs:
+                                if ':' in alltext(sub):  # ':' alone or partial array such as IKB: or :IKE
+                                    nb_subarray += 1
+                            if nb_subarray == 1:
+                                for i,sub in enumerate(subs):
+                                    if alltext(sub) == ':': # ':' alone
+                                        varName = alltext(namedE.find('.//{*}n'))
+                                        ind=varArrayNamesList.index(varName)
+                                        upperBound = str(varArray[ind]['as'][i][1])
+                                        if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
+                                            sub.text = '' # remove the ':'
+                                            lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
+                                            loopIndex = 'J' + upperBound.replace('D%N','')
+                                            loopIndex = loopIndex.replace('T','')
+                                            lowerBound.insert(0,createNamedENn(loopIndex))
+                                            sub.insert(0,lowerBound)
+                                            if loopIndex not in indexRemoved:
+                                                indexRemoved.append(loopIndex)
         # Initialize former indexes JI,JJ,JIJ to first array element : JI=D%NIB, JJ=D%NJB, JIJ=D%NIJB
         if len(indexRemoved) > 0:
             lastDecl = localNode.findall('.//{*}T-decl-stmt')[-1] # The case where no T-decl-stmt is found, is not handled (it should not exist !)
@@ -632,10 +657,6 @@ class Applications():
     def addStack(self, *args, **kwargs):
         return addStack(self._xml, *args, **kwargs)
 
-    @copy_doc(applyCPP)
-    def applyCPP(self, *args, **kwargs):
-        return applyCPP(self._xml, *args, **kwargs)
-    
     @copy_doc(addIncludes)
     def addIncludes(self, *args, **kwargs):
         return addIncludes(self._xml, *args, **kwargs)
