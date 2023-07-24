@@ -125,6 +125,61 @@ def addStack(doc):
     #        print(var['n'])
 
 @debugDecor
+def applyCPP(doc):
+    """
+    Apply #ifdef for PHYEXMERGE
+    WARNING : this functions is in a basic form. It handles only :
+        #ifdef <KEY>
+        #ifndef <KEY>
+        #else
+        #endif
+    :param doc: etree to use
+    """
+    ifdefKeys = doc.findall('.//{*}cpp')
+    toRemove = []
+    wasIfdef, isInRightKey = False, False
+    for cppNode in ifdefKeys:
+        par = getParent(doc,cppNode)
+        allsiblings = par.findall('./{*}*')
+        index = allsiblings.index(cppNode)
+        cppTxt=alltext(cppNode).replace('#','') #e.g. ['ifndef', 'PHYEXMERGE']
+        cppTxt=cppTxt.split(' ')
+        if len(cppTxt) == 1: cppTxt.append('') #case #else and #endif
+        if cppTxt[0] == 'ifdef' and cppTxt[1] == 'PHYEXMERGE':
+            # Keep the block between #ifdef and next cppNode
+            wasIfdef, isInRightKey = True, True
+            toRemove.append(cppNode)
+        elif cppTxt[0] == 'ifndef' and cppTxt[1] == 'PHYEXMERGE':
+            # Remove everything between #ifndef and next cppNode
+            for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
+                if j==0 and el.tag.endswith('}cpp'): #case with empty ifndef
+                    break
+                if not el.tag.endswith('}cpp'):
+                    par.remove(el)
+                    break
+            wasIfdef, isInRightKey = False, True
+            toRemove.append(cppNode)
+        elif cppTxt[0] == 'else' and isInRightKey:
+            if wasIfdef:
+                # Remove everything between #else and #endif
+                for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
+                    if j==0 and el.tag.endswith('}cpp'): #case with empty ifdef
+                        break
+                    if not el.tag.endswith('}cpp'):
+                        par.remove(el)
+                        break
+            toRemove.append(cppNode)
+        elif cppTxt[0] == 'endif' and isInRightKey:
+            isInRightKey = False
+            toRemove.append(cppNode)
+        else:
+            pass         
+    # Remove all cpp keys
+    for cppNode in toRemove:         
+        par = getParent(doc,cppNode)
+        par.remove(cppNode)
+
+@debugDecor
 def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
     """
     Remove all the array syntax and replace it by do loops
@@ -657,6 +712,10 @@ class Applications():
     def addStack(self, *args, **kwargs):
         return addStack(self._xml, *args, **kwargs)
 
+    @copy_doc(applyCPP)
+    def applyCPP(self, *args, **kwargs):
+        return applyCPP(self._xml, *args, **kwargs)
+    
     @copy_doc(addIncludes)
     def addIncludes(self, *args, **kwargs):
         return addIncludes(self._xml, *args, **kwargs)
