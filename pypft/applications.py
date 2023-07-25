@@ -37,6 +37,7 @@ def deleteNonColumnCalls(doc, simplify=False):
     removeCall(doc, 'UPDATE_ROTATE_WIND', None, simplify=simplify)
     removeCall(doc, 'BL_DEPTH_DIAG_3D', None, simplify=simplify)
     removeCall(doc, 'TM06_H', None, simplify=simplify)
+    removeCall(doc, 'TURB_HOR_SPLT', None, simplify=simplify)
 
 
 
@@ -125,55 +126,63 @@ def addStack(doc):
     #        print(var['n'])
 
 @debugDecor
-def applyCPP(doc):
+def applyCPP(doc, Lkeys=[]):
     """
-    Apply #ifdef for PHYEXMERGE
+    Apply #ifdef for each CPP-key in Lkeys
     WARNING : this functions is in a basic form. It handles only :
         #ifdef <KEY>
         #ifndef <KEY>
         #else
         #endif
     :param doc: etree to use
+    :param Lkeys: list of keys to apply CPP-like transformation of ifdef
     """
+    def removeInBetweenCPP(par):
+        # Remove everything between #cpp block
+        for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
+            if j==0 and el.tag.endswith('}cpp'): #case with empty ifdef
+                break
+            if not el.tag.endswith('}cpp'):
+                par.remove(el)
+            else:
+                break
     ifdefKeys = doc.findall('.//{*}cpp')
     toRemove = []
-    wasIfdef, isInRightKey = False, False
+    removeElse = False
     for cppNode in ifdefKeys:
         par = getParent(doc,cppNode)
-        allsiblings = par.findall('./{*}*')
-        index = allsiblings.index(cppNode)
-        cppTxt=alltext(cppNode).replace('#','') #e.g. ['ifndef', 'PHYEXMERGE']
-        cppTxt=cppTxt.split(' ')
-        if len(cppTxt) == 1: cppTxt.append('') #case #else and #endif
-        if cppTxt[0] == 'ifdef' and cppTxt[1] == 'PHYEXMERGE':
-            # Keep the block between #ifdef and next cppNode
-            wasIfdef, isInRightKey = True, True
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'ifndef' and cppTxt[1] == 'PHYEXMERGE':
-            # Remove everything between #ifndef and next cppNode
-            for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
-                if j==0 and el.tag.endswith('}cpp'): #case with empty ifndef
-                    break
-                if not el.tag.endswith('}cpp'):
-                    par.remove(el)
-                    break
-            wasIfdef, isInRightKey = False, True
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'else' and isInRightKey:
-            if wasIfdef:
-                # Remove everything between #else and #endif
-                for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
-                    if j==0 and el.tag.endswith('}cpp'): #case with empty ifdef
-                        break
-                    if not el.tag.endswith('}cpp'):
-                        par.remove(el)
-                        break
-            toRemove.append(cppNode)
-        elif cppTxt[0] == 'endif' and isInRightKey:
-            isInRightKey = False
-            toRemove.append(cppNode)
-        else:
-            pass         
+        if par is not None:
+            allsiblings = par.findall('./{*}*')
+            index = allsiblings.index(cppNode)
+            cppTxt=alltext(cppNode).replace('#','') #e.g. ['ifndef', 'PHYEXMERGE']
+            cppTxt=cppTxt.split(' ')
+            if len(cppTxt) == 1: cppTxt.append('') #case #else and #endif
+            if cppTxt[0] == 'ifdef':
+                if cppTxt[1] in Lkeys:
+                    # Keep the block between #ifdef and next cppNode
+                    removeElse = True
+                    toRemove.append(cppNode)
+                else:
+                    # Remove everything between #ifdef and next cppNode, Keep Else block
+                    removeInBetweenCPP(par)
+                    removeElse = False
+            elif cppTxt[0] == 'ifndef':
+                if cppTxt[1] in Lkeys:
+                    # Remove everything between #ifndef and next cppNode
+                    removeInBetweenCPP(par)
+                    removeElse = False
+                    toRemove.append(cppNode)
+                else:
+                    # Keep the block between #ifndef and next cppNode
+                    removeElse = True
+                    toRemove.append(cppNode)
+            elif cppTxt[0] == 'else' and removeElse:
+                removeInBetweenCPP(par)
+                toRemove.append(cppNode)
+            elif cppTxt[0] == 'endif':
+                toRemove.append(cppNode)
+            else:
+                pass         
     # Remove all cpp keys
     for cppNode in toRemove:         
         par = getParent(doc,cppNode)
@@ -292,7 +301,18 @@ def inlineContainedSubroutines(doc):
                         nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
                         # Add local var to main routine
                         for var in localVarToAdd:
-                            addVar(doc,[[loc[0], var['n'], var['t']+' :: '+var['n'], None]])
+                            arrayTxt=''
+                            if var['as']:
+                                arrayTxt=', DIMENSION('
+                                for el in var['as']:
+                                    if el[0] is None:
+                                        arrayTxt+=str(el[1])+','
+                                tempArrayTxt = arrayTxt
+                                if arrayTxt[-1] == ',': # remove last ',' if present
+                                    tempArrayTxt = arrayTxt[:-1]
+                                arrayTxt = tempArrayTxt
+                                arrayTxt+=')'
+                            addVar(doc,[[loc[0], var['n'], var['t']+arrayTxt+' :: '+var['n'], None]])
                             
                         # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
                         if len(prefix)>0:
