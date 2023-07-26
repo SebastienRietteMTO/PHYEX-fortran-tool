@@ -8,7 +8,7 @@ from util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
 from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
                         createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
                         placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
-from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar
+from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
 from cosmetics import changeIfStatementsInIfConstructs
 from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
 import copy
@@ -69,11 +69,93 @@ def deleteBudgetDDH(doc, simplify=False):
     setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
 
 @debugDecor
-def addStack(doc):
+def addStack(doc, declarationAllocType):
     """
     Add specific allocations of local arrays on the fly for GPU
     :param doc: etree to use
-    :param simplify : if True, remove variables that are now unused
+    :param declarationAllocType: string of the template for declaration + allocation
+    Example for Mesonh : "{kind}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))"
+    for Philippe's version before CPP : "temp ({kind}, {name}, ({shape}))#alloc ({name})"
+    for Philippe's version after CPP  : "{kind}, DIMENSION ({shape}) :: {name}; POINTER(IP_##{name}##_, {name})#IP_##{name}##_=YLSTACK%L;YLSTACK%L=YLSTACK%L+KIND({name})*SIZE({name});IF(YLSTACK%L>YLSTACK%U)CALL SOF(__FILE__, __LINE__)"
+    """
+    def getShape(var):
+        """
+        Return the shape of var as text
+        :param var: variable element from getVarList
+        return arrayTxt (e.g. 'D%NIJT,D%NKT') and doubledotshape (e.g. ':,:')
+        """
+        # Array dimensions
+        arrayTxt = ''
+        nb_dim=0
+        for el in var['as']:
+            if el[0] is None:
+                arrayTxt+=str(el[1])+','
+                nb_dim += 1
+        tempArrayTxt = arrayTxt
+        doubledotshape = ":,"*nb_dim
+        tempdoubledotshape = doubledotshape
+        if arrayTxt[-1] == ',': # remove last ',' if present
+            tempArrayTxt = arrayTxt[:-1]
+            tempdoubledotshape = doubledotshape[:-1]
+        arrayTxt = tempArrayTxt
+        doubledotshape = tempdoubledotshape
+        return arrayTxt, doubledotshape
+        
+    tempdeclType, tempallocType = declarationAllocType[0].split('#')[0], declarationAllocType[0].split('#')[1]
+    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations.reverse()
+    for loc in locations:
+        localitypath = getLocalityPath(doc,loc[1])
+        varList = getVarList(doc,localitypath)
+        # Look for all local arrays only
+        localArrays, varListToRemove = [], []
+        for var in varList:
+            if not var['arg'] and var['as']:
+                localArrays.append(var)
+                varListToRemove.append([localitypath,var['n']])
+                
+        # Remove the current declaration form
+        removeVar(doc,varListToRemove,simplify=False)
+        
+         # Get the index of the last declaration object
+        declStmts = doc.findall('.//{*}T-decl-stmt')
+        par = getParent(doc,declStmts[-1])
+        allsiblings = par.findall('./{*}*')
+        index = allsiblings.index(declStmts[-1])
+        
+        # Handle text declarations
+        for var in localArrays:
+            index += 1
+            declType = tempdeclType.replace('{kind}',var['t'])
+            declType = declType.replace('{name}',var['n'])
+            arrayTxt, doubledotshape = getShape(var)
+            declType = declType.replace('{doubledotshape}',doubledotshape)
+            declType = declType.replace('{shape}',arrayTxt)
+            fortranSource = "SUBROUTINE FOO598756\n "+declType+" \nEND SUBROUTINE"
+            _, xmlTypeRoutine = fortran2xml(fortranSource)
+            declTypeXML = xmlTypeRoutine.find('.//{*}T-decl-stmt')
+            if declTypeXML is None:
+                declTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
+            par.insert(index, declTypeXML)
+
+        # Handle text allocations
+        for var in localArrays:
+            index += 1
+            allocType = tempallocType.replace('{name}',var['n'])
+            arrayTxt, doubledotshape = getShape(var)
+            allocType = allocType.replace('{shape}',arrayTxt)
+            fortranSource = "SUBROUTINE FOO598756\n "+allocType+" \nEND SUBROUTINE"
+            _, xmlTypeRoutine = fortran2xml(fortranSource)
+            allocTypeXML = xmlTypeRoutine.find('.//{*}allocate-stmt')
+            if allocTypeXML is None:
+                allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
+            par.insert(index, allocTypeXML)
+            
+@debugDecor
+def addDeclStack(doc):
+    """
+    Prepare objects STACK_MOD, YLSTACK and YDSTACK for addStack
+    :param doc: etree to use
     """
     locations  = getLocalitiesList(doc,withNodes='tuple')
     addVar(doc,[[locations[0][0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
@@ -87,7 +169,7 @@ def addStack(doc):
         if alltext(mod) == 'STACK_MOD':
             par = getParent(doc, mod, level=4)
             index = par[:].index(getParent(doc, mod, level=3))
-            par.insert(index+1, xmlIncludeStack.find('.//{*}include'))
+            par.insert(index+1, xmlIncludeStack.find('.//{*}cpp'))
 
     # Add !$acc routine (ROUTINE_NAME) seq after subroutine-stmt
     routineName = doc.find('.//{*}subroutine-stmt/{*}subroutine-N/{*}N/{*}n')
@@ -106,27 +188,9 @@ def addStack(doc):
     fortranSource = "SUBROUTINE FOO598756\n YLSTACK=YDSTACK \nEND SUBROUTINE"
     _, xml = fortran2xml(fortranSource)
     par.insert(index+1,xml.find('.//{*}a-stmt'))
- 
-    # Add alloc (local array)
-    #fortranSource = "SUBROUTINE FOO598756\n alloc (ZTLK) \nEND SUBROUTINE"
-    #_, xml = fortran2xml(fortranSource)
-    #par.insert(index+2, xml.find('.//{*}broken-stmt'))
-    
-    # Add temp (local array)
-    varList = getVarList(doc, locations[0][0])
-    # First remove PARAMETER variable (containing literal-E in asx)
-    #for var in varList:
-    #    if  var['as']:
-    #        for asx in var['asx'][0]:
-    #            if asx and 'literal-E' in asx:
-    #                print(var)   
-    # Look for local arrays
-    #for var in varList:
-    #    if not var['arg'] and var['as']:
-    #        print(var['n'])
 
 @debugDecor
-def applyCPP(doc, Lkeys=[]):
+def applyCPP(doc, Lkeys=['REPRO48']):
     """
     Apply #ifdef for each CPP-key in Lkeys
     WARNING : this functions is in a basic form. It handles only :
@@ -728,10 +792,14 @@ def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify
     return removeUnusedLocalVar(doc, localityPath=localityPath, excludeList=excludeList, simplify=simplify)
 
 class Applications():
+    @copy_doc(addDeclStack)
+    def addDeclStack(self, *args, **kwargs):
+        return addDeclStack(self._xml, *args, **kwargs)
+
     @copy_doc(addStack)
     def addStack(self, *args, **kwargs):
-        return addStack(self._xml, *args, **kwargs)
-
+        return addStack(self._xml, *args, **kwargs)  
+    
     @copy_doc(applyCPP)
     def applyCPP(self, *args, **kwargs):
         return applyCPP(self._xml, *args, **kwargs)

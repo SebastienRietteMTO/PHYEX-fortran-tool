@@ -198,8 +198,10 @@ if __name__ == '__main__':
                                'apply changeIfStatementsInIfConstructs as well')
     gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
                                help='Inline containted subroutines in main routine')
-    gApplications.add_argument('--addStack', default=False, action='store_true',
-                               help='Add allocation of local array and stack variable')    
+    gApplications.add_argument('--addDeclStack', default=False, action='store_true',
+                               help='Add STACK objects for preparation of allocation of local array and stack variable by --addStack')
+    gApplications.add_argument('--addStack', nargs=1, action='append',metavar=('TYPE'),
+                               help='Add local arrays to the stack')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
                                help='Add .h includes in the file and remove the INCLUDE statement')  
     gApplications.add_argument('--applyCPP', default=False, action='store_true',
@@ -275,7 +277,8 @@ if __name__ == '__main__':
                                           **simplify)
 
     #Applications
-    if args.addStack: pft.addStack()
+    if args.addDeclStack: pft.addDeclStack()
+    if args.addStack is not None: pft.addStack(args.addStack[0])
     if args.addIncludes: pft.addIncludes()
     if args.applyCPP: pft.applyCPP()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
