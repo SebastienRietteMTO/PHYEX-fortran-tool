@@ -69,14 +69,15 @@ def deleteBudgetDDH(doc, simplify=False):
     setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
 
 @debugDecor
-def addStack(doc, declarationAllocType):
+def addStack(doc, declarationAllocType, model):
     """
     Add specific allocations of local arrays on the fly for GPU
     :param doc: etree to use
     :param declarationAllocType: string of the template for declaration + allocation
     Example for Mesonh : "{kind}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))"
     for Philippe's version before CPP : "temp ({kind}, {name}, ({shape}))#alloc ({name})"
-    for Philippe's version after CPP  : "{kind}, DIMENSION ({shape}) :: {name}; POINTER(IP_##{name}##_, {name})#IP_##{name}##_=YLSTACK%L;YLSTACK%L=YLSTACK%L+KIND({name})*SIZE({name});IF(YLSTACK%L>YLSTACK%U)CALL SOF(__FILE__, __LINE__)"
+    (not tested) for Philippe's version after CPP  : "{kind}, DIMENSION ({shape}) :: {name}; POINTER(IP_##{name}##_, {name})#IP_##{name}##_=YLSTACK%L;YLSTACK%L=YLSTACK%L+KIND({name})*SIZE({name});IF(YLSTACK%L>YLSTACK%U)CALL SOF(__FILE__, __LINE__)"
+    :param model : 'MESONH' or 'AROME' for specific objects related to the allocator or stack
     """
     def getShape(var):
         """
@@ -100,95 +101,161 @@ def addStack(doc, declarationAllocType):
         arrayTxt = tempArrayTxt
         doubledotshape = tempdoubledotshape
         return arrayTxt, doubledotshape
-        
-    tempdeclType, tempallocType = declarationAllocType[0].split('#')[0], declarationAllocType[0].split('#')[1]
-    locations  = getLocalitiesList(doc,withNodes='tuple')
-    locations.reverse()
-    for loc in locations:
-        localitypath = getLocalityPath(doc,loc[1])
-        varList = getVarList(doc,localitypath)
-        # Look for all local arrays only
-        localArrays, varListToRemove = [], []
-        for var in varList:
-            if not var['arg'] and var['as']:
-                localArrays.append(var)
-                varListToRemove.append([localitypath,var['n']])
-                
-        # Remove the current declaration form
-        removeVar(doc,varListToRemove,simplify=False)
-        
-         # Get the index of the last declaration object
-        declStmts = doc.findall('.//{*}T-decl-stmt')
-        par = getParent(doc,declStmts[-1])
-        allsiblings = par.findall('./{*}*')
-        index = allsiblings.index(declStmts[-1])
-        
-        # Handle text declarations
-        for var in localArrays:
-            index += 1
-            declType = tempdeclType.replace('{kind}',var['t'])
-            declType = declType.replace('{name}',var['n'])
-            arrayTxt, doubledotshape = getShape(var)
-            declType = declType.replace('{doubledotshape}',doubledotshape)
-            declType = declType.replace('{shape}',arrayTxt)
-            fortranSource = "SUBROUTINE FOO598756\n "+declType+" \nEND SUBROUTINE"
-            _, xmlTypeRoutine = fortran2xml(fortranSource)
-            declTypeXML = xmlTypeRoutine.find('.//{*}T-decl-stmt')
-            if declTypeXML is None:
-                declTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
-            par.insert(index, declTypeXML)
 
-        # Handle text allocations
-        for var in localArrays:
-            index += 1
-            allocType = tempallocType.replace('{name}',var['n'])
-            arrayTxt, doubledotshape = getShape(var)
-            allocType = allocType.replace('{shape}',arrayTxt)
-            fortranSource = "SUBROUTINE FOO598756\n "+allocType+" \nEND SUBROUTINE"
-            _, xmlTypeRoutine = fortran2xml(fortranSource)
-            allocTypeXML = xmlTypeRoutine.find('.//{*}allocate-stmt')
-            if allocTypeXML is None:
-                allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
-            par.insert(index, allocTypeXML)
+    tempdeclType, tempallocType = declarationAllocType.split('#')[0], declarationAllocType.split('#')[1]
+    locations  = getLocalitiesList(doc,withNodes='tuple')
+    for loc in locations:
+        if 'sub:' in loc[0]: # Do not add stack to MODULE object, but only to SUBROUTINES
+            localitypath = getLocalityPath(doc,loc[1])
+            varList = getVarList(doc,localitypath)
+            # Look for all local arrays only (and not PARAMETER variables)
+            localArrays, varListToRemove = [], []
+            for var in varList:
+                if not var['arg'] and var['as']:
+                    parameterVar = False
+                    for asx in var['asx'][0]: #remove PARAMETER variable (containing literal-E in asx
+                        if asx and 'literal-E' in asx:
+                            parameterVar = True
+                    if not parameterVar:
+                        localArrays.append(var)
+                        varListToRemove.append([localitypath,var['n']])
+                    
+            # Remove the current declaration form
+            removeVar(doc,varListToRemove,simplify=False)
+            
+             # Get the index of the last declaration object
+            declStmts = loc[1].findall('.//{*}T-decl-stmt')
+            par = getParent(loc[1],declStmts[-1])
+            allsiblings = par.findall('./{*}*')
+            index = allsiblings.index(declStmts[-1])
+    
+            # Handle text declarations
+            for var in localArrays:
+                index += 1
+                declType = tempdeclType.replace('{kind}',var['t'])
+                declType = declType.replace('{name}',var['n'])
+                arrayTxt, doubledotshape = getShape(var)
+                declType = declType.replace('{doubledotshape}',doubledotshape)
+                declType = declType.replace('{shape}',arrayTxt)
+                fortranSource = "SUBROUTINE FOO598756\n "+declType+" \nEND SUBROUTINE"
+                _, xmlTypeRoutine = fortran2xml(fortranSource)
+                declTypeXML = xmlTypeRoutine.find('.//{*}T-decl-stmt')
+                if declTypeXML is None:
+                    declTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
+                par.insert(index, declTypeXML)
+            lastIndexDecl = index
+            
+            # Handle text allocations
+            for var in localArrays:
+                index += 1
+                allocType = tempallocType.replace('{name}',var['n'])
+                arrayTxt, doubledotshape = getShape(var)
+                allocType = allocType.replace('{shape}',arrayTxt)
+                fortranSource = "SUBROUTINE FOO598756\n "+allocType+" \nEND SUBROUTINE"
+                _, xmlTypeRoutine = fortran2xml(fortranSource)
+                allocTypeXML = xmlTypeRoutine.find('.//{*}allocate-stmt')
+                if allocTypeXML is None:
+                    allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
+                par.insert(index, allocTypeXML)
+        
+            if len(localArrays)>0:
+                if model == 'AROME':
+                    addDeclStackAROME(doc, loc, lastIndexDecl)
+                #elif model == 'MESONH':
+                    #addDeclStackMESONH() # TODO regarging specifications of LAERO Open-ACC branch
             
 @debugDecor
-def addDeclStack(doc):
+def addDeclStackAROME(doc, loc, lastIndexDecl=0):
     """
     Prepare objects STACK_MOD, YLSTACK and YDSTACK for addStack
     :param doc: etree to use
+    :param loc: locality to add the specific objets
+    :param lastIndexDecl: index of the last declaration object added that may not be recognized by fxtran as a declaration (e.g. in case of "temp" statement)
     """
-    locations  = getLocalitiesList(doc,withNodes='tuple')
-    addVar(doc,[[locations[0][0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
-    addModuleVar(doc, [[locations[0][0], 'STACK_MOD',None]])
-    
+    addVar(doc,[[loc[0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
+    addModuleVar(doc, [[loc[0], 'STACK_MOD',None]])
+        
     # Add include stack.h after the USE STACK_MOD
-    modules = doc.findall('.//{*}use-stmt/{*}module-N/{*}N/{*}n')
+    modules = loc[1].findall('.//{*}use-stmt/{*}module-N/{*}N/{*}n')
     fortranSource = "SUBROUTINE FOO598756\n #include \"stack.h\" \nEND SUBROUTINE"
     _, xmlIncludeStack = fortran2xml(fortranSource)
     for mod in modules:
         if alltext(mod) == 'STACK_MOD':
-            par = getParent(doc, mod, level=4)
-            index = par[:].index(getParent(doc, mod, level=3))
+            par = getParent(loc[1], mod, level=4)
+            index = par[:].index(getParent(loc[1], mod, level=3))
             par.insert(index+1, xmlIncludeStack.find('.//{*}cpp'))
 
     # Add !$acc routine (ROUTINE_NAME) seq after subroutine-stmt
-    routineName = doc.find('.//{*}subroutine-stmt/{*}subroutine-N/{*}N/{*}n')
+    routineName = loc[1].find('.//{*}subroutine-stmt/{*}subroutine-N/{*}N/{*}n')
     fortranSource = "SUBROUTINE FOO598756\n !$acc routine ("+ alltext(routineName) + ") seq \nEND SUBROUTINE"
     _, xmlAccRoutine = fortran2xml(fortranSource)
-    routineStmt = doc.find('.//{*}subroutine-stmt')
-    par = getParent(doc, routineStmt)
+    routineStmt = loc[1].find('.//{*}subroutine-stmt')
+    par = getParent(loc[1], routineStmt)
     index = par[:].index(routineStmt)
     par.insert(index+1, xmlAccRoutine.find('.//{*}C'))
     
-    # Add YLSTACK = YDSTACK
-    decls = doc.findall('.//{*}T-decl-stmt')
-    lastDecl = decls[-1]
-    par = getParent(doc,lastDecl)
-    index = par[:].index(lastDecl)
+    # in case, called by checkStackArginCall, get lastIndexDecl:
+    if lastIndexDecl == 0:
+        declStmts = loc[1].findall('.//{*}T-decl-stmt')
+        par = getParent(loc[1],declStmts[-1])
+        allsiblings = par.findall('./{*}*')
+        lastIndexDecl = allsiblings.index(declStmts[-1])
+    # Add YLSTACK = YDSTACK        
     fortranSource = "SUBROUTINE FOO598756\n YLSTACK=YDSTACK \nEND SUBROUTINE"
     _, xml = fortran2xml(fortranSource)
-    par.insert(index+1,xml.find('.//{*}a-stmt'))
+    par.insert(lastIndexDecl+5,xml.find('.//{*}a-stmt')) # 5 corresponds to 1 for new line, 4 for the 4 lines added in addDeclStackAROME
+    
+    #Update subroutines_wth_stack.txt
+    f = open("subroutines_wth_stack.txt", "a")
+    try: 
+        f.write(loc[0].split('/sub:')[1] + '\n')
+    except:
+        f.write(loc[0].split('sub:')[1] + '\n') # Case for main call (rain_ice, shallow, turb, ice_adjust) that are not in modules
+    f.close()
 
+@debugDecor
+def checkStackArginCall(doc):
+    """
+    Check in all CALL statements if YLSTACK must be present. It is based on a first call of addDeclStackMODEL that writes in subroutines_wth_stack.txt
+    all the routines that need the STACK object
+    :param doc: etree to use
+    """
+    f = open("subroutines_wth_stack.txt", "r")
+    lines = f.readlines()
+    routinesWthStack = []
+    for l in lines:
+        routinesWthStack.append(l.replace('\n',''))
+    f.close()
+    
+    # Build <f:arg><f:arg-N n="YDSTACK"><f:k>YDSTACK</f:k></f:arg-N>=<f:named-E><f:N><f:n>YLSTACK</f:n></f:N></f:named-E></f:arg>
+    fortranSource = "SUBROUTINE FOO598756\n CALL FOO(YLSTACK=YDSTACK) \nEND SUBROUTINE"
+    _, xml = fortran2xml(fortranSource) 
+    YLSTACKarg = xml.find('.//{*}arg')
+    YLSTACKarg.text = ','
+                   
+    locations  = getLocalitiesList(doc,withNodes='tuple')
+    for loc in locations:
+        if 'sub:' in loc[0]: # Do not work on MODULE locality
+            addedOnce = False # becomes True as soon as YLSTACK has been added at least once, to check later if the declaration of YLSTACK is already present in the locality
+            callStmts = loc[1].findall('.//{*}call-stmt')
+            for callStmt in callStmts:
+                routineName = callStmt.find('.//{*}procedure-designator/{*}named-E/{*}N/{*}n')
+                if alltext(routineName) in routinesWthStack:
+                    lastArg = callStmt.findall('.//{*}arg-spec/{*}arg/{*}named-E')[-1]
+                    if not alltext(lastArg) == 'YLSTACK': # If the last argument is not YLSTACK, then add it
+                       # Append YLSTACKarg as the last argument of the calling statement
+                       callStmt_args = callStmt.find('.//{*}arg-spec')
+                       callStmt_args.append(YLSTACKarg)
+                       addedOnce = True
+            # Check if the declaration of YLSTACK is already present in the locality
+            if addedOnce:
+                declStmts = loc[1].findall('.//{*}T-decl-stmt//{*}EN-decl')
+                declStmtsTxt = []
+                for el in declStmts:
+                    declStmtsTxt.append(alltext(el))
+                if 'YLSTACK' not in declStmtsTxt:
+                    addDeclStackAROME(doc,loc)
+            
 @debugDecor
 def applyCPP(doc, Lkeys=['REPRO48']):
     """
@@ -729,7 +796,8 @@ def removeIJLoops(doc):
                 for namedE in namedEs:
                     subs=namedE.findall('.//{*}section-subscript')
                     if '%' in alltext(namedE):
-                        print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
+                        #print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
+                        pass
                     else:
                         if len(subs) > 1: # sub = 1 is treated on reDimKlonArrayToScalar
                             nb_subarray = 0  # Count all arrays in subs to check if there is no more than one on horizontal dimension (we assume horizontal dim. are packed in calling statements)
@@ -792,13 +860,13 @@ def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify
     return removeUnusedLocalVar(doc, localityPath=localityPath, excludeList=excludeList, simplify=simplify)
 
 class Applications():
-    @copy_doc(addDeclStack)
-    def addDeclStack(self, *args, **kwargs):
-        return addDeclStack(self._xml, *args, **kwargs)
-
     @copy_doc(addStack)
     def addStack(self, *args, **kwargs):
         return addStack(self._xml, *args, **kwargs)  
+
+    @copy_doc(checkStackArginCall)
+    def checkStackArginCall(self, *args, **kwargs):
+        return checkStackArginCall(self._xml, *args, **kwargs)  
     
     @copy_doc(applyCPP)
     def applyCPP(self, *args, **kwargs):
