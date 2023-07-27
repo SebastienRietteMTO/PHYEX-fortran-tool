@@ -198,14 +198,14 @@ if __name__ == '__main__':
                                'apply changeIfStatementsInIfConstructs as well')
     gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
                                help='Inline containted subroutines in main routine')
-    gApplications.add_argument('--addDeclStack', default=False, action='store_true',
-                               help='Add STACK objects for preparation of allocation of local array and stack variable by --addStack')
-    gApplications.add_argument('--addStack', nargs=1, action='append',metavar=('TYPE'),
+    gApplications.add_argument('--addStack', nargs=2, action='append',metavar=('TYPE', 'MODEL'),
                                help='Add local arrays to the stack')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
                                help='Add .h includes in the file and remove the INCLUDE statement')  
     gApplications.add_argument('--applyCPP', default=False, action='store_true',
                                help='Apply ifdef key')
+    gApplications.add_argument('--checkStackArginCall', default=False, action='store_true',
+                               help='Check in all CALL statements if YLSTACK must be present')
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -277,9 +277,9 @@ if __name__ == '__main__':
                                           **simplify)
 
     #Applications
-    if args.addDeclStack: pft.addDeclStack()
-    if args.addStack is not None: pft.addStack(args.addStack[0])
+    if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
     if args.addIncludes: pft.addIncludes()
+    if args.checkStackArginCall: pft.checkStackArginCall()
     if args.applyCPP: pft.applyCPP()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
