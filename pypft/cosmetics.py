@@ -3,7 +3,7 @@ This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
 from util import (copy_doc, getParent, debugDecor,
-                  non_code, alltext, tostring)
+                  non_code, alltext)
 from variables import getVarList
 from locality import getLocalitiesList, getLocalityPath
 

@@ -1,5 +1,5 @@
 from util import (copy_doc, PFTError, debugDecor,
-                  alltext, getParent, n2name)
+                  getParent, n2name)
 
 """
 This module implements the locality stuff

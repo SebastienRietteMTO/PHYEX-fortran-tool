@@ -4,7 +4,6 @@ import logging
 import tempfile
 import os
 import subprocess
-import logging
 import time
 
 """
@@ -116,8 +115,8 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
 
     #Default options
     if parserOptions is None:
-        import pypft
-        parserOptions = pypft.PFT.DEFAULT_FXTRAN_OPTIONS
+        import pft
+        parserOptions = pft.PFT.DEFAULT_FXTRAN_OPTIONS
 
     #Call to fxtran
     with tempfile.NamedTemporaryFile(buffering=0, suffix='.F90') as f:
