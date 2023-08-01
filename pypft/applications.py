@@ -242,7 +242,7 @@ def checkStackArginCall(doc):
                 routineName = callStmt.find('.//{*}procedure-designator/{*}named-E/{*}N/{*}n')
                 if alltext(routineName) in routinesWthStack:
                     lastArg = callStmt.findall('.//{*}arg-spec/{*}arg/{*}named-E')[-1]
-                    if not alltext(lastArg) == 'YLSTACK': # If the last argument is not YLSTACK, then add it
+                    if not alltext(lastArg) == 'YDSTACK': # If the last argument is not YLSTACK, then add it
                        # Append YLSTACKarg as the last argument of the calling statement
                        callStmt_args = callStmt.find('.//{*}arg-spec')
                        callStmt_args.append(YLSTACKarg)
