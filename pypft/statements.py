@@ -747,7 +747,7 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
             else:
                 previous = previous[-1]
             if previous.tail is None: previous.tail = ''
-            previous.tail = previous.tail + newlines + (node.tail if node.tail is not None else '')
+            previous.tail = previous.tail.replace('\n','') + (node.tail if node.tail is not None else '')
         parent.remove(node)
     
     #Variable simplification
