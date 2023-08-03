@@ -276,11 +276,7 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
     
                     # Insert the DO loops
                     if len(doToBuild)>0:
-                        # Protection for if-then stmt transformed that does not have \n 
-                        if not node_opE.tail: #if NoneType
-                            node_opE.tail = '\n'
-                        else:
-                            node_opE.tail = node_opE.tail + '\n'
+                        node_opE.tail = '\n'
                         # Specific treatment for Where-block
                         doToBuild[-1][0].insert(3,node_opE) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
                         # Insert nested DO-loops into the previous object of doToBuild until reach the 0e object
