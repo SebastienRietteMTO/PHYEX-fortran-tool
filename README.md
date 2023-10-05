@@ -1,6 +1,8 @@
 # PHYEX-fortran-tool
-FORTRAN tool for PHYEX
 
-Temporary repository for developping the fortran tool which will be included in [PHYEX](https://github.com/UMR-CNRM/PHYEX).
+This set of tools is primarily designed to be applied on the [PHYEX](https://github.com/UMR-CNRM/PHYEX)
+repository. But they are normally generic enough to be used in other contexts.
 
-The script is found in src directory, documention and specifications in doc directory and some examples in the examples directory. 
+The tools can be used with on the command line (the pft.py utility can be found in the bin directory)
+or as a python package (pypft directory). The documentation is in the doc directory and some examples
+are in the examples directory. 
