@@ -2,11 +2,10 @@
 This module includes functions to act on statements
 """
 import xml.etree.ElementTree as ET
-from util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
-                  alltext,tostring, getIndexLoop, moveInGrandParent)
-from scope import (getScopeChildNodes, getScopeNode, getScopesList,
-                      getScopePath)
-from variables import removeVarIfUnused
+from pypft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
+                        alltext,tostring, getIndexLoop, moveInGrandParent)
+from pypft.scope import (getScopeChildNodes, getScopeNode, getScopesList, getScopePath)
+from pypft.variables import removeVarIfUnused
         
 def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
     """

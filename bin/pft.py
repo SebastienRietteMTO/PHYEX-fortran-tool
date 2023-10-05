@@ -1,1 +1,1 @@
-../pypft/pft.py
+../src/pypft/pft.py

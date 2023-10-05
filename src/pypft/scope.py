@@ -1,5 +1,4 @@
-from util import (copy_doc, PFTError, debugDecor,
-                  getParent, n2name)
+from pypft.util import (copy_doc, PFTError, debugDecor, getParent, n2name)
 
 """
 This module implements the scope stuff

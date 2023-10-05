@@ -2,10 +2,10 @@
 This module implements functions to deal with variables
 """
 
-from util import (copy_doc, PFTError, debugDecor,
-                  tostring, alltext, getFileName, removeFromList, getParent,
-                  getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
-from scope import getScopeNode, getScopeChildNodes, getScopesList
+from pypft.util import (copy_doc, PFTError, debugDecor,
+                        tostring, alltext, getFileName, removeFromList, getParent,
+                        getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
+from pypft.scope import getScopeNode, getScopeChildNodes, getScopesList
 from xml.etree.ElementTree import Element
 import logging
 

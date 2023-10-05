@@ -2,12 +2,12 @@
 
 import os
 
-from variables import Variables
-from cosmetics import Cosmetics
-from applications import Applications
-from scope import Scope
-from statements import Statements
-from util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
+from pypft.variables import Variables
+from pypft.cosmetics import Cosmetics
+from pypft.applications import Applications
+from pypft.scope import Scope
+from pypft.statements import Statements
+from pypft.util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
 
 class PFT(Variables, Cosmetics, Applications, Scope, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-cpp', '-line-length', '9999']
