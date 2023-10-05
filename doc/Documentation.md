@@ -24,10 +24,10 @@ LIMITATIONS:
 Especially when a FORTRAN source file contains several subroutine, functions
 or type declaration, it is necessary to specify on which part of the source
 code a modification must be done.
-This is achieved through the locality concept.
-The locality is a string representing a kind of path to access the source code
+This is achieved through the scope concept.
+The scope is a string representing a kind of path to access the source code
 fragment on which the action must be performed.
-A locality is a succession of path elements separated by '/'; each path elements
+A scope is a succession of path elements separated by '/'; each path elements
 has one of the following forms:
 
  - **module:_NAME_** to refer to the module named _NAME_
@@ -71,16 +71,16 @@ becomes unused, the use statement is also removed.
 This options takes two argument, the first one describes where the variable
 is declared (to distinguish between several variables holding the same name
 but in different subroutines) and the second one is the variable name.
-The first argument is a locality as described in [Concepts](#concepts).
+The first argument is a scope as described in [Concepts](#concepts).
 
 **\--addVariable** adds a new variable. The first argument describes where the variable
-must be declared (it is a locality as described in [Concepts](#concepts)).
+must be declared (it is a scope as described in [Concepts](#concepts)).
 The second one is the variable name, the third one is the declarative statement to insert,
 and the fourth one is the position (python indexing) the new variable will have in the
 calling statment of the routine (non-integer value for a local variable)
 
 **--addModuleVariable** adds a USE statement with an ONLY attribute. The first
-argument describes where the variable must be declared (it is a locality as
+argument describes where the variable must be declared (it is a scope as
 described in [Concepts](#concepts)). The second one is the module name and
 the third one is the variable name.
 
@@ -88,11 +88,11 @@ the third one is the variable name.
 part of the declaration statement (e.g. "REAL, DIMENSION(5) :: X" becomes "REAL :: X(5)")
 
 **\--showUnusedVariables** lists the unused varibales. Without argument all the
-unused variables are shown. If one argument is given it is the locality (as described
+unused variables are shown. If one argument is given it is the scope (as described
 in [Concepts](#concepts)) where unused variables are searched for.
 
 **\--removeUnusedLocalVariables** remove unused local variables. Without argument all the
-unused variables are suppressed. If one argument is given it is the locality (as described
+unused variables are suppressed. If one argument is given it is the scope (as described
 in [Concepts](#concepts)) where unused variables are searched for.
 
 ### Cosmetics
@@ -117,11 +117,11 @@ an error message and raise an exception.
 ### Dealing with statements
 
 **\--removeCall** removes call statements. The first argument describes from where the
-call statements must be suppressed (it is a locality as described in [Concepts](#concepts)).
+call statements must be suppressed (it is a scope as described in [Concepts](#concepts)).
 The second argument is the subprogram name.
 
 **\--removePrints** removes print statements. The argument describes from where the
-call statements must be suppressed (it is a locality as described in [Concepts](#concepts)).
+call statements must be suppressed (it is a scope as described in [Concepts](#concepts)).
 
 ### Applications
 

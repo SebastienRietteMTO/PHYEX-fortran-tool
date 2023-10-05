@@ -4,15 +4,15 @@ This module includes functions to act on statements
 import xml.etree.ElementTree as ET
 from util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
                   alltext,tostring, getIndexLoop, moveInGrandParent)
-from locality import (getLocalityChildNodes, getLocalityNode, getLocalitiesList,
-                      getLocalityPath)
+from scope import (getScopeChildNodes, getScopeNode, getScopesList,
+                      getScopePath)
 from variables import removeVarIfUnused
         
 def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
     """
     Convert ':' in full array dimensions. Example if SIZE(A)=D%NKT, A(:) is converted to A(1:D%NKT) 
     :param sub: section-subscript node from the working node
-    :param locNode: locality of the working node
+    :param locNode: scope of the working node
     :param varArrayNamesList: list of all variable arrays names (list of string)
     :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
     :param varName : string of the variable in reading fortran ('A' in the example)
@@ -42,7 +42,7 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
     TODO: Double nested WHERE are not transformed
     :param doc: etree to use for parent retrieval
     :param node_opE: a-stmt node to work on
-    :param locNode: locality of node_where
+    :param locNode: scope of node_where
     :param varArrayNamesList: list of all variable arrays names (list of string)
     :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
     :param onlyNumbers: in/out, becomes True if, in the case of no index found (e.g. A(:,:,:)), one of the upperBound is a number
@@ -155,7 +155,7 @@ def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
     TODO: Double nested WHERE are not transformed
     :param doc: etree to use for parent retrieval
     :param node_where: where-construct node to work on
-    :param locNode: locality of node_where
+    :param locNode: scope of node_where
     :param varArrayNamesList: list of all variable arrays names (list of string)
     :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
     """
@@ -241,7 +241,7 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
     TODO: If index and brakets are not repsent A = B + C, the transformation is not applied (yet)
     :param doc: etree to use for parent retrieval
     :param node_opE: node opE to work on
-    :param locNode: locality of node_opE
+    :param locNode: scope of node_opE
     :param varArrayNamesList: list of all variable arrays names (list of string)
     :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
     :param loopIndexToCheck: list of index to check at the end of expansion of a group of arrays if the loop-index is already declared or not
@@ -331,7 +331,7 @@ def placeArrayRtoparensR(doc, locNode, node_opE):
     Convert ArrayR to parensR (remove the array-R and add parensR)
     :param doc: etree to use for parent retrieval
     :param node_opE: working node
-    :param locNode: locality of the working node
+    :param locNode: scope of the working node
     """    
     # Replace the array-like index selection by index loop on all variables (array-R)
     arrayR = node_opE.findall('.//{*}array-R')
@@ -446,12 +446,12 @@ def createElseBlock(nodeconditionE):
     return elseBlock
 
 @debugDecor
-def setFalseIfStmt(doc, flags, localityPath, simplify=False):
+def setFalseIfStmt(doc, flags, scopePath, simplify=False):
     """
     Set to .FALSE. a given boolean fortran flag before removing the node if simplify is True
     :param doc: xml fragment to use
     :param flags: list of strings of flags to set to .FALSE.
-    :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
+    :param scopePath: scope to explore (None for all). This is a '/'-separated path with each element
                          having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                          'func:<name of the function>'
     :param simplify: try to simplify code (if the .FALSE. was alone inside a if-then-endif construct,
@@ -462,14 +462,14 @@ def setFalseIfStmt(doc, flags, localityPath, simplify=False):
     FalseNode.text = ' .FALSE. '
     for flag in flags:
         flag = flag.upper()
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(scopePath, str): scopePath = [scopePath]
     singleFalseBlock,multipleFalseBlock = [], []
-    for loc in localityPath:
-        #Loop on nodes composing the locality
-        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
+    for loc in scopePath:
+        #Loop on nodes composing the scope
+        for node in getScopeChildNodes(doc, getScopeNode(doc, loc)):
             #Multiple flags conditions
             Node_opE = node.findall('.//{*}condition-E/{*}op-E')
             for node_opE in Node_opE:
@@ -518,11 +518,11 @@ def evalFalseIfStmt(doc, nodes, simplify=False):
     removeStmtNode(doc, nodes_torm, simplify, simplify)
 
 @debugDecor
-def removeCall(doc, callName, localityPath, simplify=False):
+def removeCall(doc, callName, scopePath, simplify=False):
     """
     :param doc: xml fragment to use
     :param callName: name of the subprogram calls to remove.
-    :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
+    :param scopePath: scope to explore (None for all). This is a '/'-separated path with each element
                          having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                          'func:<name of the function>'
     :param simplify: try to simplify code (if we delete "CALL FOO(X)" and if X not used else where,
@@ -531,14 +531,14 @@ def removeCall(doc, callName, localityPath, simplify=False):
                      checked...)
     """
     callName = callName.upper()
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(scopePath, str): scopePath = [scopePath]
     callNodes = []
-    for loc in localityPath:
-        #Loop on nodes composing the locality
-        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
+    for loc in scopePath:
+        #Loop on nodes composing the scope
+        for node in getScopeChildNodes(doc, getScopeNode(doc, loc)):
             callNodes += [node] if node.tag.endswith('}call-stmt') else [] #In case node is a call statement
             callNodes += [cn for cn in node.findall('.//{*}call-stmt')] #If node is a construct with call statements
     callNodes = [cn for cn in callNodes
@@ -546,11 +546,11 @@ def removeCall(doc, callName, localityPath, simplify=False):
     removeStmtNode(doc, callNodes, simplify, simplify)
 
 @debugDecor
-def removePrints(doc, localityPath, simplify=False):
+def removePrints(doc, scopePath, simplify=False):
     """
     Removes all print statements
     :param doc: xml fragment to use
-    :param localityPath: locality to explore (None for all). This is a '/'-separated path with each element
+    :param scopePath: scope to explore (None for all). This is a '/'-separated path with each element
                          having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                          'func:<name of the function>'
     :param simplify: try to simplify code (if we delete "print*, X" and if X is not used else where,
@@ -558,14 +558,14 @@ def removePrints(doc, localityPath, simplify=False):
                      the construct is also removed, and variables used in the if condition are also
                      checked...)
     """
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(scopePath, str): scopePath = [scopePath]
     printNodes = []
-    for loc in localityPath:
-        #Loop on nodes composing the locality
-        for node in getLocalityChildNodes(doc, getLocalityNode(doc, loc)):
+    for loc in scopePath:
+        #Loop on nodes composing the scope
+        for node in getScopeChildNodes(doc, getScopeNode(doc, loc)):
             printNodes += [node] if node.tag.endswith('}print-stmt') else [] #In case node is a print statement
             printNodes += [cn for cn in node.findall('.//{*}print-stmt')] #If node is a construct with print statements
     removeStmtNode(doc, printNodes, simplify, simplify)
@@ -708,7 +708,7 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     if simplifyVar:
         #Loop to identify all the potential variables to remove
         for node in nodesToSuppress:
-            loc = getLocalityPath(doc, node)
+            loc = getScopePath(doc, node)
             if node.tag.endswith('}do-construct'):
                 #Try to remove variables used in the loop
                 varToCheck.extend([(loc, n2name(arg)) for arg in node.find('./{*}do-stmt').findall('.//{*}N')])

@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 from util import (copy_doc, getParent, debugDecor,
                   non_code, alltext)
 from variables import getVarList
-from locality import getLocalitiesList, getLocalityPath
+from scope import getScopesList, getScopePath
 
 @debugDecor
 def upperCase(doc):
@@ -163,14 +163,14 @@ def reDimKlonArrayToScalar(doc):
     Applied on computation (index loop removal) and variable declarations (dimension removal)
     :param doc: xml fragment
     """
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     locations.reverse()
     for loc in locations:
         # For all subroutines or modi_ interface (but not mode)
         if 'sub:' in loc[0] or 'MODI_' in loc[0]:
             varArray,varArrayNamesList = [], []
-            localitypath = getLocalityPath(doc,loc[1])
-            varList = getVarList(doc,localitypath)
+            scopepath = getScopePath(doc,loc[1])
+            varList = getVarList(doc,scopepath)
             for var in varList:
                 if var['as']:
                     varArray.append(var)

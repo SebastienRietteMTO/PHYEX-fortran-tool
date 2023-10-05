@@ -5,11 +5,11 @@ import os
 from variables import Variables
 from cosmetics import Cosmetics
 from applications import Applications
-from locality import Locality
+from scope import Scope
 from statements import Statements
 from util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
 
-class PFT(Variables, Cosmetics, Applications, Locality, Statements):
+class PFT(Variables, Cosmetics, Applications, Scope, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-cpp', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
@@ -138,7 +138,7 @@ if __name__ == '__main__':
                                  ' with attribute-N=DIMENSION and move the attribute into EN-N elements')
     gVariables.add_argument('--addVariable', nargs=4, action='append',
                             metavar=('WHERE', 'VARNAME', 'DECLARATION', 'POSITION'),
-                            help='Add a variable. First argument is the locality (as for ' + \
+                            help='Add a variable. First argument is the scope (as for ' + \
                                  'the --removeVariable option. The second is the variable ' + \
                                  'name, the third is the declarative statement to insert, ' + \
                                  'the fourth is the position (python indexing) the new ' + \
@@ -146,23 +146,23 @@ if __name__ == '__main__':
                                  'routine (non-integer value for a local variable).')
     gVariables.add_argument('--addModuleVariable', nargs=3, action='append',
                             metavar=('WHERE', 'MODULENAME', 'VARNAME'),
-                            help='Add a USE statement. The first argument is the locality (as for ' + \
+                            help='Add a USE statement. The first argument is the scope (as for ' + \
                                  'the --removeVariable option). The second is the module ' + \
                                  'name; the third is the variable name.')
     gVariables.add_argument('--showUnusedVariables', nargs='?', action='append',
                             metavar='WHERE', default=None,
                             help='Show a list of unused variables in the entire code ' + \
-                                 'or in the locality (if specified).')
+                                 'or in the scope (if specified).')
     gVariables.add_argument('--removeUnusedLocalVariables', nargs=2, action='append',
                             metavar=('WHERE', 'EXCLUDE'), default=None,
-                            help='Remove unused local variables in the specified locality ' + \
-                                 '(use the special locality name ALL to apply on the entire ' + \
+                            help='Remove unused local variables in the specified scope ' + \
+                                 '(use the special scope name ALL to apply on the entire ' + \
                                  'code), excluding some variables (comma-separated list or NONE ' + \
                                  'to exclude nothing).')
     gVariables.add_argument('--removePHYEXUnusedLocalVariables', nargs=2, action='append',
                             metavar=('WHERE', 'EXCLUDE'), default=None,
-                            help='Remove unused local variables in the specified locality ' + \
-                                 '(use the special locality name ALL to apply on the entire ' + \
+                            help='Remove unused local variables in the specified scope ' + \
+                                 '(use the special scope name ALL to apply on the entire ' + \
                                  'code), excluding some variables (comma-separated list or NONE ' + \
                                  'to exclude nothing). This option takes into account the ' + \
                                  'mnh_expand directives to prevent from removing useful variables.')
@@ -238,8 +238,8 @@ if __name__ == '__main__':
 
     #Misc
     gMisc = parser.add_argument_group('Miscellaneous')
-    gMisc.add_argument('--showLocalities', default=False, action='store_true',
-                       help='Show the different localities found in the source code')
+    gMisc.add_argument('--showScopes', default=False, action='store_true',
+                       help='Show the different scopes found in the source code')
 
     args = parser.parse_args()
     simplify = {'simplify': args.simplify}
@@ -310,7 +310,7 @@ if __name__ == '__main__':
         for rp in args.removePrints: pft.removePrints(None if rp == 'ALL' else rp, **simplify)
 
     #Misc
-    if args.showLocalities: pft.showLocalitiesList()
+    if args.showScopes: pft.showScopesList()
 
     #Writing
     if args.xml is not None: pft.writeXML(args.xml)

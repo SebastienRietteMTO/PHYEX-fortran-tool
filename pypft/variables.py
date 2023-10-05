@@ -5,16 +5,16 @@ This module implements functions to deal with variables
 from util import (copy_doc, PFTError, debugDecor,
                   tostring, alltext, getFileName, removeFromList, getParent,
                   getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
-from locality import getLocalityNode, getLocalityChildNodes, getLocalitiesList
+from scope import getScopeNode, getScopeChildNodes, getScopesList
 from xml.etree.ElementTree import Element
 import logging
 
 @debugDecor
-def getVarList(doc, localityPath=None):
+def getVarList(doc, scopePath=None):
     """
     :param doc: etree to use
-    :param localityPath: restrict list to this locality or locality list (None to get
-                         variables from all the localities)
+    :param scopePath: restrict list to this scope or scope list (None to get
+                         variables from all the scopes)
     :return: a list of dictionaries. Each one is for a different variable
              and has the following keys:
               - as: list of array specifications, [] for a scalar, None if unknown
@@ -41,15 +41,15 @@ def getVarList(doc, localityPath=None):
             asx_list.append([tostring(lb) if lb is not None else None, tostring(ub) if ub is not None else None])
         return as_list, asx_list
 
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, (str, Element)): localityPath = [localityPath]
+        if isinstance(scopePath, (str, Element)): scopePath = [scopePath]
 
     result = []
-    for loc in localityPath:
-        #We search for declaration  only in the nodes corresponding to the locality
-        stmts = getLocalityChildNodes(doc, loc)
+    for loc in scopePath:
+        #We search for declaration  only in the nodes corresponding to the scope
+        stmts = getScopeChildNodes(doc, loc)
         
         #Find dummy arguments
         dummy_args = [n2name(e).upper() for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
@@ -94,16 +94,16 @@ def getVarList(doc, localityPath=None):
     return result
 
 @debugDecor
-def showVarList(doc, localityPath=None):
+def showVarList(doc, scopePath=None):
     """
     Display on stdout a nice view of all the variables
     :param doc: etree to use
-    :param localityPath: restrict list to this locality (None to loop
-                         over all localities)
+    :param scopePath: restrict list to this scope (None to loop
+                         over all scopes)
     """
-    for locality in [localityPath] if localityPath is not None else getLocalitiesList(doc):
-        print('List of variables declared in {}:'.format(locality))
-        for v in getVarList(doc, locality):
+    for scope in [scopePath] if scopePath is not None else getScopesList(doc):
+        print('List of variables declared in {}:'.format(scope))
+        for v in getVarList(doc, scope):
             print('  Variable {}:'.format(v['n']))
             if v['use']:
                 print('    is a variable taken in the {} module'.format(v['use']))
@@ -159,12 +159,12 @@ def attachArraySpecToEntity(doc):
 def getImplicitNoneText(doc, loc):
     """
     :param doc: etree to use
-    :param loc: locality to search for the implicit none statement
+    :param loc: scope to search for the implicit none statement
     :return: the "IMPLICIT NONE" text
     """
     if isinstance(loc, str):
-        loc = getLocalityNode(doc, loc)
-    for node in getLocalityChildNodes(doc, loc):
+        loc = getScopeNode(doc, loc)
+    for node in getScopeChildNodes(doc, loc):
         if node.tag.endswith('}implicit-none-stmt'):
             return node.text
     return None
@@ -177,7 +177,7 @@ def checkImplicitNone(doc, mustRaise=False):
     Issue a logging.warning if the "IMPLICIT NONE" statment is missing
     If mustRaise is True, issue a logging.error instead and raise an error
     """
-    for loc, node in getLocalitiesList(doc, withNodes='tuple'):
+    for loc, node in getScopesList(doc, withNodes='tuple'):
         #The IMPLICIT NONE statement is inherited from the top unit, control at top unit is enough
         #apart for INTERFACE blocs
         if loc.count('/') == 0 or \
@@ -211,8 +211,8 @@ def checkIntent(doc, mustRaise=False):
 def _getDeclStmtTag(where):
     """
     Internal function
-    :param where: a locality path
-    :return: the declaration statement we can find in this locality path
+    :param where: a scope path
+    :return: the declaration statement we can find in this scope path
     """
     if where.split('/')[-1].split(':')[0] == 'type':
         declStmt = 'component-decl-stmt'
@@ -220,22 +220,22 @@ def _getDeclStmtTag(where):
         declStmt = 'T-decl-stmt'
     return declStmt
 
-def _normalizeLocality(locality):
+def _normalizeScope(scope):
     """
-    Internal method to normalize a locality
+    Internal method to normalize a scope
     """
     return '/'.join([(k.lower() + ':' + w.upper())
-                     for (k, w) in [component.split(':') for component in locality.split('/')]])
+                     for (k, w) in [component.split(':') for component in scope.split('/')]])
 
 def _normalizeVarList(varList):
     """
-    Internal method to normalize a varList (list of tuples made of locality and variable name)
+    Internal method to normalize a varList (list of tuples made of scope and variable name)
     """
-    return [(_normalizeLocality(where), var.upper()) for (where, var) in varList]
+    return [(_normalizeScope(where), var.upper()) for (where, var) in varList]
 
 def _normalizeUniqVarList(varList):
     """
-    Internal method to suppress duplicates in varList (list of tuples made of locality and variable name)
+    Internal method to suppress duplicates in varList (list of tuples made of scope and variable name)
     """
     return list(set(_normalizeVarList(varList)))
 
@@ -255,7 +255,7 @@ def removeVar(doc, varList, simplify=False):
     """
     varList = _normalizeUniqVarList(varList)
 
-    #Sort localities by depth
+    #Sort scopes by depth
     sortedVarList = {}
     for where, varName in varList:
         nb = where.count('/')
@@ -269,17 +269,17 @@ def removeVar(doc, varList, simplify=False):
     nbList = [] if len(sortedVarList.keys()) == 0 else range(max(sortedVarList.keys()) + 1)[::-1]
     for nb in nbList:
         sortedVarList[nb] = sortedVarList.get(nb, [])
-        #Loop on localities
+        #Loop on scopes
         for where in list(set([where for where, _ in sortedVarList[nb]])):
-            #Variables searched in this locality
+            #Variables searched in this scope
             varNames = list(set([v for (w, v) in sortedVarList[nb] if w == where]))
             declStmt = _getDeclStmtTag(where)
-            #If where is "module:XX/sub:YY", getLocalityNode returns the "program-unit" node
+            #If where is "module:XX/sub:YY", getScopeNode returns the "program-unit" node
             #just above the subroutine declaration statement.
-            #getLocalityChildNodes returns all the node contained in the subroutine
+            #getScopeChildNodes returns all the node contained in the subroutine
             #excluding the subroutine and functions potentially included after a "contains" statement
             previous = None
-            for node in getLocalityChildNodes(doc, getLocalityNode(doc, where)):
+            for node in getScopeChildNodes(doc, getScopeNode(doc, where)):
                 deleted = False
 
                 #Checks if variable is a dummy argument
@@ -381,11 +381,11 @@ def removeVarIfUnused(doc, varList, excludeDummy=False, excludeModule=False, sim
 
     varUsed = isVarUsed(doc, varList, dummyAreAlwaysUsed=excludeDummy)
     varListToRemove = []
-    for localityPath, varName in varList:
-        assert localityPath.split('/')[-1].split(':')[0] != 'type', \
+    for scopePath, varName in varList:
+        assert scopePath.split('/')[-1].split(':')[0] != 'type', \
           "The removeVarIfUnused cannot be used with type members"
-        if not varUsed[(localityPath, varName)]:
-            varListToRemove.append([localityPath, varName])
+        if not varUsed[(scopePath, varName)]:
+            varListToRemove.append([scopePath, varName])
     removeVar(doc, varListToRemove, simplify=simplify)
     return varListToRemove
 
@@ -395,14 +395,14 @@ def addVar(doc, varList):
     :param doc: xml fragment to use
     :param varList: list of variable specification to insert in the xml code
                     a variable specification is a list of four elements:
-                    - variable locality (path to module, subroutine, function or type declaration)
+                    - variable scope (path to module, subroutine, function or type declaration)
                     - variable name
                     - declarative statment
                     - position of the variable in the list of dummy argument,
                       None for a local variable
     """
     for (path, name, declStmt, pos) in varList:
-        locNode = getLocalityNode(doc, path)
+        locNode = getScopeNode(doc, path)
 
         #Add variable to the argument list
         if pos is not None:
@@ -413,7 +413,7 @@ def addVar(doc, varList):
             N.append(n)
             argN.append(N)
             #search for a potential node, within the scope, with a list of dummy arguments
-            argLst = [node.find('.//{*}dummy-arg-LT') for node in getLocalityChildNodes(doc, locNode)]
+            argLst = [node.find('.//{*}dummy-arg-LT') for node in getScopeChildNodes(doc, locNode)]
             argLst = [node for node in argLst if node is not None]
             argLst = None if len(argLst) == 0 else argLst[0]
             if argLst is None:
@@ -454,13 +454,13 @@ def addVar(doc, varList):
                 previousTail = getSiblings(xml, ds, after=False)[-1].tail
 
                 #node insertion index
-                declLst = [node for node in getLocalityChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
+                declLst = [node for node in getScopeChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
                 if len(declLst) != 0:
                     #There already have declaration statements, we add the new one after them
                     index = list(locNode).index(declLst[-1]) + 1
                 else:
                     #There is no declaration statement
-                    stmtLst = [node for node in getLocalityChildNodes(doc, locNode) if isExecutableStmt(node)] #list of executable nodes
+                    stmtLst = [node for node in getScopeChildNodes(doc, locNode) if isExecutableStmt(node)] #list of executable nodes
                     if len(stmtLst) == 0:
                         #There is no executable statement, we insert the declaration at the end
                         index = len(locNode) - 1 #Last node is the ending node (e.g. end-subroutine-stmt)
@@ -480,14 +480,14 @@ def addModuleVar(doc, moduleVarList):
     :param doc: xml fragment to use
     :param moduleVarList: list of module variable specification to insert in the xml code
                           a module variable specification is a list of three elements:
-                          - locality (path to module, subroutine, function or type declaration)
+                          - scope (path to module, subroutine, function or type declaration)
                           - module name
                           - variable name or None to add a USE statement without the ONLY attribute
     For example addModuleVar('sub:FOO', 'MODD_XX', 'Y') will add the following line in subroutine FOO:
     USE MODD_XX, ONLY: Y
     """
     for (path, moduleName, varName) in moduleVarList:
-        locNode = getLocalityNode(doc, path)
+        locNode = getScopeNode(doc, path)
 
         #Statement building
         fortranSource = "SUBROUTINE FOO598756\nUSE {}".format(moduleName)
@@ -499,7 +499,7 @@ def addModuleVar(doc, moduleVarList):
         previousTail = getSiblings(xml, us, after=False)[-1].tail
 
         #node insertion index
-        useLst = [node for node in getLocalityChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
+        useLst = [node for node in getScopeChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
         if len(useLst) != 0:
             #There already have use statements, we add the new one after them
             index = list(locNode).index(useLst[-1]) + 1
@@ -512,7 +512,7 @@ def addModuleVar(doc, moduleVarList):
         locNode.insert(index, us)
 
 @debugDecor
-def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
+def isVarUsed(doc, varList, strictScope=False, dummyAreAlwaysUsed=False):
     """
     :param doc: xml fragment to search for variable usage
     :param varList: list of variables to remove if unused. Each item is a list or tuple of two elements.
@@ -520,43 +520,43 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
                     of the variable. The first element is a '/'-separated path with each element
                     having the form 'module:<name of the module>', 'sub:<name of the subroutine>' or
                     'func:<name of the function>'
-    :param strictLocality: True to search strictly in locality
+    :param strictScope: True to search strictly in scope
     :param dummyAreAlwaysUsed: Returns True if variable is a dummy argument
     :return: a dict whose keys are the elements of varList, and values are True when the variable is
              used, False otherwise
 
-    If strictLocality is True, the function will search for variable usage
-    only in this locality. But this feature has a limited interest.
+    If strictScope is True, the function will search for variable usage
+    only in this scope. But this feature has a limited interest.
 
-    If strictLocality is False:
-      - if localityPath is a subroutine/function in a contains section, 
-        and if the variable is not declared in this locality, usages are
+    If strictScope is False:
+      - if scopePath is a subroutine/function in a contains section, 
+        and if the variable is not declared in this scope, usages are
         searched in the module/subroutine/function upper that declared
         the variable and in all subroutines/functions in the contains section
-      - if localityPath is a module/subroutine/function that has a
+      - if scopePath is a module/subroutine/function that has a
         contains sections, usages are searched in all subroutines/functions
         in the contains section
 
-    To know if a variable can be removed, you must use strictLocality=False
+    To know if a variable can be removed, you must use strictScope=False
     """
     varList = _normalizeUniqVarList(varList)
 
-    #Computes in which localities variable must be searched
-    if strictLocality:
-        locsVar = [([localityPath], varName) for localityPath, varName in varList]
+    #Computes in which scopes variable must be searched
+    if strictScope:
+        locsVar = [([scopePath], varName) for scopePath, varName in varList]
     else:
-        #Function to determine if var is declared in this locality, with cache
+        #Function to determine if var is declared in this scope, with cache
         allVar = {}
-        allLocalities = getLocalitiesList(doc, withNodes='dict')
+        allScopes = getScopesList(doc, withNodes='dict')
         def _varInLoc(var, loc):
-            #Is the variable declared in this locality
+            #Is the variable declared in this scope
             if not loc in allVar:
-                allVar[loc] = getVarList(doc, allLocalities[loc])
+                allVar[loc] = getVarList(doc, allScopes[loc])
             return var.upper() in [v['n'].upper() for v in allVar[loc]]
 
         locsVar = {}
-        for localityPath, varName in varList:
-            loc = localityPath
+        for scopePath, varName in varList:
+            loc = scopePath
 
             #Should we search in upper levels
             while('/' in loc and not _varInLoc(varName, loc)):
@@ -565,21 +565,21 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
 
             #We start search from here but we must include all routines in contains
             #that do not declare again the same variable name
-            testLocalities = [loc] #we must search in the current locality
-            for l in allLocalities.keys():
+            testScopes = [loc] #we must search in the current scope
+            for l in allScopes.keys():
                 if l.startswith(loc + '/') and \
                    l.split('/')[-1].split(':')[0] != 'type':
-                    #l is a locality contained inside loc and is not a type declaration
+                    #l is a scope contained inside loc and is not a type declaration
                     if not _varInLoc(varName, l): #there is not another variable with same name declared inside
-                        testLocalities.append(l) #if variable is used here, it is used
-            locsVar[(localityPath, varName)] = testLocalities
+                        testScopes.append(l) #if variable is used here, it is used
+            locsVar[(scopePath, varName)] = testScopes
 
-    #For each locality to search, list all the variables used
+    #For each scope to search, list all the variables used
     usedVar = {}
     for loc in list(set([item for sublist in locsVar.values() for item in sublist])):
         usedVar[loc] = []
-        #Loop on all child in the locality
-        for node in getLocalityChildNodes(doc, allLocalities[loc]):
+        #Loop on all child in the scope
+        for node in getScopeChildNodes(doc, allScopes[loc]):
             #we don't want use statement, it could be where the variable is declared, not a usage place
             if not node.tag.endswith('}use-stmt'):
                 if node.tag.endswith('}T-decl-stmt'):
@@ -605,52 +605,52 @@ def isVarUsed(doc, varList, strictLocality=False, dummyAreAlwaysUsed=False):
 
     
     result = {}
-    for localityPath, varName in varList:
-        assert localityPath.split('/')[-1].split(':')[0] != 'type', 'We cannot check type component usage'
-        result[(localityPath, varName)] = any([varName.upper() in usedVar[loc] for loc in locsVar[(localityPath, varName)]])
+    for scopePath, varName in varList:
+        assert scopePath.split('/')[-1].split(':')[0] != 'type', 'We cannot check type component usage'
+        result[(scopePath, varName)] = any([varName.upper() in usedVar[loc] for loc in locsVar[(scopePath, varName)]])
         
     return result
 
-def showUnusedVar(doc, localityPath=None):
+def showUnusedVar(doc, scopePath=None):
     """
     Displays on stdout a list of unued variables
     :param doc: xml fragment to search for variable usage
-    :param localityPath: locality to explore (None for all)
+    :param scopePath: scope to explore (None for all)
     """
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(scopePath, str): scopePath = [scopePath]
 
-    varUsed = isVarUsed(doc, [(loc, v['n']) for loc in localityPath for v in getVarList(doc, loc)])
-    for loc in localityPath:
+    varUsed = isVarUsed(doc, [(loc, v['n']) for loc in scopePath for v in getVarList(doc, loc)])
+    for loc in scopePath:
         varList = [k[1].upper() for (k, v) in varUsed.items() if (not v) and k[0] == loc]
         if len(varList) != 0:
             print('Some variables declared in {} are unused:'.format(loc))
             print('  - ' + ('\n  - '.join(varList)))
 
 @debugDecor
-def removeUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify=False):
+def removeUnusedLocalVar(doc, scopePath=None, excludeList=None, simplify=False):
     """
     Remove unused local variables (dummy and module variables are not suppressed)
     :param doc: xml fragment to search for variable usage
-    :param localityPath: locality to explore (None for all)
+    :param scopePath: scope to explore (None for all)
     :param excludeList: list of variable names to exclude from removal (even if unused)
     :param simplify: try to simplify code (if we delete a declaration statement that used a
                      variable as kind selector, and if this variable is not used else where,
                      we also delete it)
     """
-    if localityPath is None:
-        localityPath = [loc for loc in getLocalitiesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
+    if scopePath is None:
+        scopePath = [loc for loc in getScopesList(doc) if loc.split('/')[-1].split(':')[0] != 'type']
     else:
-        if isinstance(localityPath, str): localityPath = [localityPath]
+        if isinstance(scopePath, str): scopePath = [scopePath]
 
     if excludeList is None:
         excludeList = []
     else:
         excludeList = [item.upper() for item in excludeList]
 
-    allVar = [(loc, v['n']) for loc in localityPath
+    allVar = [(loc, v['n']) for loc in scopePath
                             for v in getVarList(doc, loc) if v['n'].upper() not in excludeList]
 
     removeVarIfUnused(doc, allVar, excludeDummy=True, excludeModule=True, simplify=simplify)

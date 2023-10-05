@@ -10,7 +10,7 @@ from statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR
                         placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
 from variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
 from cosmetics import changeIfStatementsInIfConstructs
-from locality import getLocalityChildNodes, getLocalityNode, getLocalitiesList, getLocalityPath
+from scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath
 import copy
 
 @debugDecor
@@ -103,11 +103,11 @@ def addStack(doc, declarationAllocType, model):
         return arrayTxt, doubledotshape
 
     tempdeclType, tempallocType = declarationAllocType.split('#')[0], declarationAllocType.split('#')[1]
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     for loc in locations:
         if 'sub:' in loc[0]: # Do not add stack to MODULE object, but only to SUBROUTINES
-            localitypath = getLocalityPath(doc,loc[1])
-            varList = getVarList(doc,localitypath)
+            scopepath = getScopePath(doc,loc[1])
+            varList = getVarList(doc,scopepath)
             # Look for all local arrays only (and not PARAMETER variables)
             localArrays, varListToRemove = [], []
             for var in varList:
@@ -118,7 +118,7 @@ def addStack(doc, declarationAllocType, model):
                             parameterVar = True
                     if not parameterVar:
                         localArrays.append(var)
-                        varListToRemove.append([localitypath,var['n']])
+                        varListToRemove.append([scopepath,var['n']])
                     
             # Remove the current declaration form
             removeVar(doc,varListToRemove,simplify=False)
@@ -169,7 +169,7 @@ def addDeclStackAROME(doc, loc, lastIndexDecl=0):
     """
     Prepare objects STACK_MOD, YLSTACK and YDSTACK for addStack
     :param doc: etree to use
-    :param loc: locality to add the specific objets
+    :param loc: scope to add the specific objets
     :param lastIndexDecl: index of the last declaration object added that may not be recognized by fxtran as a declaration (e.g. in case of "temp" statement)
     """
     addVar(doc,[[loc[0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
@@ -233,10 +233,10 @@ def checkStackArginCall(doc):
     YLSTACKarg = xml.find('.//{*}arg')
     YLSTACKarg.text = ','
                    
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     for loc in locations:
-        if 'sub:' in loc[0]: # Do not work on MODULE locality
-            addedOnce = False # becomes True as soon as YLSTACK has been added at least once, to check later if the declaration of YLSTACK is already present in the locality
+        if 'sub:' in loc[0]: # Do not work on MODULE scope
+            addedOnce = False # becomes True as soon as YLSTACK has been added at least once, to check later if the declaration of YLSTACK is already present in the scope
             callStmts = loc[1].findall('.//{*}call-stmt')
             for callStmt in callStmts:
                 routineName = callStmt.find('.//{*}procedure-designator/{*}named-E/{*}N/{*}n')
@@ -247,7 +247,7 @@ def checkStackArginCall(doc):
                        callStmt_args = callStmt.find('.//{*}arg-spec')
                        callStmt_args.append(YLSTACKarg)
                        addedOnce = True
-            # Check if the declaration of YLSTACK is already present in the locality
+            # Check if the declaration of YLSTACK is already present in the scope
             if addedOnce:
                 declStmts = loc[1].findall('.//{*}T-decl-stmt//{*}EN-decl')
                 declStmtsTxt = []
@@ -332,12 +332,12 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
     :param expandDoLoops: if True, expand Do loops
     :param expandWhere: if True, expand Where
     """   
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     locations.reverse()
     for loc in locations:
-        localitypath = getLocalityPath(doc,loc[1])
-        varList = getVarList(doc,localitypath)
-        if len(varList) > 0: # = 0 in head of module locality
+        scopepath = getScopePath(doc,loc[1])
+        varList = getVarList(doc,scopepath)
+        if len(varList) > 0: # = 0 in head of module scope
             locNode = loc[1]
             varArray,varArrayNamesList,localIntegers, loopIndexToCheck = [], [], [], []
             Node_opE = locNode.findall('.//{*}a-stmt')
@@ -400,7 +400,7 @@ def inlineContainedSubroutines(doc):
                 varName = alltext(getParent(callNode, sub, level=4).find('.//{*}N/{*}n'))
                 convertColonArrayinDim(sub, callNode, varArrayNamesList, varArray, varName)
                 
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     containedRoutines = {}
     # Inline contained subroutines : look for sub: / sub:
     for loc in locations:
@@ -412,7 +412,7 @@ def inlineContainedSubroutines(doc):
         if loc[0].count('sub:') >= 1:
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
             for callStmtNn in callStmtsNn: # For all CALL statements
-                mainVarList = getVarList(doc,getLocalityPath(doc,loc[1]))
+                mainVarList = getVarList(doc,getScopePath(doc,loc[1]))
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
                         callStmt = getParent(doc,callStmtNn,level=4)
@@ -427,7 +427,7 @@ def inlineContainedSubroutines(doc):
                                 if len(arrayRincallStmt) > 0:
                                     addExplicitArrayBounds(loc[1], callStmt, mainVarList)
                         #
-                        subContaintedVarList = getVarList(doc,getLocalityPath(doc,containedRoutines[containedRoutine]))
+                        subContaintedVarList = getVarList(doc,getScopePath(doc,containedRoutines[containedRoutine]))
                         # Inline
                         nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
                         # Add local var to main routine
@@ -759,7 +759,7 @@ def removeIJLoops(doc):
     WARNING : executed transformed-code will work only if inlineContainedSubroutines is applied first
     :param doc: xml fragment to search for variable usage
     """
-    locations  = getLocalitiesList(doc,withNodes='tuple')
+    locations  = getScopesList(doc,withNodes='tuple')
     locations.reverse()
     locations = [item for item in locations if 'func:' not in item[0]] # Remove elemental function (essentially FWSED from ice4_sedimentation_stat)
     indexToCheck = {'JI':'D%NIB','JJ':'D%NJB','JIJ':'D%NIJB'}
@@ -832,19 +832,19 @@ def removeIJLoops(doc):
                  newIndex = xml.find('.//{*}a-stmt')
                  newIndex.text = '\n'
                  par.insert(index+1,newIndex)
-        # Check loop index presence at declaration of the locality
+        # Check loop index presence at declaration of the scope
         for loopIndex in indexRemoved:
             if loopIndex not in localIntegers:
                 addVar(doc,[[loc[0],loopIndex,'INTEGER :: '+loopIndex,None]]) #TODO minor issue: le 2e argument ne semble pas s'appliquer ? il faut ajouter loopIndex dans le 3e argument pour effectivement l'ecrire
   
 @debugDecor
-def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify=False):
+def removePHYEXUnusedLocalVar(doc, scopePath=None, excludeList=None, simplify=False):
     """
     Remove unused local variables (dummy and module variables are not suppressed)
     This function is identical to variables.removeUnusedLocalVar except that this one
     is specific to the PHYEX code and take into account the mnh_expand directives.
     :param doc: xml fragment to search for variable usage
-    :param localityPath: locality to explore (None for all)
+    :param scopePath: scope to explore (None for all)
     :param excludeList: list of variable names to exclude from removal (even if unused)
     :param simplify: try to simplify code (if we delete a declaration statement that used a
                      variable as kind selector, and if this variable is not used else where,
@@ -857,7 +857,7 @@ def removePHYEXUnusedLocalVar(doc, localityPath=None, excludeList=None, simplify
             if excludeList is None: excludeList = []
             elems = node.text.split('(')[1].split(')')[0].split(',')
             excludeList.extend([v.strip().upper() for v in [e.split('=')[0] for e in elems]])
-    return removeUnusedLocalVar(doc, localityPath=localityPath, excludeList=excludeList, simplify=simplify)
+    return removeUnusedLocalVar(doc, scopePath=scopePath, excludeList=excludeList, simplify=simplify)
 
 class Applications():
     @copy_doc(addStack)
