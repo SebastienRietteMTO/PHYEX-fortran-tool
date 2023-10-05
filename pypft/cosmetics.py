@@ -30,6 +30,92 @@ def lowerCase(doc):
     return doc
 
 @debugDecor
+def indent(doc, indent_programunit=0, indent_branch=2, align_continuation=True):
+    """
+    :param doc: etree to use
+    :param indent_programunit: number of space characters inside program unit
+    :param indent_branch: 
+    :return: same doc doc but with indentation corrected
+    """
+    def set_level(e, level):
+        if e.tail is not None:
+            e.tail = e.tail.replace('\t', '  ')
+            while '\n ' in e.tail:
+                e.tail = e.tail.replace('\n ', '\n')
+            e.tail = e.tail.replace('\n', '\n' + ' ' * level)
+
+    def indent_recur(elem, level):
+        """
+        :param elem: dom element
+        :param level: current level for elem
+        """
+        blocs = ['file', 'program-unit', 'do-construct', 'interface-construct',
+                 'if-construct', 'if-block',
+                 'where-construct', 'where-block',
+                 'selectcase-construct', 'selectcase-block']
+        progstmt = ['subroutine-stmt', 'program-stmt', 'module-stmt', 'function-stmt',
+                    'submodule-stmt', 'procedure-stmt', 'interface-stmt']
+        endprogstmt = ['end-' + s for s in progstmt]
+        interbranchstmt = ['else-stmt', 'else-where-stmt']
+        branchstmt = ['if-then-stmt', 'do-stmt', 'where-construct-stmt'] + interbranchstmt
+        endbranchstmt = ['end-if-stmt', 'end-do-stmt', 'end-where-stmt']
+
+        currlevel = level
+        laste = None
+        firstnumselect = True
+        for e in elem:
+            #Indentation does not apply to these lines (eg SUBROUTINE statement, DO construct)
+            #but apply to the lines inside
+            if e.tag.split('}')[1] in progstmt:
+                currlevel += indent_programunit
+            elif e.tag.split('}')[1] in branchstmt:
+                currlevel += indent_branch
+
+            set_level(e, currlevel) #Add indentation *to the tail*, thus for the next line
+
+            if elem.tag.split('}')[1] == 'selectcase-construct':
+                #Structure is:
+                #<selectcase-construct>
+                #<selectcase-block><select-case-stmt>SELECT CASE (...)</select-case-stmt>   \n +2
+                #</selectcase-block>
+                #<selectcase-block><case-stmt>CASE<case-selector>(...)</case-selector></case-stmt>  \n +4
+                #statement  \n +4
+                #statement  \n +2
+                #</selectcase-block>
+                #<selectcase-block><case-stmt>CASE<case-selector>(...)</case-selector></case-stmt>  \n +4
+                #statement  \n +4
+                #statement  \n +0
+                #<end-select-case-stmt>END SELECT</end-select-case-stmt></selectcase-block></selectcase-construct>
+                if firstnumselect:
+                    firstnumselect = False
+                else:
+                    #previous line was a CASE line, we must indent it only once
+                    set_level(laste[-1], level + indent_branch)
+                indent_recur(e, level + indent_branch * 2) #statements are indented twice
+                if e[-1].tag.split('}')[1] == 'end-select-case-stmt':
+                    set_level(e[-2], level)
+                
+            elif e.tag.split('}')[1] in blocs:
+                #This xml tag contains other tags, we iterate on them
+                if e[0].tag.split('}')[1] in interbranchstmt:
+                    #Structure is <if-construct><if-block><if-then-stmt>IF...THEN</if-then-stmt>
+                    #             statement (the identation of the ELSE line is in the tail of this stetement)
+                    #             </if-block><if-block><else-stmt>ELSE</else-stmt>
+                    #             statement
+                    #             <end-if-stmt>ENDIF</end-if-stmt></if-block></if-construct>
+                    set_level(laste[-1], level)
+                indent_recur(e, currlevel)
+
+            #This line contains the end statement, we must remove the indentation contained
+            #in the tail of the previous item
+            if e.tag.split('}')[1] in endprogstmt + endbranchstmt:
+                set_level(laste, level)
+            laste = e
+
+    indent_recur(doc, 0)
+    return doc
+
+@debugDecor
 def changeIfStatementsInIfConstructs(doc,singleItem=''):
     """
     Convert if-stmt to if-then-stmt. If singleItem is not filled, conversion to all doc is performed.
@@ -133,6 +219,10 @@ class Cosmetics():
     @copy_doc(lowerCase)
     def lowerCase(self):
         self._xml = lowerCase(doc=self._xml)
+
+    @copy_doc(indent)
+    def indent(self):
+        self._xml = indent(doc=self._xml)
         
     @copy_doc(reDimKlonArrayToScalar)
     def reDimKlonArrayToScalar(self, *args, **kwargs):

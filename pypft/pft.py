@@ -176,7 +176,9 @@ if __name__ == '__main__':
     gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
                             help='Find all if-statement and convert it to if-then-statement')
     gCosmetics.add_argument('--reDimKlonArrayToScalar', default=False, action='store_true',
-                               help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
+                            help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
+    gCosmetics.add_argument('--indent', default=False, action='store_true',
+                            help='Correct indentation')
     
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -295,6 +297,7 @@ if __name__ == '__main__':
     if args.lowerCase: pft.lowerCase()
     if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
     if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
+    if args.indent: pft.indent()
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
