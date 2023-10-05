@@ -179,6 +179,8 @@ if __name__ == '__main__':
                             help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
     gCosmetics.add_argument('--indent', default=False, action='store_true',
                             help='Correct indentation')
+    gCosmetics.add_argument('--removeEmptyLines', default=False, action='store_true',
+                            help='Remove empty lines')
     
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -298,6 +300,7 @@ if __name__ == '__main__':
     if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
     if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
     if args.indent: pft.indent()
+    if args.removeEmptyLines: pft.removeEmptyLines()
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')

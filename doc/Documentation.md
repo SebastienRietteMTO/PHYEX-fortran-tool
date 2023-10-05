@@ -122,7 +122,9 @@ in 'IF-THEN' constructs
 **\--reDimKlonArrayToScalar** remove NIJ, NI or NJ dimension to all 1D and 2D arrays:
 these arrays become scalar.
 
-**\--indent** correct the indentation of the source code
+**\--indent** correct the indentation of the source code.
+
+**\--removeEmptyLines** remove empty lines.
 
 ### Checks
 

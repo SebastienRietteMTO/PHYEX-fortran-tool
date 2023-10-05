@@ -2,6 +2,7 @@
 This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
+import re
 from pypft.util import (copy_doc, getParent, debugDecor, non_code, alltext)
 from pypft.variables import getVarList
 from pypft.scope import getScopesList, getScopePath
@@ -115,6 +116,18 @@ def indent(doc, indent_programunit=0, indent_branch=2, align_continuation=True):
     return doc
 
 @debugDecor
+def removeEmptyLines(doc):
+    """
+    :param doc: etree to use
+    :return: same doc doc but without empty lines
+    """
+    for e in doc.iter():
+        if e.tail is not None:
+            e.tail.replace('\t', '  ')
+            e.tail = re.sub(r"\n[  \n]*\n", r"\n", e.tail)
+    return doc
+
+@debugDecor
 def changeIfStatementsInIfConstructs(doc,singleItem=''):
     """
     Convert if-stmt to if-then-stmt. If singleItem is not filled, conversion to all doc is performed.
@@ -222,6 +235,10 @@ class Cosmetics():
     @copy_doc(indent)
     def indent(self):
         self._xml = indent(doc=self._xml)
+
+    @copy_doc(removeEmptyLines)
+    def removeEmptyLines(self):
+        self._xml = removeEmptyLines(doc=self._xml)
         
     @copy_doc(reDimKlonArrayToScalar)
     def reDimKlonArrayToScalar(self, *args, **kwargs):
