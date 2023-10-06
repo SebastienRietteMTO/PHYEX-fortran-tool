@@ -121,8 +121,11 @@ def removeEmptyLines(doc):
     :param doc: etree to use
     :return: same doc doc but without empty lines
     """
+    e = doc.find('{*}file')
+    if e.text is not None:
+        e.text = e.text.replace('\n', '')
     for e in doc.iter():
-        if e.tail is not None:
+        if e.tail is not None and '\n' in e.tail:
             e.tail = e.tail.replace('\t', '  ')
             e.tail = re.sub(r"\n[  \n]*\n", r"\n", e.tail)
     return doc
