@@ -126,6 +126,10 @@ these arrays become scalar.
 
 **\--removeEmptyLines** remove empty lines.
 
+**\--updateSpaces** suprpess and/or add spaces. Delimiters and operators must be surrounded by spaces.
+Commas must be followed by a space. Lines must not end with spaces. Parenthesis must not be
+surrounded by spaces...
+
 ### Checks
 
 **\--checkIMPLICIT=Warn\|Err** if the 'IMPLICIT NONE' statment is missing,

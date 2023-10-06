@@ -181,6 +181,8 @@ if __name__ == '__main__':
                             help='Correct indentation')
     gCosmetics.add_argument('--removeEmptyLines', default=False, action='store_true',
                             help='Remove empty lines')
+    gCosmetics.add_argument('--updateSpaces', default=False, action='store_true',
+                            help='Updates spaces around operators, commas, parenthesis and at the end of line')
     
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -301,6 +303,7 @@ if __name__ == '__main__':
     if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
     if args.indent: pft.indent()
     if args.removeEmptyLines: pft.removeEmptyLines()
+    if args.updateSpaces: pft.updateSpaces()
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')

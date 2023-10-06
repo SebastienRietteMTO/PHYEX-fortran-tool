@@ -3,7 +3,7 @@ This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
 import re
-from pypft.util import (copy_doc, getParent, debugDecor, non_code, alltext)
+from pypft.util import (copy_doc, getParent, getSiblings, debugDecor, non_code, alltext)
 from pypft.variables import getVarList
 from pypft.scope import getScopesList, getScopePath
 
@@ -30,7 +30,7 @@ def lowerCase(doc):
     return doc
 
 @debugDecor
-def indent(doc, indent_programunit=0, indent_branch=2, align_continuation=True):
+def indent(doc, indent_programunit=0, indent_branch=2):
     """
     :param doc: etree to use
     :param indent_programunit: number of space characters inside program unit
@@ -123,8 +123,427 @@ def removeEmptyLines(doc):
     """
     for e in doc.iter():
         if e.tail is not None:
-            e.tail.replace('\t', '  ')
+            e.tail = e.tail.replace('\t', '  ')
             e.tail = re.sub(r"\n[  \n]*\n", r"\n", e.tail)
+    return doc
+
+__NO_VALUE__ = '__NO_VALUE__'
+@debugDecor
+def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
+                      before_comma=0, after_comma=1,
+                      before_parenthesis=0, after_parenthesis=0,
+                      before_affectation=1, after_affectation=1, in_affectation=True,
+                      before_range_delim=0, after_range_delim=0,
+                      before_use_delim=0, after_use_delim=1,
+                      before_decl_delim=1, after_decl_delim=1, in_decl_delim=True, after_type_decl=1,
+                      before_eq_do=0, after_eq_do=0,
+                      before_eq_call=0, after_eq_call=0,
+                      before_eq_init=0, after_eq_init=0,
+                      before_endcnt=1, after_begincnt=1,
+                      after_ifwherecase=1, before_then=1, before_ifaction=1,
+                      after_progunit=1,
+                      end_of_line=True, after_name=0, in_name=True,
+                      before_cmdsep=0, after_cmdsep=1,
+                      adjacent_keywords=__NO_VALUE__, after_keywords=__NO_VALUE__):
+    """
+    :param doc: etree to use
+    :param before_op, after_op: number of spaces before and after operators
+    :param in_operator: True to suppress spaces in operators
+    :param before_comma, after_comma: number of spaces before and after commas
+    :param before_parenthesis, after_parenthesis: number of spaces before and after parenthesis
+    :param before_affectation, after_affectation: number of spaces before and after affectations or associations
+    :param in_affectation: True to suppress spaces in affectations and in association ('= >')
+    :param before_range_delim, after_range_delim: number of spaces before and after range delimiters
+    :param before_use_delim, after_use_delim: number of spaces before and after use delimiters (':')
+    :param before_decl_delim, after_decl_delim: number of spaces before and after declaration and enumerator
+                                                delimiter ('::')
+    :param in_decl_delim: True to suppress spaces in declaration and enumerator delimiter (': :')
+    :param after_type_decl: number of spaces after the type in a declaration w/o '::' (e.g. 'INTEGER I');
+                            also for enumerators (minimum 1)
+    :param before_eq_do, after_eq_do: number of spaces before and after '=' sign in DO and
+                                      FORALL statements
+    :param before_eq_call, after_eq_call: number of spaces before and after '=' sign in CALL statement
+    :param before_eq_init, after_eq_init: number of spaces before and after '=' sign for init values
+    :param before_endcnt, after_begincnt: number of spaces before a continuation chararcter at the
+                                          end of the line and after a continuation character at the
+                                          begining of a line
+    :param after_ifwherecase: number of spaces after the IF, ELSEIF, WHERE, ELSEWHERE, SELECTCASE,
+                              CASE and FORALL keywords
+    :param before_then: number of spaces before the THEN keyword
+    :param before_ifaction: number of spaces between IF condition and action in one-line IF statement
+                            and between FORALL specification and affectation in one-line FORALL statement
+    :param after_progunit: between the program unit type (e.g. SUBROUTINE) and its name
+    :param end_of_line: True to suppress spaces at the end of the line
+    :param after_name: number of spaces after an indentifier, type or attribute name
+    :param in_name: True to suppress spaces in identifier names
+    :param before_cmdsep, after_cmdsep: number of spaces before and after command separator (';')
+    :param adjacent_keywords: describes the number of spaces to introduce between adjancent keywords
+                              when this is legal (the list comes from the table
+                              "6.2 Adjacent keywords where separating blanks are optional" of the
+                              F2008 norm and has been complemented by "end select", "implicit none"
+                              and "module procedure"; for the last two, a minimum of 1 is required).
+                              The allowed dictionnary keys are:
+                                  - block_data
+                                  - double_precision
+                                  - else_if
+                                  - else_where
+                                  - end_associate
+                                  - end_block
+                                  - end_block_data
+                                  - end_critical
+                                  - end_do
+                                  - end_enum
+                                  - end_file
+                                  - end_forall
+                                  - end_function
+                                  - end_if
+                                  - end_interface
+                                  - end_module
+                                  - end_procedure
+                                  - end_program
+                                  - end_selec
+                                  - end_select
+                                  - end_submodule
+                                  - end_subroutine
+                                  - end_team
+                                  - end_type
+                                  - end_where
+                                  - go_to
+                                  - in_out
+                                  - select_case
+                                  - select_type
+                                  - implicit_none
+                                  - module_procedure
+                              For example, use {'end_do':1} to write 'END DO' or
+                                               {'end_do':0} to write 'ENDDO' or
+                                               {'end_do':None} to not update the writting
+                              or use adjacent_keywords=None to disable everything
+    :param after_keywords: describes the number of spaces to introduce after keywords.
+                           Some keywords need a more sophisticated treatment and are controled
+                           by specific keys (e.g. CASE).
+                           The keys are the keyword in lowercase, some names can be tricky to guess
+                           (e.g. the key for ENDFILE is 'end-file'). By default only a few are defined.
+                           Use after_keywords=None to disable everything.
+
+    :return: same doc doc but spaces updated
+
+    To not update spaces, put None instead of an integer and False in booleans.
+    For example, to not change number of spaces after a comma, use after_comma=None
+
+    Updates are done in the following order: 
+    """
+
+    adja_key_desc = {
+      'block_data': (1, './/{*}block-data-stmt'),
+      'double_precision': (1, './/{*}intrinsic-T-spec/{*}T-N'),
+      'else_if': (1, './/{*}else-if-stmt'),
+      'else_where': (0, './/{*}else-where-stmt'),
+      'end_associate': (1, './/{*}end-associate-stmt'),
+      'end_block': (1, './/{*}end-block-stmt'),
+      'end_block_data': (1, './/{*}end-block-data-stmt'),
+      'end_critical': (1, './/{*}end-critical-stmt'),
+      'end_do': (1, './/{*}end-do-stmt'),
+      'end_enum': (1, './/{*}end-enum-stmt'),
+      'end_file': (1, './/{*}end-file-stmt'),
+      'end_forall': (1, './/{*}end-forall-stmt'),
+      'end_function': (1, './/{*}end-function-stmt'),
+      'end_if': (1, './/{*}end-if-stmt'),
+      'end_interface': (1, './/{*}end-interface-stmt'),
+      'end_module': (1, './/{*}end-module-stmt'),
+      'end_procedure': (1, './/{*}end-procedure-stmt'),
+      'end_program': (1, './/{*}end-program-stmt'),
+      'end_selec': (1, './/{*}end-select-case-stmt'),
+      'end_select': (1, './/{*}end-select-T-stmt'),
+      'end_submodule': (1, './/{*}end-submodule-stmt'),
+      'end_subroutine': (1, './/{*}end-subroutine-stmt'),
+      'end_team': (1, './/{*}end-change-team-stmt'),
+      'end_type': (1, './/{*}end-T-stmt'),
+      'end_where': (1, './/{*}end-where-stmt'),
+      'go_to': (0, './/{*}goto-stmt'),
+      'in_out': (0, './/{*}intent-spec'),
+      'select_case': (1, './/{*}select-case-stmt'),
+      'select_type': (1, './/{*}select-T-stmt'),
+      'implicit_none': (1, './/{*}implicit-none-stmt'),
+      'module_procedure': (1, './/{*}procedure-stmt'),
+    }
+
+    after_key = {
+      'print': 0,
+      'call': 1,
+      'use': 1,
+      'do': 1,
+      'end-file': 1,
+      'save': 1,
+    }
+
+    assert adjacent_keywords is None or adjacent_keywords == __NO_VALUE__ or \
+           all([k in adja_key_desc.keys()
+                for k in adjacent_keywords]), "Unknown key in **adjacent_keywords"
+
+    def getval_adja(key):
+        if adjacent_keywords is None:
+            return None
+        elif adjacent_keywords == __NO_VALUE__:
+            return adja_key_desc[key][0]
+        else:
+            return adjacent_keywords.get(key, adja_key_desc[key][0])
+
+    def getval_after(key):
+        key = key[:-5]
+        if after_keywords != __NO_VALUE__:
+            num = after_keywords.get(key, after_key.get(key, None))
+        else:
+            num = after_key.get(key, None)
+        return num
+
+    assert after_progunit is None or after_progunit >= 1
+    assert after_type_decl is None or after_type_decl >= 1
+    for k in ('implicit_none', 'module_procedure'):
+        num = getval_adja(k)
+        assert num is None or num >= 1, \
+               "adjacent_keywords['" + k + "'] must be at least 1 (is " + str(num) + ")"
+    for k in ('use', 'call', 'end-file', 'do'):
+        num = getval_after(k + '-stmt')
+        assert num is None or num >= 1, \
+               "after_keywords['" + k + "'] must be at least 1 (is " + str(num) + ")"
+
+    for e in doc.iter():
+        #security
+        if e.tail is None:
+            e.tail = ""
+        e.tail = e.tail.replace('\t', '  ')
+
+        #Around parenthesis
+        if before_parenthesis is not None:
+            e.tail = re.sub(r"[  ]*\(", " " * before_parenthesis + r"(", e.tail)
+            e.tail = re.sub(r"[  ]*\)", " " * before_parenthesis + r")", e.tail)
+            if e.text is not None:
+                e.text = re.sub(r"[  ]*\(", " " * before_parenthesis + r"(", e.text)
+                e.text = re.sub(r"[  ]*\)", " " * before_parenthesis + r")", e.text)
+        if after_parenthesis is not None:
+            e.tail = re.sub(r"\([  ]*", "(" + " " * after_parenthesis, e.tail)
+            e.tail = re.sub(r"\)[  ]*", ")" + " " * after_parenthesis, e.tail)
+            if e.text is not None:
+                e.text = re.sub(r"\([  ]*", "(" + " " * after_parenthesis, e.text)
+                e.text = re.sub(r"\)[  ]*", ")" + " " * after_parenthesis, e.text)
+
+        #Around commas
+        if before_comma is not None:
+            e.tail = re.sub(r"[  ]*,", " " * before_comma + r",", e.tail)
+            if e.text is not None:
+                e.text = re.sub(r"[  ]*,", " " * before_comma + r",", e.text)
+        if after_comma is not None:
+            e.tail = re.sub(r",[  ]*", "," + " " * after_comma, e.tail)
+            if e.text is not None:
+                e.text = re.sub(r",[  ]*", "," + " " * after_comma, e.text)
+
+        #End of line
+        if end_of_line:
+            e.tail = re.sub(r"[  ]*\n", r"\n", e.tail)
+
+        #In names or around names (identifier, type, attribute)
+        if e.tag.split('}')[1] in ('N', 'T-N', 'attribute-N'):
+            if in_name:
+                for n in e.findall('{*}n'):
+                    if n.tail is not None:
+                        n.tail = n.tail.strip(' ')
+            if e.tail is not None and after_name is not None:
+                e.tail = ' ' * after_name + e.tail.lstrip(' ')
+
+        #Around range delimiter
+        elif e.tag.split('}')[1] == 'lower-bound' and e.tail is not None and ':' in e.tail:
+            if before_range_delim is not None:
+                e.tail = ' ' * before_range_delim + e.tail.lstrip(' ')
+            if after_range_delim is not None:
+                e.tail = e.tail.rstrip(' ') + ' ' * before_range_delim
+
+        #Around ':' in USE statements
+        elif e.tag.split('}')[1] == 'module-N' and e.tail is not None and ':' in e.tail:
+            if before_use_delim is not None:
+                e.tail = re.sub(r"[  ]*:", " " * before_use_delim + r":", e.tail)
+            if after_use_delim is not None:
+                e.tail = re.sub(r":[  ]*", ":" + " " * after_use_delim, e.tail)
+
+        #Around and in '::' in declaration statements
+        #After the type in a declaration
+        elif e.tag.split('}')[1] in ('attribute', '_T-spec_') and e.tail is not None:
+            if in_decl_delim:
+                e.tail = re.sub(r":[  ]*:", r"::", e.tail)
+            if before_decl_delim is not None:
+                e.tail = re.sub(r"[ ]*(:[  ]*:)", ' ' * before_decl_delim + r"\1", e.tail)
+            if after_decl_delim is not None:
+                e.tail = re.sub(r"(:[  ]*:)[ ]*", r"\1" + ' ' * after_decl_delim,  e.tail)
+            if e.tag.split('}')[1] == '_T-spec_' and after_type_decl is not None:
+                e.tail = e.tail.rstrip(' ') + ' ' * after_type_decl
+
+        #Around and in '::' in enumerators
+        #After the enumerator keyword
+        elif e.tag.split('}')[1] == 'enumerator-stmt' and e.text is not None:
+            if ':' in e.text:
+                if in_decl_delim:
+                    e.text = re.sub(r":[  ]*:", r"::", e.text)
+                if before_decl_delim is not None:
+                    e.text = re.sub(r"[ ]*(:[  ]*:)", ' ' * before_decl_delim + r"\1", e.text)
+                if after_decl_delim is not None:
+                    e.text = re.sub(r"(:[  ]*:)[ ]*", r"\1" + ' ' * after_decl_delim,  e.text)
+            elif after_type_decl is not None:
+                e.text = e.text.rstrip(' ') + ' ' * after_type_decl
+
+        #Between the program unit type and its name
+        elif e.tag.split('}')[1] in ('subroutine-stmt', 'program-stmt', 'module-stmt', 'function-stmt',
+                                     'submodule-stmt', 'procedure-stmt', 'interface-stmt',
+                                     'end-subroutine-stmt', 'end-program-stmt',
+                                     'end-module-stmt', 'end-function-stmt',
+                                     'end-submodule-stmt', 'end-procedure-stmt', 'end-interface-stmt') and \
+             after_progunit is not None:
+            if e.text is not None:
+                e.text = e.text.rstrip(' ') + ' ' * after_progunit
+
+        #Around '=' sign in DO and FORALL statements
+        elif e.tag.split('}')[1] in ('do-V', 'V') and e.tail is not None and '=' in e.tail:
+            if before_eq_do is not None:
+                e.tail = re.sub('[ ]*=', ' ' * before_eq_do + '=', e.tail)
+            if  after_eq_do is not None:
+                e.tail = re.sub('=[ ]*', '=' + ' ' * before_eq_do, e.tail)
+
+        #Around '=' sign in CALL statements
+        elif e.tag.split('}')[1] == 'arg-N' and e.tail is not None and '=' in e.tail:
+            if before_eq_call is not None:
+                e.tail = re.sub('[ ]*=', ' ' * before_eq_call + '=', e.tail)
+            if  after_eq_call is not None:
+                e.tail = re.sub('=[ ]*', '=' + ' ' * before_eq_call, e.tail)
+
+        #Around '=' sign for init values
+        elif e.tag.split('}')[1] in ('EN-N', 'named-constant') and e.tail is not None and '=' in e.tail:
+            if before_eq_init is not None:
+                e.tail = re.sub('[ ]*=', ' ' * before_eq_init + '=', e.tail)
+            if after_eq_init is not None:
+                e.tail = re.sub('=[ ]*', '=' + ' ' * before_eq_init, e.tail)
+        #Around the command separator ';'
+        elif e.tag.split('}')[1] == 'smc':
+            if before_cmdsep is not None:
+                p = getSiblings(doc, e, after=False)
+                if len(p) != 0 and p[-1].tail is not None:
+                    p[-1].tail = ' ' * before_cmdsep + p[-1].tail.lstrip(' ')
+            if after_cmdsep is not None and e.tail is not None:
+                e.tail = e.tail.rstrip(' ') + ' ' * after_cmdsep
+
+        #Around and in association operators (affectation case done after)
+        elif e.tag.split('}')[1] == 'associate-N' and e.tail is not None and '=' in e.tail:
+            if before_affectation is not None:
+                e.tail = re.sub('[ ]*=', ' ' * before_affectation + '=', e.tail)
+            if after_affectation is not None:
+                e.tail = re.sub('>[ ]*', '>' + ' ' * before_affectation, e.tail)
+            if in_affectation:
+                e.tail = re.sub(r'=[ ]*>', '=>', e.tail)
+
+        #After a reserved keyword
+        #elif after_keywords is not None and e.tag.split('}')[1].endswith('-stmt'):
+        #    num = getval_after(e.tag.split('}')[1])
+        #    if num is not None and e.text is not None:
+        #        e.text = e.text.rstrip(' ') + ' ' * num
+
+    #Another loop on elements
+    #All the transformations are not put in a single loop because the following one act
+    #on sub-elements. Putting them all in the same loop would prevent to control in which order
+    #the different transformations occur.
+    #For instance, the suppression on the space after the parenthesis must be done before
+    #the adding of a space before a THEN keyword
+    for e in doc.iter():
+        #Around and in operators
+        if e.tag.split('}')[1] == 'op-E': #op are always (?) in op-E nodes
+            for o in e.findall('{*}op'):
+                if before_op is not None:
+                    io = list(e).index(o)
+                    if io != 0:
+                        p = e[io - 1]
+                        if p.tail is None:
+                            p.tail = ' ' * before_op
+                        else:
+                            p.tail = p.tail.rstrip(' ') + ' ' * before_op
+                if after_op is not None:
+                    if o.tail is None:
+                        o.tail = ' ' * after_op
+                    else:
+                        o.tail = o.tail.lstrip(' ') + ' ' * after_op
+                if in_operator:
+                    for oo in o.findall('{*}o'):
+                        if oo.tail is not None:
+                            oo.tail = oo.tail.strip(' ')
+
+        #Around and in affectation operators (association case done before)
+        elif e.tag.split('}')[1] in ('a-stmt', 'pointer-a-stmt'): #a are always (?) in a-stmt or pointer-a-stmt nodes
+            for a in e.findall('{*}a'):
+                if before_affectation is not None:
+                    p = e[list(e).index(a) - 1]
+                    if p.tail is None:
+                        p.tail = ' ' * before_affectation
+                    else:
+                        p.tail = p.tail.rstrip(' ') + ' ' * before_affectation
+                if after_affectation is not None:
+                    if a.tail is None:
+                        a.tail = ' ' * after_affectation
+                    else:
+                        a.tail = a.tail.lstrip(' ') + ' ' * after_affectation
+                if in_affectation:
+                    a.text = a.text.replace(' ', '')
+
+        #After a IF, WHERE, ELSEIF, ELSEWHERE, SELECTCASE, CASE and FORALL keyword, and before THEN keyword
+        elif e.tag.split('}')[1] in ('if-stmt', 'if-then-stmt', 'else-if-stmt',
+                                     'where-construct-stmt', 'else-where-stmt',
+                                     'select-case-stmt', 'case-stmt',
+                                     'forall-stmt', 'forall-construct-stmt'):
+            if after_ifwherecase is not None and e.text is not None:
+                if e.tag.split('}')[1] == 'case-stmt':
+                    #the (eventual) parenthesis is not in the text of the node
+                    e.text = e.text.rstrip(' ') + ' ' * after_ifwherecase
+                else:
+                    e.text = re.sub('[ ]*\(', ' ' * after_ifwherecase + '(', e.text, count=1)
+            if e.tag.split('}')[1] == 'if-then-stmt' and before_then is not None:
+                c = e.find('{*}condition-E')
+                c.tail = re.sub('\)[ ]*([a-zA-Z]*$)', ')' + ' ' * before_then + r'\1', c.tail)
+            elif e.tag.split('}')[1] == 'if-stmt' and before_ifaction is not None:
+                c = e.find('{*}condition-E')
+                c.tail = re.sub('\)[ ]*$', ')' + ' ' * before_ifaction, c.tail)
+            elif e.tag.split('}')[1] == 'forall-stmt' and before_ifaction is not None:
+                s = e.find('{*}forall-triplet-spec-LT')
+                s.tail = re.sub('\)[ ]*$', ')' + ' ' * before_ifaction, c.tail)
+
+    #Direct search to prevent using the costly getParent function
+    if before_endcnt is not None or after_begincnt is not None:
+        for e in doc.findall('.//{*}cnt/..'): #node containing continuation characters
+            for c in e.findall('{*}cnt'): #continuation characters
+                ic = list(e).index(c)
+                if ic == 0:
+                    #the string before the continuation character is in the parent text
+                    p = e
+                    pstring = p.text
+                else:
+                    #the string before the continuation character is in previsous sibling tail
+                    p = e[ic - 1]
+                    pstring = p.tail
+                if '\n' in pstring and '\n' in c.tail:
+                    #continuation character alone on a line
+                    pass
+                elif '\n' in pstring and after_begincnt is not None:
+                    #continuation character at the begining of a line
+                    c.tail = ' ' * after_begincnt + c.tail.lstrip(' ')
+                elif before_endcnt is not None:
+                    #continuation character at the end of a line (eventually followed by a comment)
+                    if p == e:
+                        p.text = p.text.rstrip(' ') + ' ' * before_endcnt
+                    else:
+                        p.tail = p.tail.rstrip(' ') + ' ' * before_endcnt
+
+    #In adjacent keywords
+    for k in adja_key_desc.keys():
+        num = getval_adja(k)
+        if num is not None:
+            for n in doc.findall(adja_key_desc[k][1]):
+                lf = "[ ]*".join(["(" + p + ")" for p in k.split('_')])
+                repl = (" " * num).join([r"\{i}".format(i=i + 1) for i, _ in enumerate(k.split('_'))])
+                n.text = re.sub(lf, repl, n.text, flags=re.IGNORECASE)
+
     return doc
 
 @debugDecor
@@ -233,12 +652,16 @@ class Cosmetics():
         self._xml = lowerCase(doc=self._xml)
 
     @copy_doc(indent)
-    def indent(self):
-        self._xml = indent(doc=self._xml)
+    def indent(self, *args, **kwargs):
+        self._xml = indent(doc=self._xml, *args, **kwargs)
 
     @copy_doc(removeEmptyLines)
     def removeEmptyLines(self):
         self._xml = removeEmptyLines(doc=self._xml)
+
+    @copy_doc(updateSpaces)
+    def updateSpaces(self, *args, **kwargs):
+        self._xml = updateSpaces(doc=self._xml, *args, **kwargs)
         
     @copy_doc(reDimKlonArrayToScalar)
     def reDimKlonArrayToScalar(self, *args, **kwargs):
