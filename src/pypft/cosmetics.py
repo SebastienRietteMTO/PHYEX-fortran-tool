@@ -30,19 +30,37 @@ def lowerCase(doc):
     return doc
 
 @debugDecor
-def indent(doc, indent_programunit=0, indent_branch=2):
+def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
     """
     :param doc: etree to use
     :param indent_programunit: number of space characters inside program unit
-    :param indent_branch: 
+    :param indent_branch: number of space characters fr other branches (do, if...)
+    :param excl_directives: some lines are directives and must stay unindented. The cpp
+                            directives are automatically recognized by fxtran but others
+                            appear as FORTRAN comments and must be indentified here. This
+                            option can take the following values:
+                             - None: to recognize as directives the lines begining
+                                     with '!$OMP' (default)
+                             - []: to suppress the exclusion
+                             - [...]: to give another list of line beginings to consider
     :return: same doc doc but with indentation corrected
     """
-    def set_level(e, level):
+
+    if excl_directives is None:
+        excl_directives = ['!$OMP']
+    def set_level(e, level, n):
+        """
+        :param e: element whose tail must be modifies
+        :param level: level of indentation
+        :param n: next element
+        """
         if e.tail is not None:
             e.tail = e.tail.replace('\t', '  ')
-            while '\n ' in e.tail:
-                e.tail = e.tail.replace('\n ', '\n')
-            e.tail = e.tail.replace('\n', '\n' + ' ' * level)
+            excl = n is not None and \
+                   (n.tag.split('}')[1] == 'cpp' or \
+                    n.tag.split('}')[1] == 'C' and any([n.text.startswith(d) for d in excl_directives]))
+            if not excl:
+                e.tail = re.sub('\n[ ]*', '\n' + ' ' * level, e.tail)
 
     def indent_recur(elem, level):
         """
@@ -63,7 +81,7 @@ def indent(doc, indent_programunit=0, indent_branch=2):
         currlevel = level
         laste = None
         firstnumselect = True
-        for e in elem:
+        for ie, e in enumerate(elem):
             #Indentation does not apply to these lines (eg SUBROUTINE statement, DO construct)
             #but apply to the lines inside
             if e.tag.split('}')[1] in progstmt:
@@ -71,7 +89,8 @@ def indent(doc, indent_programunit=0, indent_branch=2):
             elif e.tag.split('}')[1] in branchstmt:
                 currlevel += indent_branch
 
-            set_level(e, currlevel) #Add indentation *to the tail*, thus for the next line
+            #Add indentation *to the tail*, thus for the next line
+            set_level(e, currlevel, elem[ie + 1] if ie + 1 < len(elem) else None)
 
             if elem.tag.split('}')[1] == 'selectcase-construct':
                 #Structure is:
@@ -90,10 +109,10 @@ def indent(doc, indent_programunit=0, indent_branch=2):
                     firstnumselect = False
                 else:
                     #previous line was a CASE line, we must indent it only once
-                    set_level(laste[-1], level + indent_branch)
+                    set_level(laste[-1], level + indent_branch, e)
                 indent_recur(e, level + indent_branch * 2) #statements are indented twice
                 if e[-1].tag.split('}')[1] == 'end-select-case-stmt':
-                    set_level(e[-2], level)
+                    set_level(e[-2], level, e[-1])
                 
             elif e.tag.split('}')[1] in blocs:
                 #This xml tag contains other tags, we iterate on them
@@ -103,13 +122,13 @@ def indent(doc, indent_programunit=0, indent_branch=2):
                     #             </if-block><if-block><else-stmt>ELSE</else-stmt>
                     #             statement
                     #             <end-if-stmt>ENDIF</end-if-stmt></if-block></if-construct>
-                    set_level(laste[-1], level)
+                    set_level(laste[-1], level, e)
                 indent_recur(e, currlevel)
 
             #This line contains the end statement, we must remove the indentation contained
             #in the tail of the previous item
             if e.tag.split('}')[1] in endprogstmt + endbranchstmt:
-                set_level(laste, level)
+                set_level(laste, level, e)
             laste = e
 
     indent_recur(doc, 0)
