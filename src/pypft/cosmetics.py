@@ -148,6 +148,52 @@ def removeEmptyLines(doc):
             e.tail = re.sub(r"\n[  \n]*\n", r"\n", e.tail)
     return doc
 
+@debugDecor
+def removeComments(doc, excl_directives=None):
+    """
+    :param doc: etree to use
+    :return: same doc doc but without the comments
+    :param excl_directives: some lines are directives and must stay unindented. The cpp
+                            directives are automatically recognized by fxtran but others
+                            appear as FORTRAN comments and must be indentified here. This
+                            option can take the following values:
+                             - None: to recognize as directives the lines begining
+                                     with '!$OMP' or '!$mnh' (default)
+                             - []: to suppress the exclusion
+                             - [...]: to give another list of line beginings to consider
+    """
+    if excl_directives is None:
+        excl_directives = ['!$OMP', '!$mnh']
+
+    def recur(elem):
+        tail_upper = None
+        for ie in range(len(elem))[::-1]: #Loop from the end to the begining
+            e = elem[ie]
+            if e.tag.split('}')[1] == 'C' and not any([e.text.startswith(d) for d in excl_directives]):
+                #Don't losse the tail (containing new line character and indentation)
+                if ie != 0:
+                    #It exists an element before, we add the current tail to this previsous element
+                    if elem[ie - 1].tail is None:
+                        elem[ie - 1].tail = e.tail
+                    elif e.tail is not None:
+                        elem[ie - 1].tail += e.tail
+                else:
+                    #The's no previsous element, tail is givent back the container element
+                    tail_upper = e.tail
+                elem.remove(e)
+            if len(e) >= 1:
+                tail = recur(e) #recursive call to inner elements
+                if tail is not None:
+                    #The first element was a comment, its tail must be added to the text attribute
+                    if e.text is None:
+                        e.text = tail
+                    else:
+                        e.text += tail
+        return tail_upper
+
+    recur(doc)
+    return doc
+
 __NO_VALUE__ = '__NO_VALUE__'
 @debugDecor
 def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
@@ -679,6 +725,10 @@ class Cosmetics():
     @copy_doc(removeEmptyLines)
     def removeEmptyLines(self):
         self._xml = removeEmptyLines(doc=self._xml)
+
+    @copy_doc(removeComments)
+    def removeComments(self):
+        self._xml = removeComments(doc=self._xml)
 
     @copy_doc(updateSpaces)
     def updateSpaces(self, *args, **kwargs):

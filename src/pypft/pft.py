@@ -183,6 +183,8 @@ if __name__ == '__main__':
                             help='Remove indentation')
     gCosmetics.add_argument('--removeEmptyLines', default=False, action='store_true',
                             help='Remove empty lines')
+    gCosmetics.add_argument('--removeComments', default=False, action='store_true',
+                            help='Remove comments')
     gCosmetics.add_argument('--updateSpaces', default=False, action='store_true',
                             help='Updates spaces around operators, commas, parenthesis and at the end of line')
     
@@ -306,6 +308,7 @@ if __name__ == '__main__':
     if args.indent: pft.indent()
     if args.removeIndent: pft.indent(indent_programunit=0, indent_branch=0)
     if args.removeEmptyLines: pft.removeEmptyLines()
+    if args.removeComments: pft.removeComments()
     if args.updateSpaces: pft.updateSpaces()
 
     #Checks
