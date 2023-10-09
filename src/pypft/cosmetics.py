@@ -62,21 +62,19 @@ def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
             if not excl:
                 e.tail = re.sub('\n[ ]*', '\n' + ' ' * level, e.tail)
 
-    def indent_recur(elem, level):
+    def indent_recur(elem, level, in_construct):
         """
         :param elem: dom element
         :param level: current level for elem
+        :param in_construct: True if we are inside a construct
         """
-        blocs = ['file', 'program-unit', 'do-construct', 'interface-construct',
-                 'if-construct', 'if-block',
-                 'where-construct', 'where-block',
-                 'selectcase-construct', 'selectcase-block']
+        blocs = ['file', 'program-unit', 'if-block', 'where-block', 'selectcase-block']
         progstmt = ['subroutine-stmt', 'program-stmt', 'module-stmt', 'function-stmt',
                     'submodule-stmt', 'procedure-stmt', 'interface-stmt']
         endprogstmt = ['end-' + s for s in progstmt]
         interbranchstmt = ['else-stmt', 'else-where-stmt']
-        branchstmt = ['if-then-stmt', 'do-stmt', 'where-construct-stmt'] + interbranchstmt
-        endbranchstmt = ['end-if-stmt', 'end-do-stmt', 'end-where-stmt']
+        branchstmt = ['if-then-stmt', 'where-construct-stmt'] + interbranchstmt
+        endbranchstmt = ['end-if-stmt', 'end-where-stmt']
 
         currlevel = level
         laste = None
@@ -86,7 +84,7 @@ def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
             #but apply to the lines inside
             if e.tag.split('}')[1] in progstmt:
                 currlevel += indent_programunit
-            elif e.tag.split('}')[1] in branchstmt:
+            elif e.tag.split('}')[1] in branchstmt + [in_construct + '-stmt']:
                 currlevel += indent_branch
 
             #Add indentation *to the tail*, thus for the next line
@@ -110,11 +108,11 @@ def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
                 else:
                     #previous line was a CASE line, we must indent it only once
                     set_level(laste[-1], level + indent_branch, e)
-                indent_recur(e, level + indent_branch * 2) #statements are indented twice
+                indent_recur(e, level + indent_branch * 2, "") #statements are indented twice
                 if e[-1].tag.split('}')[1] == 'end-select-case-stmt':
                     set_level(e[-2], level, e[-1])
                 
-            elif e.tag.split('}')[1] in blocs:
+            elif e.tag.split('}')[1] in blocs or e.tag.split('}')[1].endswith('-construct'):
                 #This xml tag contains other tags, we iterate on them
                 if e[0].tag.split('}')[1] in interbranchstmt:
                     #Structure is <if-construct><if-block><if-then-stmt>IF...THEN</if-then-stmt>
@@ -123,15 +121,16 @@ def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
                     #             statement
                     #             <end-if-stmt>ENDIF</end-if-stmt></if-block></if-construct>
                     set_level(laste[-1], level, e)
-                indent_recur(e, currlevel)
+                construct = e.tag.split('}')[1][:-10] if e.tag.split('}')[1].endswith('-construct') else ""
+                indent_recur(e, currlevel, construct)
 
             #This line contains the end statement, we must remove the indentation contained
             #in the tail of the previous item
-            if e.tag.split('}')[1] in endprogstmt + endbranchstmt:
+            if e.tag.split('}')[1] in endprogstmt + endbranchstmt + ['end-' + in_construct + '-stmt']:
                 set_level(laste, level, e)
             laste = e
 
-    indent_recur(doc, 0)
+    indent_recur(doc, 0, "")
     return doc
 
 @debugDecor
