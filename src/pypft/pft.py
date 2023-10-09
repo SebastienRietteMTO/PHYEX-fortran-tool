@@ -179,6 +179,8 @@ if __name__ == '__main__':
                             help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
     gCosmetics.add_argument('--indent', default=False, action='store_true',
                             help='Correct indentation')
+    gCosmetics.add_argument('--removeIndent', default=False, action='store_true',
+                            help='Remove indentation')
     gCosmetics.add_argument('--removeEmptyLines', default=False, action='store_true',
                             help='Remove empty lines')
     gCosmetics.add_argument('--updateSpaces', default=False, action='store_true',
@@ -302,6 +304,7 @@ if __name__ == '__main__':
     if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
     if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
     if args.indent: pft.indent()
+    if args.removeIndent: pft.indent(indent_programunit=0, indent_branch=0)
     if args.removeEmptyLines: pft.removeEmptyLines()
     if args.updateSpaces: pft.updateSpaces()
 

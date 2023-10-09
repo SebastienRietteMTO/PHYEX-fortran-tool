@@ -124,6 +124,8 @@ these arrays become scalar.
 
 **\--indent** correct the indentation of the source code.
 
+**\--removeIndent** remove the indentation
+
 **\--removeEmptyLines** remove empty lines.
 
 **\--updateSpaces** suprpess and/or add spaces. Delimiters and operators must be surrounded by spaces.
