@@ -170,7 +170,7 @@ def removeComments(doc, excl_directives=None):
         for ie in range(len(elem))[::-1]: #Loop from the end to the begining
             e = elem[ie]
             if e.tag.split('}')[1] == 'C' and not any([e.text.startswith(d) for d in excl_directives]):
-                #Don't losse the tail (containing new line character and indentation)
+                #Don't loose the tail (containing new line character and indentation)
                 if ie != 0:
                     #It exists an element before, we add the current tail to this previsous element
                     if elem[ie - 1].tail is None:
@@ -192,6 +192,176 @@ def removeComments(doc, excl_directives=None):
         return tail_upper
 
     recur(doc)
+    return doc
+
+@debugDecor
+def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBegin=False):
+    """
+    :param doc: etree to use
+    :param align: True to align begin of continued lines
+    :param removeALL: True to suppress all the continuation line characters ('&')
+    :param addBegin: True to add missing continuation line characters ('&') at the begining of lines
+    :param removeBegin: True to suppress continuation line characters ('&') at the begining of lines
+
+    When suppressed, the '&' are replaced by a space character
+    Comments after a '&' are lost
+    """
+
+    assert not (align and removeALL), "We cannot remove and align at the same time"
+    assert not (addBegin and (removeALL or removeBegin)), \
+           "We cannot remove ans add, at the same time, continuation characters"
+
+    def recur_reverse(elem, tail):
+        tail_upper = None
+        for ie in range(len(elem))[::-1]: #Loop from the end to the begining
+            e = elem[ie]
+            if e.tag.split('}')[1] == 'cnt':
+                #Search for comments after the cnt node
+                commentsAfter = []
+                j = ie + 1
+                while j < len(elem) and elem[j].tag.split('}')[1] == 'C':
+                    commentsAfter.append(elem[j])
+                    j += 1
+                nextNode = elem[j] if j < len(elem) else None
+
+                #Is it a '&' at the end of a line (or at the begining)?
+                isend = (e.tail is not None and '\n' in e.tail) or len(commentsAfter) > 0
+
+                #Add missing continuation character at the begining of line
+                if isend and addBegin:
+                    if e.tail is not None and \
+                       e.tail.replace('\n', '').replace('\t', '').lstrip(' ') != '':
+                        #tail contains text, probably an endding ')', after a carriage return
+                        #Thus, there is no '&' to begin line
+                        new = ET.Element('{http://fxtran.net/#syntax}cnt')
+                        new.text = '&'
+                        i = 0
+                        while e.tail[i] in (' ', '\n', '\t'): i += 1
+                        new.tail = ' ' + e.tail[i:]
+                        e.tail = e.tail[:i]
+                        elem.insert(ie + 1, new)
+                    elif nextNode.tag.split('}')[1] != 'cnt':
+                        #There is no '&' to begin next line
+                        new = ET.Element('{http://fxtran.net/#syntax}cnt')
+                        new.text = '&'
+                        new.tail = ' '
+                        elem.insert(ie + 1, new)
+
+                #Suppression
+                if removeALL or (removeBegin and not isend):
+                    for c in commentsAfter[::-1]:
+                        elem.remove(c)
+                    elem.remove(e) #OK because we loop in reverse order
+                    if ie != 0:
+                        if elem[ie - 1].tail is None:
+                            elem[ie - 1].tail = " "
+                        else:
+                            elem[ie - 1].tail += " "
+                    else:
+                        tail_upper = " "
+
+            #Recursively enter blocs
+            if len(e) >= 1:
+                tail = recur_reverse(e, indent)
+                if tail is not None:
+                    if e.text is None:
+                        e.text = tail
+                    else:
+                        e.text += tail
+
+    def recur_direct(elem, ct, in_cnt):
+        """
+        :param ct: current text
+        :param in_cnt: -1 if we are not in a statement spanning several lines
+                       elswhere contains the number of spaces to add
+        """
+        ignoreComment = False
+        if align:
+            for ie, e in enumerate(list(elem)):
+                #It is a '&' character marking the end of the line
+                isendcnt = e.tag.split('}')[1] == 'cnt' and \
+                           ((e.tail is not None and '\n' in e.tail) or \
+                            (ie + 1 < len(elem) and elem[ie + 1].tag.split('}')[1] == 'C'))
+                ignoreComment = ignoreComment or \
+                                (isendcnt and \
+                                 (ie + 1 < len(elem) and elem[ie + 1].tag.split('}')[1] == 'C'))
+
+                if isendcnt or ignoreComment:
+                    #Number of spaces for alignment not already determined (first line of the continuation)
+                    if isendcnt and in_cnt == -1:
+                        #Search for the container statement
+                        topstmt = elem
+                        while not topstmt.tag.split('}')[1].endswith('-stmt'):
+                            topstmt = getParent(doc, topstmt)
+
+                        #Character to align on
+                        if topstmt.tag.split('}')[1].endswith('a-stmt'):
+                            l = ('=>', '=', '\(')
+                        elif topstmt.tag.split('}')[1].endswith('call-stmt'):
+                            l = ('\(', 'call[ ]+\w', 'call ', 'call')
+                        elif topstmt.tag.split('}')[1].endswith('if-stmt'):
+                            l = ('\(', '\)', 'if ', 'if')
+                        elif topstmt.tag.split('}')[1].endswith('where-stmt'):
+                            l = ('\(', '\)', 'where ', 'where')
+                        elif topstmt.tag.split('}')[1].endswith('forall-stmt'):
+                            l = ('\(', '\)', 'forall ', 'forall')
+                        elif topstmt.tag.split('}')[1].endswith('namelist-stmt'):
+                            l = ('/.*/', '/', 'namelist')
+                        elif topstmt.tag.split('}')[1].endswith('subroutine-stmt'):
+                            l = ('\(', 'subroutine[ ]+\w', 'subroutine ', 'subroutine')
+                        elif topstmt.tag.split('}')[1].endswith('use-stmt'):
+                            l = (':', 'use[ ]+\w', 'use ', 'use')
+                        elif topstmt.tag.split('}')[1].endswith('T-decl-stmt'):
+                            l = ('::', '\w,', '\w ', '\w')
+                        elif topstmt.tag.split('}')[1].endswith('print-stmt'):
+                            l = ('print', )
+                        elif topstmt.tag.split('}')[1].endswith('write-stmt'):
+                            l = ('\)', 'write[ ]*\(', 'write[ ]*', 'write')
+                        elif topstmt.tag.split('}')[1].endswith('procedure-stmt'):
+                            l = ('module[ ]+procedure[ ]*', 'module[ ]*', 'module')
+                        else:
+                            l = ('::', ':', '\(', '=>', '=', '[', ':', '/')
+
+                        #Compute indentation value
+                        in_cnt = None
+                        for c in l:
+                            if in_cnt is None:
+                                m = re.search(c, ct, flags=re.IGNORECASE)
+                                if m is not None:
+                                    if ie + 1 < len(elem) and elem[ie + 1].tag.split('}')[1] != 'cnt':
+                                        #If there is no continuation character at the begining, align the text with
+                                        #the position after the delimiter found
+                                        in_cnt = m.end()
+                                    else:
+                                        in_cnt = m.end() - 1
+                        if in_cnt is None:
+                            in_cnt = 4
+
+                    #Align the next line
+                    if e.tail is not None:
+                        e.tail = re.sub('\n[ ]*', '\n' + ' ' * in_cnt, e.tail)
+                    else:
+                        e.tail = '\n' + ' ' * in_cnt
+
+                if e.tag.split('}')[1] not in ('C', 'cnt'):
+                    ct += (e.text if e.text is not None else '')
+                    ignoreComment = False
+                                
+                #Recursively enter the inner blocks
+                if len(e) >=1:
+                    ct, in_cnt = recur_direct(e, ct, in_cnt)
+
+                #Text after the end of block
+                ct += (e.tail if e.tail is not None else '')
+                if '\n' in ct:
+                    ct = ct.split('\n')[-1]
+                    if e.tag.split('}')[1] not in ('cnt', 'C'):
+                        in_cnt = -1
+
+        return ct, in_cnt
+
+    recur_reverse(doc, 0)
+    recur_direct(doc, "", -1)
     return doc
 
 __NO_VALUE__ = '__NO_VALUE__'
@@ -733,6 +903,10 @@ class Cosmetics():
     @copy_doc(updateSpaces)
     def updateSpaces(self, *args, **kwargs):
         self._xml = updateSpaces(doc=self._xml, *args, **kwargs)
+
+    @copy_doc(updateContinuation)
+    def updateContinuation(self, *args, **kwargs):
+        self._xml = updateContinuation(doc=self._xml, *args, **kwargs)
         
     @copy_doc(reDimKlonArrayToScalar)
     def reDimKlonArrayToScalar(self, *args, **kwargs):

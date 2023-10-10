@@ -187,6 +187,14 @@ if __name__ == '__main__':
                             help='Remove comments')
     gCosmetics.add_argument('--updateSpaces', default=False, action='store_true',
                             help='Updates spaces around operators, commas, parenthesis and at the end of line')
+    gCosmetics.add_argument('--alignContinuation', default=False, action='store_true',
+                            help='Align the beginings of continued lines')
+    gCosmetics.add_argument('--addBeginContinuation', default=False, action='store_true',
+                            help='Add missing continuation characters (\'&\') at the begining of lines')
+    gCosmetics.add_argument('--removeBeginContinuation', default=False, action='store_true',
+                            help='Remove continuation characters (\'&\') at the begining of lines')
+    gCosmetics.add_argument('--removeALLContinuation', default=False, action='store_true',
+                            help='Remove all continuation characters(\'&\')')
     
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -310,6 +318,11 @@ if __name__ == '__main__':
     if args.removeEmptyLines: pft.removeEmptyLines()
     if args.removeComments: pft.removeComments()
     if args.updateSpaces: pft.updateSpaces()
+    kw_updateCnt = dict(align=args.alignContinuation,
+                        addBegin=args.addBeginContinuation,
+                        removeBegin=args.removeBeginContinuation,
+                        removeALL=args.removeALLContinuation)
+    if True in kw_updateCnt.values(): pft.updateContinuation(**kw_updateCnt)
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')

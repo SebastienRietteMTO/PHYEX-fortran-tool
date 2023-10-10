@@ -130,9 +130,17 @@ these arrays become scalar.
 
 **\--removeComments** remove the comments.
 
-**\--updateSpaces** suprpess and/or add spaces. Delimiters and operators must be surrounded by spaces.
+**\--updateSpaces** suppress and/or add spaces. Delimiters and operators must be surrounded by spaces.
 Commas must be followed by a space. Lines must not end with spaces. Parenthesis must not be
 surrounded by spaces...
+
+**\--alignContinuation** align the beginings of continued lines.
+
+**\--addBeginContinuation** add missing continuation characters ('&') at the begining of lines.
+
+**\--removeBeginContinuation** remove continuation characters ('&') at the begining of lines.
+
+**\--removeALLContinuation** remove all continuation characters('&').
 
 ### Checks
 
