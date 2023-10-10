@@ -39,7 +39,7 @@ def debugDecor(func):
 
         #Count and time
         if logger.isEnabledFor(logging.INFO):
-            import util
+            from pyft import util
             if not func.__name__ in util.debugStats:
                 util.debugStats[func.__name__] = dict(nb=0, totalTime=0)
             util.debugStats[func.__name__]['nb'] += 1
@@ -74,7 +74,7 @@ def print_infos():
             print('| ' + name.ljust(30) + '| ' + str(nb).ljust(14) + '| ' + \
                   str(min).ljust(23) + '| ' + str(max).ljust(23) + '| ' + str(mean).ljust(23) + '|')
         _print('Name of the function', '# of calls', 'Min (s)', 'Maxi (s)', 'Total (s)')
-        import util
+        from pyft import util
         for funcName, values in util.debugStats.items():
             _print(funcName, values['nb'], values['min'], values['max'], values['totalTime'])
 
@@ -90,7 +90,7 @@ def copy_doc(copy_func):
         return func
     return wrapper
 
-class PFTError(Exception): pass
+class PYFTError(Exception): pass
 
 ################################################################################
 ### Conversions
@@ -115,8 +115,8 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
 
     #Default options
     if parserOptions is None:
-        import pypft
-        parserOptions = pypft.PFT.DEFAULT_FXTRAN_OPTIONS
+        import pyft
+        parserOptions = pyft.PYFT.DEFAULT_FXTRAN_OPTIONS
 
     #Call to fxtran
     with tempfile.NamedTemporaryFile(buffering=0, suffix='.F90') as f:
@@ -461,14 +461,3 @@ def insertInList(pos, item, l):
         else:
             l[i].tail = ', '
 
-def isint(s):
-    """
-    :param s: string to test for intergerness
-    :return: True if s represent an int
-    """
-    try:
-        int(s)
-    except ValueError:
-        return False
-    else:
-        return True

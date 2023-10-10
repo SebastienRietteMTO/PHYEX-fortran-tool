@@ -1,97 +1,22 @@
 #!/usr/bin/env python3
 
-import os
+from pyft import PYFT
 
-from pypft.variables import Variables
-from pypft.cosmetics import Cosmetics
-from pypft.applications import Applications
-from pypft.scope import Scope
-from pypft.statements import Statements
-from pypft.util import tostring, tofortran, isint, fortran2xml, set_verbosity, print_infos
-
-class PFT(Variables, Cosmetics, Applications, Scope, Statements):
-    DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-cpp', '-line-length', '9999']
-    MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
-
-    def __init__(self, filename, output=None, parser=None, parserOptions=None):
-        """
-        :param filename: Input file name containing FORTRAN code
-        :param output: Output file name, None to replace input file
-        :param parser: path to the fxtran parser
-        :param parserOptions: dictionnary holding the parser options
-        """
-        self._filename = filename
-        self._originalName = filename
-        assert os.path.exists(filename), 'Input filename must exist'
-        self._output = output
-        self._parser = 'fxtran' if parser is None else parser
-        self._parserOptions = self.DEFAULT_FXTRAN_OPTIONS if parserOptions is None else parserOptions
-        for option in self.MANDATORY_FXTRAN_OPTIONS:
-            if option not in self._parserOptions:
-                self._parserOptions.append(option)
-        self._ns, self._xml = fortran2xml(self._filename, self._parser, self._parserOptions)
-
-    @property
-    def xml(self):
-        """
-        Returns the xml as a string
-        """
-        return tostring(self._xml)
-
-    @property
-    def fortran(self):
-        """
-        Returns the FORTRAN as a string
-        """
-        return tofortran(self._xml)
-
-    def renameUpper(self):
-        """
-        The output file will have an upper case extension
-        """
-        self._rename(str.upper)
-
-    def renameLower(self):
-        """
-        The output file will have a lower case extension
-        """
-        self._rename(str.lower)
-
-    def _rename(self, mod):
-        """
-        The output file will have a modified extension.
-        :param mod: function to apply to the file extension
-        """
-        def _trans_ext(path, mod):
-            p, e = os.path.splitext(path)
-            return p + mod(e)
-        if self._output is None:
-            self._filename = _trans_ext(self._filename, mod)
-        else:
-            self._output = _trans_ext(self._output, mod)
-
-    def write(self):
-        """
-        Writes the output FORTRAN file
-        """
-        with open(self._filename if self._output is None else self._output, 'w') as f:
-            f.write(self.fortran)
-        if self._output is None and self._filename != self._originalName:
-            #We must perform an in-place update of the file, but the output file
-            #name has been updated. Then, we must remove the original file.
-            os.unlink(self._originalName)
-
-    def writeXML(self, filename):
-        """
-        Writes the output XML file
-        :param filename: XML output file name
-        """
-        with open(filename, 'w') as f:
-           f.write(self.xml)
+def isint(s):
+    """
+    :param s: string to test for intergerness
+    :return: True if s represent an int
+    """
+    try:
+        int(s)
+    except ValueError:
+        return False
+    else:
+        return True
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='PHYEX FORTRAN tool')
+    parser = argparse.ArgumentParser(description='Python FORTRAN tool')
 
     parser.add_argument('--simplify', default=False, action='store_true',
                         help='After a deletion, recursively deletes the code ' + \
@@ -119,7 +44,7 @@ if __name__ == '__main__':
                          help='Path to the fxtran parser binary')
     gParser.add_argument('--parserOption', nargs='*', action='append',
                          help='Option to pass to fxtran, defaults' + \
-                              ' to {}'.format(str(PFT.DEFAULT_FXTRAN_OPTIONS)))
+                              ' to {}'.format(str(PYFT.DEFAULT_FXTRAN_OPTIONS)))
 
     #Variables
     gVariables = parser.add_argument_group('Options to deal with variables')
@@ -263,14 +188,13 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     simplify = {'simplify': args.simplify}
-    set_verbosity(args.logLevel)
 
     #Opening and reading of the FORTRAN file
     if args.parserOption is None:
         parserOptions = None
     else:
         parserOptions = [el for elements in args.parserOption for el in elements]
-    pft = PFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions)
+    pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions, verbosity=args.logLevel)
 
     #File name manipulations
     if args.renamefF: pft.renameUpper()
@@ -359,5 +283,5 @@ if __name__ == '__main__':
     if not args.dryRun:
         pft.write()
 
-    #Infos
-    print_infos()
+    #Closing
+    pft.close()

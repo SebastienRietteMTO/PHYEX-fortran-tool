@@ -1,4 +1,4 @@
-from pypft.util import (copy_doc, PFTError, debugDecor, getParent, n2name)
+from pyft.util import (copy_doc, PYFTError, debugDecor, getParent, n2name)
 
 """
 This module implements the scope stuff
@@ -65,7 +65,7 @@ def getScopeNode(doc, scopePath):
                 return getParent(doc, bloc)
             else:
                 return getScopeNode(getParent(doc, bloc), remainingPath)
-    raise PFTError("The scope path {path} has not been found.".format(path=where))
+    raise PYFTError("The scope path {path} has not been found.".format(path=where))
 
 @debugDecor
 def getScopeChildNodes(doc, scope):
@@ -109,7 +109,7 @@ def getParentScopeNode(doc, item, mustRaise=True):
     while result is not None and not isScopeNode(result):
         result = getParent(doc, result)
     if result is None and mustRaise:
-        raise PFTError("The scope parent has not been found.")
+        raise PYFTError("The scope parent has not been found.")
     return result
 
 def _getNodeName(node):

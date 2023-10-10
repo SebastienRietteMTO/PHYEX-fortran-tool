@@ -3,9 +3,9 @@ This module implements functions to deal with cosmetics
 """
 import xml.etree.ElementTree as ET
 import re
-from pypft.util import (copy_doc, getParent, getSiblings, debugDecor, non_code, alltext)
-from pypft.variables import getVarList
-from pypft.scope import getScopesList, getScopePath
+from pyft.util import (copy_doc, getParent, getSiblings, debugDecor, non_code, alltext)
+from pyft.variables import getVarList
+from pyft.scope import getScopesList, getScopePath
 
 @debugDecor
 def upperCase(doc):

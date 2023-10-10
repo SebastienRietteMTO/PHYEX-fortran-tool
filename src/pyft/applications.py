@@ -3,14 +3,14 @@ This module implements functions for high-to-moderate level transformation
 """
 
 import xml.etree.ElementTree as ET
-from pypft.util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
-                        alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
-from pypft.statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
-                              createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
-                              placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
-from pypft.variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
-from pypft.cosmetics import changeIfStatementsInIfConstructs
-from pypft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath
+from pyft.util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
+                       alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
+from pyft.statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
+                             createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
+                             placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
+from pyft.variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
+from pyft.cosmetics import changeIfStatementsInIfConstructs
+from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath
 import copy
 
 @debugDecor

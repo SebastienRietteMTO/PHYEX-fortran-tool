@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This repository contains a python script, pft.py, that reads a FORTRAN code,
+This repository contains a python script, pyft.py, that reads a FORTRAN code,
 parse it in xml, performs some manipulation, reverts it in FORTRAN and
 writes it back on disk.
 
@@ -47,7 +47,7 @@ Usefull if one wants to use a specific version.
 
 **\--parserOption=OPTIONS** the list of available options can be found in the fxtran
 documentation. If no option is provided, the defaults one will be used (the
-list of default options can be seen with "pft.py -h"). In case this option
+list of default options can be seen with "pyft.py -h"). In case this option
 is used, the default options will be replaced by the ones specified.
 
 ### Input and output

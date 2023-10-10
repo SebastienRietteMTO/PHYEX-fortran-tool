@@ -2,10 +2,10 @@
 This module implements functions to deal with variables
 """
 
-from pypft.util import (copy_doc, PFTError, debugDecor,
-                        tostring, alltext, getFileName, removeFromList, getParent,
-                        getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
-from pypft.scope import getScopeNode, getScopeChildNodes, getScopesList
+from pyft.util import (copy_doc, PYFTError, debugDecor,
+                       tostring, alltext, getFileName, removeFromList, getParent,
+                       getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
+from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList
 from xml.etree.ElementTree import Element
 import logging
 
@@ -187,7 +187,7 @@ def checkImplicitNone(doc, mustRaise=False):
               message = message.format(file=getFileName(doc), loc=loc)
               if mustRaise:
                   logging.error(message)
-                  raise PFTError(message)
+                  raise PYFTError(message)
               else:
                   logging.warning(message)
 
@@ -206,7 +206,7 @@ def checkIntent(doc, mustRaise=False):
           l("The dummy argument {} as no INTENT attribute, in file '{}'".format(v['n'], getFileName(doc)))
           ok = False
     if not ok and mustRaise:
-        raise PFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
+        raise PYFTError("There are dummy arguments without INTENT attribute in file '{}'".format(getFileName(doc)))
 
 def _getDeclStmtTag(where):
     """
