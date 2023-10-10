@@ -72,7 +72,7 @@ def indent(doc, indent_programunit=0, indent_branch=2, excl_directives=None):
         progstmt = ['subroutine-stmt', 'program-stmt', 'module-stmt', 'function-stmt',
                     'submodule-stmt', 'procedure-stmt', 'interface-stmt']
         endprogstmt = ['end-' + s for s in progstmt]
-        interbranchstmt = ['else-stmt', 'else-where-stmt']
+        interbranchstmt = ['else-stmt', 'else-if-stmt', 'else-where-stmt']
         branchstmt = ['if-then-stmt', 'where-construct-stmt'] + interbranchstmt
         endbranchstmt = ['end-if-stmt', 'end-where-stmt']
 
@@ -211,15 +211,17 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
     assert not (addBegin and (removeALL or removeBegin)), \
            "We cannot remove ans add, at the same time, continuation characters"
 
+    __parents = {} #cache to be used in recur_direct
     def recur_reverse(elem, tail):
         tail_upper = None
         for ie in range(len(elem))[::-1]: #Loop from the end to the begining
             e = elem[ie]
+            __parents[e] = elem
             if e.tag.split('}')[1] == 'cnt':
-                #Search for comments after the cnt node
+                #Search for comments or cpp after the cnt node
                 commentsAfter = []
                 j = ie + 1
-                while j < len(elem) and elem[j].tag.split('}')[1] == 'C':
+                while j < len(elem) and elem[j].tag.split('}')[1] in ('C', 'cpp'):
                     commentsAfter.append(elem[j])
                     j += 1
                 nextNode = elem[j] if j < len(elem) else None
@@ -235,6 +237,7 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
                         #Thus, there is no '&' to begin line
                         new = ET.Element('{http://fxtran.net/#syntax}cnt')
                         new.text = '&'
+                        #'&' must be put before any text on the following line containing code
                         i = 0
                         while e.tail[i] in (' ', '\n', '\t'): i += 1
                         new.tail = ' ' + e.tail[i:]
@@ -244,21 +247,39 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
                         #There is no '&' to begin next line
                         new = ET.Element('{http://fxtran.net/#syntax}cnt')
                         new.text = '&'
-                        new.tail = ' '
-                        elem.insert(ie + 1, new)
+                        if len(commentsAfter) > 0:
+                            #'&' must be put before any text on the following line containing code
+                            i = 0
+                            while i < len(commentsAfter[-1].tail) and \
+                                  commentsAfter[-1].tail[i] in (' ', '\n', '\t'): i += 1
+                            new.tail = ' ' + commentsAfter[-1].tail[i:]
+                            commentsAfter[-1].tail = commentsAfter[-1].tail[:i]
+                        else:
+                            new.tail = ' '
+                        elem.insert(ie + 1 + len(commentsAfter), new)
 
                 #Suppression
                 if removeALL or (removeBegin and not isend):
+                    cpp = False
                     for c in commentsAfter[::-1]:
-                        elem.remove(c)
-                    elem.remove(e) #OK because we loop in reverse order
-                    if ie != 0:
-                        if elem[ie - 1].tail is None:
-                            elem[ie - 1].tail = " "
+                        if c.tag.split('}')[1] != 'cpp':
+                            elem.remove(c)
                         else:
-                            elem[ie - 1].tail += " "
-                    else:
-                        tail_upper = " "
+                            cpp = True
+                    if not cpp:
+                        #We cannot remove a continuation line followed by a cpp
+                        elem.remove(e) #OK because we loop in reverse order
+                        if e.tail is not None:
+                            txt = e.tail.strip() + ' '
+                        else:
+                            txt = ' '
+                        if ie != 0:
+                            if elem[ie - 1].tail is None:
+                                elem[ie - 1].tail = txt
+                            else:
+                                elem[ie - 1].tail += txt
+                        else:
+                            tail_upper = txt
 
             #Recursively enter blocs
             if len(e) >= 1:
@@ -286,13 +307,20 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
                                 (isendcnt and \
                                  (ie + 1 < len(elem) and elem[ie + 1].tag.split('}')[1] == 'C'))
 
-                if isendcnt or ignoreComment:
+                #REAL :: X1, & !comment 1
+                #              !comment 2
+                #        X2, &
+                ##ifdef XXX
+                #        X3, &
+                ##endif
+                #        X4
+                if isendcnt or ignoreComment or (in_cnt != -1 and e.tag.split('}')[1] == 'cpp'):
                     #Number of spaces for alignment not already determined (first line of the continuation)
                     if isendcnt and in_cnt == -1:
                         #Search for the container statement
                         topstmt = elem
                         while not topstmt.tag.split('}')[1].endswith('-stmt'):
-                            topstmt = getParent(doc, topstmt)
+                            topstmt = __parents[topstmt]
 
                         #Character to align on
                         if topstmt.tag.split('}')[1].endswith('a-stmt'):
@@ -337,11 +365,12 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
                         if in_cnt is None:
                             in_cnt = 4
 
-                    #Align the next line
-                    if e.tail is not None:
-                        e.tail = re.sub('\n[ ]*', '\n' + ' ' * in_cnt, e.tail)
-                    else:
-                        e.tail = '\n' + ' ' * in_cnt
+                    #Align the next line exept if it is a cpp line
+                    if not (ie + 1 < len(elem) and elem[ie + 1].tag.split('}')[1] == 'cpp'):
+                        if e.tail is not None:
+                            e.tail = re.sub('\n[ ]*', '\n' + ' ' * in_cnt, e.tail)
+                        else:
+                            e.tail = '\n' + ' ' * in_cnt
 
                 if e.tag.split('}')[1] not in ('C', 'cnt'):
                     ct += (e.text if e.text is not None else '')
@@ -355,7 +384,7 @@ def updateContinuation(doc, align=True, removeALL=False, addBegin=True, removeBe
                 ct += (e.tail if e.tail is not None else '')
                 if '\n' in ct:
                     ct = ct.split('\n')[-1]
-                    if e.tag.split('}')[1] not in ('cnt', 'C'):
+                    if e.tag.split('}')[1] not in ('cnt', 'C', 'cpp'):
                         in_cnt = -1
 
         return ct, in_cnt
@@ -546,6 +575,7 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
                "after_keywords['" + k + "'] must be at least 1 (is " + str(num) + ")"
 
     for e in doc.iter():
+        is_notC = not e.tag.endswith('}C')
         #security
         if e.tail is None:
             e.tail = ""
@@ -555,24 +585,24 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
         if before_parenthesis is not None:
             e.tail = re.sub(r"[  ]*\(", " " * before_parenthesis + r"(", e.tail)
             e.tail = re.sub(r"[  ]*\)", " " * before_parenthesis + r")", e.tail)
-            if e.text is not None:
+            if e.text is not None and is_notC:
                 e.text = re.sub(r"[  ]*\(", " " * before_parenthesis + r"(", e.text)
                 e.text = re.sub(r"[  ]*\)", " " * before_parenthesis + r")", e.text)
         if after_parenthesis is not None:
             e.tail = re.sub(r"\([  ]*", "(" + " " * after_parenthesis, e.tail)
             e.tail = re.sub(r"\)[  ]*", ")" + " " * after_parenthesis, e.tail)
-            if e.text is not None:
+            if e.text is not None and is_notC:
                 e.text = re.sub(r"\([  ]*", "(" + " " * after_parenthesis, e.text)
                 e.text = re.sub(r"\)[  ]*", ")" + " " * after_parenthesis, e.text)
 
         #Around commas
         if before_comma is not None:
             e.tail = re.sub(r"[  ]*,", " " * before_comma + r",", e.tail)
-            if e.text is not None:
+            if e.text is not None and is_notC:
                 e.text = re.sub(r"[  ]*,", " " * before_comma + r",", e.text)
         if after_comma is not None:
             e.tail = re.sub(r",[  ]*", "," + " " * after_comma, e.tail)
-            if e.text is not None:
+            if e.text is not None and is_notC:
                 e.text = re.sub(r",[  ]*", "," + " " * after_comma, e.text)
 
         #End of line
@@ -737,7 +767,7 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
                     e.text = e.text.rstrip(' ') + ' ' * after_ifwherecase
                 else:
                     e.text = re.sub('[ ]*\(', ' ' * after_ifwherecase + '(', e.text, count=1)
-            if e.tag.split('}')[1] == 'if-then-stmt' and before_then is not None:
+            if e.tag.split('}')[1] in ('if-then-stmt', 'else-if-stmt') and before_then is not None:
                 c = e.find('{*}condition-E')
                 c.tail = re.sub('\)[ ]*([a-zA-Z]*$)', ')' + ' ' * before_then + r'\1', c.tail)
             elif e.tag.split('}')[1] == 'if-stmt' and before_ifaction is not None:

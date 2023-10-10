@@ -188,7 +188,7 @@ def non_code(e):
     :param e: element
     :return: True if e is non code (comment, text...)
     """
-    return e.tag.split('}')[1] in {'cnt', 'C'}
+    return e.tag.split('}')[1] in {'cnt', 'C', 'cpp'}
 
 def isExecutableStmt(e):
     """

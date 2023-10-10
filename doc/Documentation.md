@@ -142,6 +142,12 @@ surrounded by spaces...
 
 **\--removeALLContinuation** remove all continuation characters('&').
 
+**\--pretify** equivalent to --indent --upperCase --removeEmptyLines --updateSpaces
+--addBeginContinuation --alignContinuation
+
+**\--minify** equivalent to --removeIndent --upperCase --removeEmptyLines --removeComments
+--updateSpaces --removeALLContinuation
+
 ### Checks
 
 **\--checkIMPLICIT=Warn\|Err** if the 'IMPLICIT NONE' statment is missing,

@@ -195,6 +195,10 @@ if __name__ == '__main__':
                             help='Remove continuation characters (\'&\') at the begining of lines')
     gCosmetics.add_argument('--removeALLContinuation', default=False, action='store_true',
                             help='Remove all continuation characters(\'&\')')
+    gCosmetics.add_argument('--prettify', default=False, action='store_true',
+                            help='Prettify the source code (indentation, spaces...)')
+    gCosmetics.add_argument('--minify', default=False, action='store_true',
+                            help='Simplify the source code (indentation, spaces...)')
     
     #Applications
     gApplications = parser.add_argument_group('Options to apply upper level transformation')
@@ -323,6 +327,19 @@ if __name__ == '__main__':
                         removeBegin=args.removeBeginContinuation,
                         removeALL=args.removeALLContinuation)
     if True in kw_updateCnt.values(): pft.updateContinuation(**kw_updateCnt)
+    if args.prettify:
+        pft.indent()
+        pft.upperCase()
+        pft.removeEmptyLines()
+        pft.updateSpaces()
+        pft.updateContinuation()
+    if args.minify:
+        pft.indent(indent_programunit=0, indent_branch=0)
+        pft.upperCase()
+        pft.removeComments()
+        pft.removeEmptyLines()
+        pft.updateSpaces()
+        pft.updateContinuation(align=False, removeALL=True, addBegin=False)
 
     #Checks
     if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
