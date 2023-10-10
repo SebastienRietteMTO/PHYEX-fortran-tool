@@ -409,6 +409,7 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
     :param before_then: number of spaces before the THEN keyword
     :param before_ifaction: number of spaces between IF condition and action in one-line IF statement
                             and between FORALL specification and affectation in one-line FORALL statement
+                            and between WHERE mask and action in one-line WHERE statement
     :param after_progunit: between the program unit type (e.g. SUBROUTINE) and its name
     :param end_of_line: True to suppress spaces at the end of the line
     :param after_name: number of spaces after an indentifier, type or attribute name
@@ -727,7 +728,7 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
 
         #After a IF, WHERE, ELSEIF, ELSEWHERE, SELECTCASE, CASE and FORALL keyword, and before THEN keyword
         elif e.tag.split('}')[1] in ('if-stmt', 'if-then-stmt', 'else-if-stmt',
-                                     'where-construct-stmt', 'else-where-stmt',
+                                     'where-stmt', 'where-construct-stmt', 'else-where-stmt',
                                      'select-case-stmt', 'case-stmt',
                                      'forall-stmt', 'forall-construct-stmt'):
             if after_ifwherecase is not None and e.text is not None:
@@ -741,6 +742,9 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
                 c.tail = re.sub('\)[ ]*([a-zA-Z]*$)', ')' + ' ' * before_then + r'\1', c.tail)
             elif e.tag.split('}')[1] == 'if-stmt' and before_ifaction is not None:
                 c = e.find('{*}condition-E')
+                c.tail = re.sub('\)[ ]*$', ')' + ' ' * before_ifaction, c.tail)
+            elif e.tag.split('}')[1] == 'where-stmt' and before_ifaction is not None:
+                c = e.find('{*}mask-E')
                 c.tail = re.sub('\)[ ]*$', ')' + ' ' * before_ifaction, c.tail)
             elif e.tag.split('}')[1] == 'forall-stmt' and before_ifaction is not None:
                 s = e.find('{*}forall-triplet-spec-LT')
