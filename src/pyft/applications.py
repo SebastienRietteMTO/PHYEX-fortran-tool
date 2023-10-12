@@ -340,7 +340,6 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
         if len(varList) > 0: # = 0 in head of module scope
             locNode = loc[1]
             varArray,varArrayNamesList,localIntegers, loopIndexToCheck = [], [], [], []
-            Node_opE = locNode.findall('.//{*}a-stmt')
             whereConstruct = locNode.findall('.//{*}where-construct')
 #            arginCalls = locNode.findall('.//{*}call-stmt/{*}arg-spec/{*}arg')
             for var in varList:
@@ -355,12 +354,14 @@ def removeArraySyntax(doc,expandDoLoops=False,expandWhere=False):
                     if not inDoWhile:
                         expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray)
             if expandDoLoops:
+                Node_opE = locNode.findall('.//{*}a-stmt')
                 for node_opE in Node_opE:
                     inDoWhile = checkInDoWhile(locNode,node_opE)
                     if not inDoWhile:
                         # Expand single-line if-statement if any in front of an a-stmt with section-subscript (locally)
-                        if getParent(doc,node_opE,level=2).tag.endswith('}if-stmt') and len(node_opE.findall('.//{*}section-subscript')) > 0: # level=1 is action-stmt, need level=2 to get the if-stmt node
-                            changeIfStatementsInIfConstructs(doc, singleItem=getParent(doc,node_opE,level=2))
+                        parent2 = getParent(doc, node_opE, level=2)
+                        if parent2.tag.endswith('}if-stmt') and len(node_opE.findall('.//{*}section-subscript')) > 0: # level=1 is action-stmt, need level=2 to get the if-stmt node
+                            changeIfStatementsInIfConstructs(doc, singleItem=parent2)
                         loopIndexToCheck = expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexToCheck)
                 # Check loop index presence
                 for loopIndex in loopIndexToCheck:

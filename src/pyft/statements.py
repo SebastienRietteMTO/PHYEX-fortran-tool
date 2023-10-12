@@ -232,6 +232,7 @@ def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
     nodePar.insert(ind,node_where.findall('.//{*}do-construct')[0])
     nodePar.remove(node_where)
 
+@debugDecor
 def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexToCheck):
     """
     Remove the array syntax on a specific statement 
