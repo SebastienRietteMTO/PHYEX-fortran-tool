@@ -199,3 +199,7 @@ apply changeIfStatementsInIfConstructs as well.
 **\--applyCPP** apply ifdef key.
 
 **\--checkStackArginCall** check in all CALL statements if YLSTACK must be present.
+
+**\--mnhExpand** apply the mnh\_expand directives using DO loops.
+
+**\--mnhExpandConcurrent** apply the mnh\_expand directives using DO CONCURRENT loops.

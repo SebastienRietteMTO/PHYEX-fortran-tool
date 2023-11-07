@@ -10,7 +10,7 @@ from pyft.statements import Statements
 from pyft.util import tostring, tofortran, fortran2xml, set_verbosity, print_infos
 
 class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
-    DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-cpp', '-line-length', '9999']
+    DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-no-cpp', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None):

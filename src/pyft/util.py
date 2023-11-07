@@ -160,6 +160,33 @@ def tofortran(doc):
     return r
 
 ################################################################################
+### Other
+
+def isint(s):
+    """
+    :param s: string to test for intergerness
+    :return: True if s represent an int
+    """
+    try:
+        int(s)
+    except ValueError:
+        return False
+    else:
+        return True
+
+def isfloat(s):
+    """
+    :param s: string to test for intergerness
+    :return: True if s represent a real
+    """
+    try:
+        float(s)
+    except ValueError:
+        return False
+    else:
+        return True
+
+################################################################################
 ### Helper functions acting on the xml
 
 def getFileName(doc):

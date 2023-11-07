@@ -3,7 +3,8 @@ This module includes functions to act on statements
 """
 import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
-                       alltext,tostring, getIndexLoop, moveInGrandParent)
+                       alltext,tostring, getIndexLoop, moveInGrandParent, fortran2xml,
+                       isint, isfloat, PYFTError)
 from pyft.scope import (getScopeChildNodes, getScopeNode, getScopesList, getScopePath)
 from pyft.variables import removeVarIfUnused
         
@@ -26,7 +27,7 @@ def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
     ind=varArrayNamesList.index(varName)
     lowerBound = '1'
     upperBound = str(varArray[ind]['as'][indextoTransform][1]) #e.g. D%NIJT; D%NKT; KSIZE; KPROMA etc
-    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
     sub.insert(0,lowerXml)
     sub.insert(1,upperXml)
     sub.text = '' # Delete the initial ':'    
@@ -65,27 +66,31 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
                 break
             except:
                 pass
-            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
             sub.insert(0,lowerXml)
             sub.insert(1,upperXml)
             sub.text = '' # Delete the initial ':'
             # Create the DO statement
             indexLoop = getIndexLoop(lowerBound, upperBound)
-            doToBuild.append(createDoStmt(indexLoop,lowerBound,upperBound))
-        elif sub.text == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
-            upperBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-            doToBuild.append(createDoStmt(getIndexLoop('1',upperBound),'1',upperBound))
+            doToBuild.append(createDoConstruct({indexLoop:(lowerBound, upperBound)})[1])
+        elif sub.text is not None and sub.text.strip(' ') == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
+            u = sub.find('.//{*}upper-bound/{*}*/{*}*/{*}n')
+            if u is None:
+                #fxtran bug workaround
+                u = sub.find('.//{*}lower-bound/{*}*/{*}*/{*}n')
+            upperBound = alltext(u)
+            doToBuild.append(createDoConstruct({getIndexLoop('1', upperBound):('1', upperBound)})[1])
         elif len(sub.findall('.//{*}upper-bound')) == 0:
             if ':' in alltext(sub): # INDEX: e.g. (IKTB:) ==> IKTB:size(node_opE)
                 # Creation of the array-R object needed to be converted futher in parens-R
                 ind=varArrayNamesList.index(varName)
                 lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
                 upperBound = str(varArray[ind]['as'][i][1])
-                lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+                lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
                 sub.insert(0,lowerXml)
                 sub.insert(1,upperXml)
                 sub.text = '' # Delete the initial ':'
-                doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
             else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
                 pass
         else:
@@ -103,7 +108,7 @@ def aStmtToDoStmt(locNode, node_opE, varArrayNamesList, varArray, varName, onlyN
                 onlyNumbers = True
                 break
             else:
-                doToBuild.append(createDoStmt(getIndexLoop(lowerBoundvar, upperBoundvar),lowerBound,upperBound))
+                doToBuild.append(createDoConstruct({getIndexLoop(lowerBoundvar, upperBoundvar):(lowerBound, upperBound)})[1])
     return doToBuild, onlyNumbers
 
 @debugDecor
@@ -125,11 +130,11 @@ def E2StmtToDoStmt(node_astmt):
 #                    ind=varArrayNamesList.index(varName)
 #                    lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
 #                    upperBound = str(varArray[ind]['as'][i][1])
-#                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound)
+#                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
 #                    sub.insert(0,lowerXml)
 #                    sub.insert(1,upperXml)
 #                    sub.text = '' # Delete the initial ':'
-#                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+#                    doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
                     pass # This case does not exit yet in the form of PHYEX 0.5.0 : case of calling an elemental subroutine with calling arg such as A(IKTB:)
                 else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
                     pass
@@ -141,7 +146,7 @@ def E2StmtToDoStmt(node_astmt):
                 if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
                     break
                 else:
-                    doToBuild.append(createDoStmt(getIndexLoop(lowerBound, upperBound),lowerBound,upperBound))
+                    doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
     return doToBuild
 
 @debugDecor
@@ -220,10 +225,10 @@ def expandWhereConstruct(doc, node_where, locNode, varArrayNamesList, varArray):
                     k += 1
 
     # Insert the ifConstruct into the last object of finalToBuild before nesting the DO loop
-    finalToBuild[-1][0].insert(3,ifConstruct) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
+    finalToBuild[-1].insert(1, ifConstruct) # 0 = do-stmt; 1 = end-do-stmt, so insert before 1
     # Insert nested DO-loops into the previous object of finalToBuild until reach the 0e object
-    for i in range(len(finalToBuild)-1):
-        finalToBuild[len(finalToBuild)-1-(i+1)][0].insert(3,finalToBuild[len(finalToBuild)-1-i])
+    for i in range(len(finalToBuild) - 1):
+        finalToBuild[len(finalToBuild) - 1 - (i + 1)].insert(1, finalToBuild[len(finalToBuild) - 1 - i])
     moveInGrandParent(locNode,node_opE,nestedObj=finalToBuild)
 
     # Clean where-blocks and move first Do-stmt to where-construct parent
@@ -267,7 +272,8 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
                 doToBuild.reverse() # To write first loops from the latest index (K or SV)
 
                 for dostmt in doToBuild:
-                    if alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]) not in loopIndexToCheck:
+                    namedE = dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')
+                    if len(namedE) > 0 and alltext(namedE[0]) not in loopIndexToCheck:
                         loopIndexToCheck.append(alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]))
                 
                 # Replace the array-like index selection by index loop on all variables (array-R) except a variable is declared by single numbers
@@ -278,10 +284,10 @@ def expandArrays(doc, node_opE, locNode, varArrayNamesList, varArray, loopIndexT
                     if len(doToBuild)>0:
                         node_opE.tail = '\n'
                         # Specific treatment for Where-block
-                        doToBuild[-1][0].insert(3,node_opE) # 0 = do-V; 1 = lower-bound; 2 = upper-bound, so insert at 3
+                        doToBuild[-1].insert(1, node_opE) # 0 = do-stmt; 1 = end-do-stmt, so insert before 1
                         # Insert nested DO-loops into the previous object of doToBuild until reach the 0e object
                         for i in range(len(doToBuild)-1):
-                            doToBuild[len(doToBuild)-1-(i+1)][0].insert(3,doToBuild[len(doToBuild)-1-i])
+                            doToBuild[len(doToBuild) - 1 - (i + 1)].insert(1, doToBuild[len(doToBuild) - 1 - i])
                         moveInGrandParent(locNode,node_opE,nestedObj=doToBuild)
     return loopIndexToCheck
 
@@ -304,9 +310,13 @@ def arrayRtoparensR(doc,arrayR):
         if alltext(sub) == ':': # (:) only
             pass
             #try to guess from the dimension declaration (need to first find the element from varList)
-        elif sub.text == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
-            upperBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-            element.insert(0,createNamedENn(getIndexLoop('1',upperBound)))      
+        elif sub.text is not None and sub.text.strip(' ') == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
+            u = sub.find('.//{*}upper-bound/{*}*/{*}*/{*}n')
+            if u is None:
+                #fxtran bug workaround
+                u = sub.find('.//{*}lower-bound/{*}*/{*}*/{*}n')
+            upperBound = alltext(u)
+            element.insert(0, createExprPart(getIndexLoop('1',upperBound)))      
         elif len(sub.findall('.//{*}upper-bound')) == 0:
             if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
                 pass
@@ -317,7 +327,7 @@ def arrayRtoparensR(doc,arrayR):
             upperBounds=sub.findall('.//{*}upper-bound')
             lowerBound=alltext(lowerBounds[0])
             upperBound=alltext(upperBounds[0])
-            element.insert(0,createNamedENn(getIndexLoop(lowerBound,upperBound)))
+            element.insert(0, createExprPart(getIndexLoop(lowerBound,upperBound)))
         elementLT.append(element)
 
     for i in range(len(elementLT)-1):
@@ -342,62 +352,175 @@ def placeArrayRtoparensR(doc, locNode, node_opE):
         par.remove(node)
         
 @debugDecor
-def createDoStmt(loopIndexstr, lowerBoundstr, upperBoundstr):
+def createDoConstruct(loopVariables, indent=0, concurrent=False):
     """
-    Return a Do-construct node
-    :param loopIndexstr: string for the fortran loop index 
-    :param lowerBoundstr: string for the fortran lower bound of the do loop
-    :param upperBoundstr: string for the fortran upper bound of the do loop
+    :param loopVariables: ordered dictionnary with loop variables as key and bounds as values.
+                          Bounds are expressed with a 2-tuple.
+                          Keys must be in the same order as the order used when addressing an element:
+                            if loopVariables.keys is [JI, JK], arrays are addressed with (JI, JK)
+    :param indent: current indentation
+    :param concurrent: if False, output is made of nested 'DO' loops
+                       if True, output is made of a single 'DO CONCURRENT' loop
+    :return: (inner, outer, extraindent) with
+              - inner the inner do-construct where statements must be added
+              - outer the outer do-construct to be inserted somewhere
+              - extraindent the number of added indentation (2 if concurrent else 2*len(loopVariables))
     """
-    doConstruct = ET.Element('{http://fxtran.net/#syntax}do-construct')
-    doStmt = ET.Element('{http://fxtran.net/#syntax}do-stmt')
-    doStmt.text = 'DO '
-    enddoStmt = ET.Element('{http://fxtran.net/#syntax}end-do-stmt')
-    enddoStmt.text = 'END DO'
-    enddoStmt.tail = '\n'
-    doV = ET.Element('{http://fxtran.net/#syntax}do-V')
-    doV.tail = '='
-    doV.insert(0,createNamedENn(loopIndexstr))
-    lowerBound, upperBound = createArrayBounds(lowerBoundstr, upperBoundstr,forDoLoop=True)
-    doConstruct.insert(0,doStmt)
-    doStmt.insert(0,doV)
-    doStmt.insert(1,lowerBound)
-    doStmt.insert(2,upperBound)
-    doStmt.insert(3,enddoStmt)
-    return doConstruct
+    if concurrent:
+        #<f:do-construct>
+        #  <f:do-stmt>DO CONCURRENT (
+        #    <f:forall-triplet-spec-LT>
+        #      <f:forall-triplet-spec>
+        #        <f:V><f:named-E><f:N><f:n>JIJ</f:n></f:N></f:named-E></f:V>=
+        #        <f:lower-bound><f:named-E><f:N><f:n>IIJB</f:n></f:N></f:named-E></f:lower-bound>:
+        #        <f:upper-bound><f:named-E><f:N><f:n>IIJE</f:n></f:N></f:named-E></f:upper-bound>
+        #      </f:forall-triplet-spec>,
+        #      <f:forall-triplet-spec>
+        #        <f:V><f:named-E><f:N><f:n>JK</f:n></f:N></f:named-E></f:V>=
+        #        <f:lower-bound><f:literal-E><f:l>1</f:l></f:literal-E></f:lower-bound>:
+        #        <f:upper-bound><f:named-E><f:N><f:n>IKT</f:n></f:N></f:named-E></f:upper-bound>
+        #      </f:forall-triplet-spec>
+        #    </f:forall-triplet-spec-LT>)
+        #  </f:do-stmt>
+        #  statements
+        #  <f:end-do-stmt>END DO</f:end-do-stmt>
+        #</f:do-construct>
+        triplets = []
+        for v, (l, u) in list(loopVariables.items())[::-1]: #Better for vectorisation with some compilers
+            V = ET.Element('{http://fxtran.net/#syntax}V')
+            V.append(createExprPart(v))
+            V.tail = '='
+            lower, upper = createArrayBounds(l, u, 'DOCONCURRENT')
+
+            triplet = ET.Element('{http://fxtran.net/#syntax}forall-triplet-spec')
+            triplet.extend([V, lower, upper])
+
+            triplets.append(triplet)
+
+        tripletLT = ET.Element('{http://fxtran.net/#syntax}forall-triplet-spec-LT')
+        tripletLT.tail = ')'
+        for triplet in triplets[:-1]:
+            triplet.tail = ', '
+        tripletLT.extend(triplets)
+
+        dostmt = ET.Element('{http://fxtran.net/#syntax}do-stmt')
+        dostmt.text = 'DO CONCURRENT ('
+        dostmt.tail = '\n'
+        dostmt.append(tripletLT)
+        enddostmt = ET.Element('{http://fxtran.net/#syntax}end-do-stmt')
+        enddostmt.text = 'END DO'
+
+        doconstruct = ET.Element('{http://fxtran.net/#syntax}do-construct')
+        doconstruct.extend([dostmt, enddostmt])
+        doconstruct.tail = '\n'
+        inner = outer = doconstruct
+        doconstruct[0].tail += (indent + 2) * ' ' #Indentation for the statement after DO
+    else:
+        #<f:do-construct>
+        #  <f:do-stmt>DO
+        #    <f:do-V><f:named-E><f:N><f:n>JRR</f:n></f:N></f:named-E></f:do-V> =
+        #    <f:lower-bound><f:literal-E><f:l>1</f:l></f:literal-E></f:lower-bound>:
+        #    <f:upper-bound><f:named-E><f:N><f:n>IKT</f:n></f:N></f:named-E></f:upper-bound>
+        #  </f:do-stmt>\n
+        #  statements \n
+        #  <f:end-do-stmt>END DO</f:end-do-stmt>
+        #</f:do-construct>\n
+        def make_do(v, l, u):
+            doV = ET.Element('{http://fxtran.net/#syntax}do-V')
+            doV.append(createExprPart(v))
+            doV.tail = '='
+            lower, upper = createArrayBounds(l, u, 'DO')
+
+            dostmt = ET.Element('{http://fxtran.net/#syntax}do-stmt')
+            dostmt.text = 'DO '
+            dostmt.tail = '\n'
+            dostmt.extend([doV, lower, upper])
+
+            enddostmt = ET.Element('{http://fxtran.net/#syntax}end-do-stmt')
+            enddostmt.text = 'END DO'
+
+            doconstruct = ET.Element('{http://fxtran.net/#syntax}do-construct')
+            doconstruct.extend([dostmt, enddostmt])
+            doconstruct.tail = '\n'
+            return doconstruct
+
+        outer = None
+        inner = None
+        for i, (v, (l, u)) in enumerate(list(loopVariables.items())[::-1]):
+            doconstruct = make_do(v, l, u)
+            doconstruct[0].tail += (indent + 2 * i + 2) * ' ' #Indentation for the statement after DO
+            if outer is None:
+                outer = doconstruct
+                inner = doconstruct
+            else:
+                inner.insert(1, doconstruct)
+                inner = doconstruct
+                doconstruct.tail += (indent + 2 * i - 2) * ' ' #Indentation for the ENDDO statement
+    return inner, outer, 2 if concurrent else 2 * len(loopVariables)
 
 @debugDecor
-def createArrayBounds(lowerBoundstr, upperBoundstr, forDoLoop=False):
+def createArrayBounds(lowerBoundstr, upperBoundstr, context):
     """
     Return a lower-bound and upper-bound node
     :param lowerBoundstr: string for the fortran lower bound of an array
     :param upperBoundstr: string for the fortran upper bound of an array
-    :param forDoLoop: True for do loops; False for arrays
+    :param context: 'DO' for DO loops
+                    'DOCONCURRENT' for DO CONCURRENT loops
+                    'ARRAY' for arrays
     """
     lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
-    lowerBound.insert(0,createNamedENn(lowerBoundstr))
+    lowerBound.insert(0, createExprPart(lowerBoundstr))
     upperBound = ET.Element('{http://fxtran.net/#syntax}upper-bound')
-    upperBound.insert(0,createNamedENn(upperBoundstr))
-    if forDoLoop:
+    upperBound.insert(0, createExprPart(upperBoundstr))
+    if context == 'DO':
         lowerBound.tail = ','
-        upperBound.tail = '\n  '
-    else:
+    elif context in ('DOCONCURRENT', 'ARRAY'):
         lowerBound.tail = ':'
-    return lowerBound,upperBound    
+    else:
+        raise PYFTError('Context unknown in createArrayBounds: {c}'.format(c=str(context)))
+    return lowerBound, upperBound    
     
 @debugDecor
-def createNamedENn(text=' '):
+def createExprPart(value):
     """
-    Return a <named-E/><N><n>text</n></N></named-E> node
-    :param text: string
+    :param value: expression part to put in a *-E node
+
+    If value is:
+      - a FORTRAN string (python sting containing a ' or a "), returns
+        <f:string-E><f:S>...
+      - a FORTRAN value (python string convertible in real or int, or .FALSE./.TRUE.), returns
+        <f:literal-E><f:l>...
+      - a FORTRAN variable name (pyhon string with only alphanumerical characters and _), returns
+        <named-E/><N><n>...
+      - a FORTRAN operation (other python string), returns the right part of the X affectation statement
+        of the code: "SUBROUTINE T; X=" + value + "; END". The xml is obtained by calling fxtran.
     """
-    namedE = ET.Element('{http://fxtran.net/#syntax}named-E')
-    N = ET.Element('{http://fxtran.net/#syntax}N')
-    n = ET.Element('{http://fxtran.net/#syntax}n')
-    n.text = text
-    namedE.insert(0,N)
-    N.insert(0,n)
-    return namedE
+
+    #Allowed characters in a FORTRAN variable name
+    allowed = "abcdefghijklmnopqrstuvwxyz"
+    allowed += allowed.upper() + '0123456789_'
+
+    if "'" in value or '"' in value:
+        S = ET.Element('{http://fxtran.net/#syntax}S')
+        S.text = value
+        node = ET.Element('{http://fxtran.net/#syntax}string-E')
+        node.append(S)
+    elif isint(value) or isfloat(value) or value.upper() in ('.TRUE.', '.FALSE.'):
+        l = ET.Element('{http://fxtran.net/#syntax}l')
+        l.text = value
+        node = ET.Element('{http://fxtran.net/#syntax}literal-E')
+        node.append(l)
+    elif all([c in allowed for c in value]):
+        n = ET.Element('{http://fxtran.net/#syntax}n')
+        n.text = value
+        N = ET.Element('{http://fxtran.net/#syntax}N')
+        N.append(n)
+        node = ET.Element('{http://fxtran.net/#syntax}named-E')
+        node.append(N)
+    else:
+        _, xml = fortran2xml("SUBROUTINE T; X={v}; END".format(v=value))
+        node = xml.find('.//{*}E-2')[0]
+    return node
 
 @debugDecor
 def createIfThenElseConstruct(nodeConditionE, nbelseBlock):

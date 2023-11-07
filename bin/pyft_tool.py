@@ -153,6 +153,11 @@ if __name__ == '__main__':
                                help='Apply ifdef key')
     gApplications.add_argument('--checkStackArginCall', default=False, action='store_true',
                                help='Check in all CALL statements if YLSTACK must be present')
+    gApplications.add_argument('--mnhExpand', default=False, action='store_true',
+                               help='Apply the mnh_expand directives with DO loops')
+    gApplications.add_argument('--mnhExpandConcurrent', default=False, action='store_true',
+                               help='Apply the mnh_expand directives with DO CONCURRENT loops')
+
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -191,9 +196,11 @@ if __name__ == '__main__':
 
     #Opening and reading of the FORTRAN file
     if args.parserOption is None:
-        parserOptions = None
+        parserOptions = PYFT.DEFAULT_FXTRAN_OPTIONS.copy()
     else:
         parserOptions = [el for elements in args.parserOption for el in elements]
+    if args.addIncludes:
+        parserOptions = [opt for opt in parserOptions if opt not in ('-no-include', '-noinclude')]
     pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions, verbosity=args.logLevel)
 
     #File name manipulations
@@ -235,6 +242,9 @@ if __name__ == '__main__':
     if args.expandWhere: pft.removeArraySyntax(expandWhere = True)
     if args.expandAllArrays: pft.removeArraySyntax(expandDoLoops = True, expandWhere = True)
     if args.removeIJLoops: pft.removeIJLoops()
+    assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
+    if args.mnhExpand: pft.mnhExpand()
+    if args.mnhExpandConcurrent: pft.mnhExpand(concurrent=True)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()

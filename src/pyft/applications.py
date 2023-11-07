@@ -2,16 +2,20 @@
 This module implements functions for high-to-moderate level transformation
 """
 
+import logging
 import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, debugDecor,getIndexLoop, checkInDoWhile,
-                       alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml)
-from pyft.statements import (removeCall, setFalseIfStmt, createDoStmt,arrayRtoparensR, createArrayBounds,
+                       alltext,tostring,getParent,getSiblings,moveInGrandParent,fortran2xml,
+                       PYFTError, isint, getFileName)
+from pyft.statements import (removeCall, setFalseIfStmt, arrayRtoparensR,
                              createIfThenElseConstruct, removeStmtNode, expandWhereConstruct, expandArrays,
-                             placeArrayRtoparensR, createNamedENn, convertColonArrayinDim,E2StmtToDoStmt)
+                             placeArrayRtoparensR, createExprPart, convertColonArrayinDim,E2StmtToDoStmt,
+                             createDoConstruct)
 from pyft.variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
 from pyft.cosmetics import changeIfStatementsInIfConstructs
 from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath
 import copy
+import re
 
 @debugDecor
 def addIncludes(doc):
@@ -816,7 +820,7 @@ def removeIJLoops(doc):
                                             lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
                                             loopIndex = 'J' + upperBound.replace('D%N','')
                                             loopIndex = loopIndex.replace('T','')
-                                            lowerBound.insert(0,createNamedENn(loopIndex))
+                                            lowerBound.insert(0, createExprPart(loopIndex))
                                             sub.insert(0,lowerBound)
                                             if loopIndex not in indexRemoved:
                                                 indexRemoved.append(loopIndex)
@@ -859,6 +863,236 @@ def removePHYEXUnusedLocalVar(doc, scopePath=None, excludeList=None, simplify=Fa
             elems = node.text.split('(')[1].split(')')[0].split(',')
             excludeList.extend([v.strip().upper() for v in [e.split('=')[0] for e in elems]])
     return removeUnusedLocalVar(doc, scopePath=scopePath, excludeList=excludeList, simplify=simplify)
+
+@debugDecor
+def mnhExpand(doc, concurrent=False):
+    """
+    Transform array syntax between mnh_expand directives into do loops
+    :param doc: etree to use
+    :param concurrent: use 'DO CONCURRENT' instead of simple 'DO' loops
+
+    Notes: with the flexibility of fxtran, we could (as done by the expandArrays function)
+           perform this transformation without the informations contained in the mnh_expand
+           directives. But, the transformation will still be done with the filepp/mnh_expand
+           tools, so this function makes use of this information and use the fxtran capabilities
+           to check if the coding is conform to what is needed for the filepp/mnh_expand tool:
+           - all arrays use '(' and ')'; for example A=A+1 is illegal
+    """
+    def decode(directive):
+        """
+        Decode mnh_expand directive
+        :param directive: mnh directive text
+        :return: (table, kind) where
+                 table is a dictionnary: keys are variable names, values are tuples with first and last index
+                 kind is 'array' or 'where'
+        """
+        #E.g. !$mnh_expand_array(JIJ=IIJB:IIJE,JK=1:IKT)
+        #We expect that the indexes are declared in the same order as the one they appear in arrays
+        #For the example given, arrays are addressed with (JIJ, JK)
+        table = directive.split('(')[1].split(')')[0].split(',')
+        table = {c.split('=')[0]:c.split('=')[1].split(':') for c in table} #ordered since python 3.7
+        if directive.lstrip(' ').startswith('!$mnh_expand'):
+            kind = directive[13:].lstrip(' ').split('(')[0].strip()
+        else:
+            kind = directive[17:].lstrip(' ').split('(')[0].strip()
+        return table, kind
+
+    def arrayR2parensR(RLT, table):
+        """
+        Transform a array-R into a parens-R node by replacing slices by variables
+        In 'A(:)', the ':' is in a array-R node whereas in 'A(JL)', 'JL' is in a parens-R node.
+        Both the array-R and the parens-R nodes are inside a R-LT node
+        :param RLT: a R-LT node
+        :param table: dictionnary retruned by the decode function
+        """
+        if RLT[0].tag.split('}')[1] == 'array-R':
+            parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
+            parensR.text = '('
+            parensR.tail = ')'
+            elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
+            parensR.append(elementLT)
+            ivar = -1
+            for ss in RLT[0].findall('./{*}section-subscript-LT/{*}section-subscript'):
+                element = ET.Element('{http://fxtran.net/#syntax}element')
+                element.tail = ', '
+                elementLT.append(element)
+                if ':' in alltext(ss):
+                    ivar += 1
+                    v = list(table.keys())[ivar] #variable name
+                    lower = ss.find('./{*}lower-bound')
+                    upper = ss.find('./{*}upper-bound')
+                    if lower is not None and ss.text is not None and ':' in ss.text:
+                        #fxtran bug workaround
+                        upper = lower
+                        lower = None
+                    if lower is None and upper is None:
+                        #E.g. 'A(:)'
+                        element.append(createExprPart(v))
+                    elif lower is not None and upper is not None:
+                        #E.g.:
+                        #!$mnh_expand_array(JI=2:15)
+                        #A(2:15)
+                        newlower = alltext(lower).replace(table[v][0], v)
+                        newupper = alltext(upper).replace(table[v][1], v)
+                        if newlower.replace(' ', '') != newupper.replace(' ', '') or \
+                           newlower == alltext(lower):
+                            raise PYFTError("Don't know hot to do with '{l}:{u}'".format(l=alltext(lower),
+                                                                                         u=alltext(upper)))
+                        element.append(createExprPart(newlower))
+                    else:
+                        ltext = alltext(lower) if lower is not None else ''
+                        utext = alltext(upper) if upper is not None else ''
+                        raise PYFTError("Don't know hot to do with '{l}:{u}'".format(l=ltext,
+                                                                                     u=utext))
+                else:
+                    element.append(ss.find('./{*}lower-bound'))
+            element.tail = None #last element
+            RLT.remove(RLT[0])
+            RLT.append(parensR)
+
+    def updateStmt(doc, e, table, kind, extraindent, parent):
+        """
+        Updates the statement given the table dictionnary '(:, :)' is replaced by '(JI, JK)' if
+        table.keys() is ['JI', 'JK']
+        :param e: statement to update
+        :param table: dictionnary retruned by the decode function
+        :param kind: kind of mnh directives: 'array' or 'where'
+                                             or None if transformation is not governed by mnh directive
+        """
+        def add_extra(node, extra):
+            if extra != 0 and (not node.tail is None) and '\n' in node.tail:
+                #We add indentation after new line only
+                #- if tail already contains a '\n' to discard
+                #  a-stmt followed by a comment
+                #  or '&' immediatly followed by something at the beginning of a line
+                #- if not folowed by another new line (with optional space in between)
+                node.tail = re.sub(r"(\n[ ]*)(\Z|[^\n ]+)", r"\1" + extra * ' ' + r"\2", node.tail)
+        add_extra(e, extraindent)
+        if e.tag.split('}')[1] == 'C':
+            pass
+        elif e.tag.split('}')[1] == 'cpp':
+            i = list(parent).index(e)
+            if i == 0:
+                #In this case, it would be a solution to add an empty comment before the
+                #node e to easilty control the indentation contained in the tail
+                raise PYFTError("How is it possible?")
+            parent[i - 1].tail = parent[i - 1].tail.rstrip(' ')
+        elif e.tag.split('}')[1] == 'a-stmt':
+            sss = e.findall('./{*}E-1/{*}named-E/{*}R-LT/{*}array-R/' + \
+                            '{*}section-subscript-LT/{*}section-subscript')
+            if len([ss for ss in sss if ':' in alltext(ss)]) != len(table):
+                raise PYFTError("Inside code sections to transform in DO loops, all affectations must use ':'.")
+            if e.find('./{*}E-1/{*}named-E/{*}N').tail is not None and kind is not None:
+                raise PYFTError("To keep the compatibility with the filepp version of loop " + \
+                                "expansion, nothing must appear between array names and opening " + \
+                                "parethesis inside mnh directive sections.")
+            #We loop on R-LT nodes (and not directly on array-R nodes to prevent using the costly getParent)
+            for RLT in e.findall('.//{*}R-LT'):
+                arrayR2parensR(RLT, table)
+            for cnt in e.findall('.//{*}cnt'):
+                add_extra(cnt, extraindent)
+        elif e.tag.split('}')[1] == 'if-stmt':
+            logging.warning("An if statement is inside a code " + \
+                            "section transformed in DO loo in {f}".format(f=getFileName(doc)))
+            updateStmt(doc, e.find('./{*}action-stmt')[0], table, kind, 0, e)
+        elif e.tag.split('}')[1] == 'if-construct':
+            logging.warning("An if construct is inside a code " + \
+                            "section transformed in DO loop in {f}".format(f=getFileName(doc)))
+            for ifBlock in e.findall('./{*}if-block'):
+                for child in ifBlock:
+                    if child.tag.split('}')[1] not in ('if-then-stmt', 'else-if-stmt', 'else-stmt', 'end-if-stmt'):
+                        updateStmt(doc, child, table, kind, extraindent, ifBlock)
+                    else:
+                        add_extra(child, extraindent)
+                        for cnt in child.findall('.//{*}cnt'):
+                            add_extra(cnt, extraindent)
+        #elif e.tag.split('}')[1] == 'where-stmt':
+        #    updateStmt(doc, e.find('./{*}action-stmt')[0], table, kind, extraindent, e)
+        elif e.tag.split('}')[1] == 'where-construct':
+            if kind != 'where' and kind is not None:
+                raise PYFTError('To keep the compatibility with the filepp version of loop " + \
+                                "expansion, no where construct must appear in mnh_expand_array blocks.')
+            e.tag = e.tag.split('}')[0] + '}if-construct'
+            for whereBlock in e.findall('./{*}where-block'):
+                whereBlock.tag = whereBlock.tag.split('}')[0] + '}if-block'
+                for child in whereBlock:
+                    if child.tag.split('}')[1] == 'end-where-stmt':
+                        child.tag = child.tag.split('}')[0] + '}end-if-stmt'
+                        child.text = 'END IF'
+                        add_extra(child, extraindent)
+                    elif child.tag.split('}')[1] in ('where-construct-stmt', 'else-where-stmt'):
+                        add_extra(child, extraindent)
+                        if child.tag.split('}')[1] == 'where-construct-stmt':
+                            child.tag = child.tag.split('}')[0] + '}if-then-stmt'
+                            child.text = 'IF (' + child.text.split('(', 1)[1]
+                        else:
+                            if '(' in child.text:
+                                child.tag = child.tag.split('}')[0] + '}else-if-stmt'
+                                child.text = 'ELSE IF (' + child.text.split('(', 1)[1]
+                            else:
+                                child.tag = child.tag.split('}')[0] + '}else-stmt'
+                                child.text = 'ELSE'
+                        for mask in child.findall('./{*}mask-E'):
+                            mask.tag = mask.tag.split('}')[0] + '}condition-E'
+                            mask.tail += ' THEN'
+                            for RLT in mask.findall('.//{*}R-LT'):
+                                arrayR2parensR(RLT, table)
+                        for cnt in child.findall('.//{*}cnt'):
+                            add_extra(cnt, extraindent)
+                    else:
+                        updateStmt(doc, child, table, kind, extraindent, whereBlock)
+        else:
+            raise PYFTError('Unexpected tag found in mnh_expand directives: {t}'.format(t=e.tag.split('}')[1]))
+        return e
+
+    toinsert = [] #list of nodes to insert
+    toremove = [] #list of nodes to remove
+    def recur(elem):
+        in_mnh = False
+        for ie, e in enumerate(list(elem)): #we loop on elements in the natural order
+            if e.tag.split('}')[1] == 'C' and e.text.lstrip(' ').startswith('!$mnh_expand'):
+                if in_mnh:
+                    raise PYFTError('Nested mnh_directives are not allowed')
+                in_mnh = True
+
+                #Directive decoding
+                table, kind = decode(e.text)
+                indent = len(e.tail) - len(e.tail.rstrip(' '))
+                toremove.append((elem, e))
+                if ie != 0:
+                    #keep all but one new line characters
+                    if elem[ie - 1].tail is None: elem[ie - 1].tail = ''
+                    elem[ie - 1].tail += e.tail.replace('\n', '', 1).rstrip(' ')
+                inner, outer, extraindent = createDoConstruct(table, indent=indent, concurrent=concurrent)
+                toinsert.append((elem, outer, ie))
+
+            elif e.tag.split('}')[1] == 'C' and e.text.lstrip(' ').startswith('!$mnh_end_expand'):
+                if not in_mnh:
+                    raise PYFTError('End mnh_directive found before begin directive')
+                if (table, kind) != decode(e.text):
+                    raise PYFTError("Opening and closing mnh directives must be conform")
+                in_mnh = False
+                toremove.append((elem, e))
+                outer.tail += e.tail.replace('\n', '', 1) #keep all but one new line characters
+                elem[ie - 1].tail = elem[ie - 1].tail[:-2] #previous item controls the position of ENDDO
+
+            elif in_mnh:
+                toremove.append((elem, e))
+                inner.insert(-1, e) #Insert first
+                updateStmt(doc, e, table, kind, extraindent, inner) #then update, providing new parent in argument
+
+            elif len(e) >= 1:
+                recur(e)
+
+    recur(doc)
+    #First, element insertion by reverse order
+    for elem, outer, ie in toinsert[::-1]:
+        elem.insert(ie, outer)
+    #Then, suppression
+    for parent, elem in toremove:
+        parent.remove(elem)
+
+    return doc
 
 class Applications():
     @copy_doc(addStack)
@@ -904,3 +1138,7 @@ class Applications():
     @copy_doc(inlineContainedSubroutines)
     def inlineContainedSubroutines(self, *args, **kwargs):
         return inlineContainedSubroutines(self._xml, *args, **kwargs)
+
+    @copy_doc(mnhExpand)
+    def mnhExpand(self, *args, **kwargs):
+        return mnhExpand(self._xml, *args, **kwargs)
