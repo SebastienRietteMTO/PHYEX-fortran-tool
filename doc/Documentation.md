@@ -180,15 +180,9 @@ call statements must be suppressed (it is a scope as described in [Concepts](#co
 **\--deleteNonColumnCalls** delete call to routines that needs information on horizontal
 points (multiple column dependency).
 
-**\--expandDoLoops** expand array syntax into explicit DO loops
-apply changeIfStatementsInIfConstructs as well.
-
-**\--expandWhere** expand where into explicit DO loops.
-
 **\--removeIJLoops** remove DO loops on I and J dimensions (1, KLON).
 
-**\--expandAllArrays** expand all array syntax (computing and where block)
-apply changeIfStatementsInIfConstructs as well.
+**\--expandAllArrays** expand all array syntax (computing and where block).
 
 **\--inlineContainedSubroutines** inline containted subroutines in main routine.
 

@@ -818,7 +818,7 @@ def updateSpaces(doc, before_op=1, after_op=1, in_operator=True,
     return doc
 
 @debugDecor
-def changeIfStatementsInIfConstructs(doc,singleItem=''):
+def changeIfStatementsInIfConstructs(doc, singleItem=None, parent=None):
     """
     Convert if-stmt to if-then-stmt. If singleItem is not filled, conversion to all doc is performed.
     E.g., before :
@@ -830,32 +830,61 @@ def changeIfStatementsInIfConstructs(doc,singleItem=''):
     Conversion is not done if 'CYLE' is found in action-stmt 
     :param doc: etree to use or parent of singleItem
     :param singleItem: single if-stmt; in case transformation is applied on one if-stmt only
+    :param parent: parent of singleItem, if not provided will be recomputed
     :return: modified doc
     """
-    if singleItem:
+    if singleItem is not None:
         ifstmt = [singleItem]
     else:
         ifstmt = doc.findall('.//{*}if-stmt')
     for item in ifstmt:
         cycleStmt = item.findall('.//{*}cycle-stmt')
         if len(cycleStmt) == 0:
-            par = getParent(doc,item)
-            # Convert if-stmt to if-then-stmt and save current indentation from last sibling
-            item.tag = '{http://fxtran.net/#syntax}if-then-stmt'
-            if par[par[:].index(item)-1].tail: # if tail of previous sibling exists
-                curr_indent = par[par[:].index(item)-1].tail.replace('\n', '')
+            #Get indentation from last sibling
+            if singleItem is not None and parent is not None:
+                par = parent
+            else:
+                par = getParent(doc, item)
+            ind = par[:].index(item)
+            if ind != 0 and par[ind - 1].tail is not None: # if tail of previous sibling exists
+                curr_indent = len(par[ind - 1].tail) - len(par[ind - 1].tail.rstrip(' '))
             else: # no tail = no indentation
-                curr_indent = ""
-            # Indentation is applied on current item.tail (for next Fortran line)
-            item[0].tail += 'THEN\n' + curr_indent + '  '
-            # Add end-if-stmt to the parent of the if-stmt
-            endiftag = ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
-            endiftag.tail = '\n' + curr_indent + 'END IF'
-            item.append(endiftag)
-            par[par[:].index(item)].extend(endiftag)
-            # Remove cnt tag if any
-            for i in item.findall('./{*}cnt'):
-                item.remove(i)
+                curr_indent = 0
+
+            #Convert if-stmt into if-construct
+            #<if-stmt>IF(<condition-E>...</condition-E>) <f:action-stmt>...</f:action-stmt></f:if-stmt>
+            #<if-construct><if-block><if-then-stmt>IF(<f:condition-E>...</condition-E>) THEN</f:if-then-stmt>
+            #                        ...
+            #                        <f:end-if-stmt>ENDIF</f:end-if-stmt></f:if-block></f:if-construct>
+            #1 create missing blocks
+            item.tag = item.tag.split('}')[0] + '}if-construct'
+            ifBlock = ET.Element('{http://fxtran.net/#syntax}if-block')
+            ifThenStmt = ET.Element('{http://fxtran.net/#syntax}if-then-stmt')
+            endif = ET.Element('{http://fxtran.net/#syntax}end-if-stmt')
+            ifBlock.append(ifThenStmt)
+            item.append(ifBlock)
+            #2 move 'IF(' text
+            ifThenStmt.text = item.text #copy 'IF(' text
+            ifThenStmt.tail = '\n' + (2 + curr_indent) * ' ' #indentation for the main statement
+            item.text = None #remove olf 'IF(' text
+            #3 move condition and add THEN
+            condition = item.find('{*}condition-E')
+            if not condition.tail.endswith(' '):
+                condition.tail += ' '
+            condition.tail += 'THEN'
+            ifThenStmt.append(condition)
+            item.remove(condition)
+            #4 move action
+            action = item.find('{*}action-stmt')
+            action[0].tail = '\n' + curr_indent * ' ' #indentation for the ENDIF
+            ifBlock.append(action[0])
+            item.remove(action)
+            #5 add ENDIF
+            endif.text = 'END IF'
+            ifBlock.append(endif)
+            #6 remove any cnt which was directly in the if-stmt node (replaced by '\n' after THEN)
+            for cnt in item.findall('./{*}cnt'):
+                item.remove(cnt)
 
 @debugDecor
 def reDimKlonArrayToScalar(doc):

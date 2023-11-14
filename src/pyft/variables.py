@@ -4,7 +4,7 @@ This module implements functions to deal with variables
 
 from pyft.util import (copy_doc, PYFTError, debugDecor,
                        tostring, alltext, getFileName, removeFromList, getParent,
-                       getSiblings, insertInList, fortran2xml, isExecutableStmt, n2name)
+                       getSiblings, insertInList, fortran2xml, isExecutable, n2name)
 from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList
 from xml.etree.ElementTree import Element
 import logging
@@ -27,6 +27,7 @@ def getVarList(doc, scopePath=None):
               - use: false if variable is not a module variable
                      module name otherwise
               - opt: true if variable is optional
+              -scope: its scope
     Notes: - variables are found in modules only if the 'ONLY' attribute is used
            - array specification and type is unknown for module variables
            - function is not able to follow the 'ASSOCIATE' statements
@@ -80,7 +81,7 @@ def getVarList(doc, scopePath=None):
                 result.append({'as': as_list if len(as0_list) == 0 else as0_list,
                                'asx': asx_list if len(asx0_list) == 0 else asx0_list,
                                'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
-                               'use':False, 'opt': opt_spec})
+                               'use':False, 'opt': opt_spec, 'scope': loc})
 
         #Loop on each use statement
         use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
@@ -89,7 +90,7 @@ def getVarList(doc, scopePath=None):
             for v in use_stmt.findall('.//{*}use-N'):
                 n = n2name(v.find('.//{*}N'))
                 result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
-                               'n': n, 'use': module})
+                               'n': n, 'use': module, 'scope': loc})
 
     return result
 
@@ -428,7 +429,7 @@ def addVar(doc, varList):
         #The following test is needed in case several variables are added in the argument list
         #but the declaration statement is given only once for all the variables
         if declStmt is not None and declStmt != '':
-            #Declaration statement tag according to path (memeber of type declaration or not)
+            #Declaration statement tag according to path (member of type declaration or not)
             declStmtTag = _getDeclStmtTag(path)
 
             if path.split('/')[-1].split(':')[0] == 'type':
@@ -460,13 +461,13 @@ def addVar(doc, varList):
                     index = list(locNode).index(declLst[-1]) + 1
                 else:
                     #There is no declaration statement
-                    stmtLst = [node for node in getScopeChildNodes(doc, locNode) if isExecutableStmt(node)] #list of executable nodes
+                    stmtLst = [node for node in getScopeChildNodes(doc, locNode) if isExecutable(node)] #list of executable nodes
                     if len(stmtLst) == 0:
                         #There is no executable statement, we insert the declaration at the end
                         index = len(locNode) - 1 #Last node is the ending node (e.g. end-subroutine-stmt)
                     else:
                         #We insert the declaration just before the first executable statement
-                        index = list(locNode).index(stmtLst[-1])
+                        index = list(locNode).index(stmtLst[0])
 
                 #node insertion
                 if index != 0:
@@ -654,6 +655,44 @@ def removeUnusedLocalVar(doc, scopePath=None, excludeList=None, simplify=False):
                             for v in getVarList(doc, loc) if v['n'].upper() not in excludeList]
 
     removeVarIfUnused(doc, allVar, excludeDummy=True, excludeModule=True, simplify=simplify)
+
+@debugDecor
+def findVar(doc, varName, currentScope, varList=None, array=None, exactScope=False):
+        """
+        Search for a variable in a list of declared variables
+        :param doc: etree to use
+        :param varName: variable name
+        :param currentScope: current scope
+        :param varList: list of declared variables such as returned by getVarList, None to build this list
+        :param array: True to limit search to arrays, False to limit search to non array, None to return anything
+        :param exactScope: True to limit search to variables declared in the currentScope
+        :return: None if not found or the description of the variable
+
+        The function is designed to return the declaration of a given variable.
+        If we know that the variable is (is not) an array, the last declaration statement
+        must (must not) be an array declaration. If the last declaration statement found doesn't
+        correspond to what is expected, we don't return it.
+        In case array is None, we return the last declaration statement without checking its kind.
+        """
+        if varList is None:
+            varList = getVarList(doc)
+        #Select all the variables declared in the current scope or upper, then select the last declared
+        candidates = {v['scope']:v for v in varList
+                      if v['n'].upper() == varName.upper() and \
+                         (((not exactScope) and currentScope.startswith(v['scope'])) or \
+                          (     exactScope  and currentScope == v['scope']         ))}
+        if len(candidates) > 0:
+            last = candidates[max(candidates, key=len)]
+            if array is True and last.get('as', None) is not None and len(last['as']) > 0:
+                return last
+            elif array is False and len(last.get('as', [])) == 0:
+                return last
+            elif array is None:
+                return last
+            else:
+                return None
+        else:
+            return None
 
 class Variables():
     @copy_doc(getVarList)

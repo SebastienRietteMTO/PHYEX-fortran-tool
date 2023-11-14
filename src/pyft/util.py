@@ -217,18 +217,25 @@ def non_code(e):
     """
     return e.tag.split('}')[1] in {'cnt', 'C', 'cpp'}
 
-def isExecutableStmt(e):
+def isExecutable(e):
     """
     :param e: element
-    :return: True if element is an executable statement
+    :return: True if element is executable
     """
-    return isStmt(e) and \
+    return (isStmt(e) or isConstruct(e)) and \
            not e.tag.split('}')[1] in {'subroutine-stmt', 'end-subroutine-stmt',
                                        'function-stmt', 'end-function-stmt',
                                        'use-stmt', 'T-decl-stmt', 'component-decl-stmt',
                                        'T-stmt', 'end-T-stmt',
                                        'data-stmt', 'save-stmt',
                                        'implicit-none-stmt'}
+
+def isConstruct(e):
+    """
+    :param e: element
+    :return: True if element is a construct
+    """
+    return e.tag.endswith('-construct')
 
 def isStmt(e):
     """
@@ -433,23 +440,6 @@ def moveInGrandParent(doc,node,nestedObj=[]):
         par.insert(ind,node)
     par.remove(node)
 
-def checkInDoWhile(doc,node):
-    """
-    :param doc: check if the doc node's parent is a DO WHILE 
-    """    
-    parentFound = True
-    doWhileFound = False
-    par = getParent(doc,node)
-    while parentFound:
-        if not par:
-            parentFound = False
-        elif par.tag.endswith('}do-construct') and (len(par.findall('.//{*}do-stmt/{*}test-E}')) > 0):
-            doWhileFound = True
-            parentFound = False
-        else:        
-            par = getParent(doc,par)
-    return doWhileFound
-        
 def getIndexLoop(lowerBound,upperBound):
     if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
     or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\

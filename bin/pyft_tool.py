@@ -133,16 +133,14 @@ if __name__ == '__main__':
                                help='Delete Budget/DDH use')
     gApplications.add_argument('--deleteNonColumnCalls', default=False, action='store_true',
                                help='Delete call to routines that needs information on horizontal points (multiple column dependency')
-    gApplications.add_argument('--expandDoLoops', default=False, action='store_true',
-                               help='Expand array syntax into explicit DO loops' + \
-                               'apply changeIfStatementsInIfConstructs as well')
-    gApplications.add_argument('--expandWhere', default=False, action='store_true',
-                               help='Expand where into explicit DO loops')
     gApplications.add_argument('--removeIJLoops', default=False, action='store_true',
                                help='Remove DO loops on I and J dimensions (1,KLON)')
+    gApplications.add_argument('--expandAllArraysPHYEX', default=False, action='store_true',
+                               help='Expand all array syntax (computing and where block) ' + \
+                               'using PHYEX conventions')
     gApplications.add_argument('--expandAllArrays', default=False, action='store_true',
-                               help='Expand all array syntax (computing and where block)' + \
-                               'apply changeIfStatementsInIfConstructs as well')
+                               help='Expand all array syntax (computing and where block) ' + \
+                                    'using mnh directives if present')
     gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
                                help='Inline containted subroutines in main routine')
     gApplications.add_argument('--addStack', nargs=2, action='append',metavar=('TYPE', 'MODEL'),
@@ -238,13 +236,12 @@ if __name__ == '__main__':
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
     if args.deleteNonColumnCalls: pft.deleteNonColumnCalls(**simplify)
     if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
-    if args.expandDoLoops: pft.removeArraySyntax(expandDoLoops = True)
-    if args.expandWhere: pft.removeArraySyntax(expandWhere = True)
-    if args.expandAllArrays: pft.removeArraySyntax(expandDoLoops = True, expandWhere = True)
+    if args.expandAllArrays: pft.removeArraySyntax()
+    if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
     if args.removeIJLoops: pft.removeIJLoops()
     assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
-    if args.mnhExpand: pft.mnhExpand()
-    if args.mnhExpandConcurrent: pft.mnhExpand(concurrent=True)
+    if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
+    if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
 
     #Cosmetics
     if args.upperCase: pft.upperCase()
