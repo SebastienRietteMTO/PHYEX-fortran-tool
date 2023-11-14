@@ -3,132 +3,14 @@ This module includes functions to act on statements
 """
 import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debugDecor, 
-                       alltext, tostring, getIndexLoop, moveInGrandParent,
-                       PYFTError)
-from pyft.scope import (getScopeChildNodes, getScopeNode, getScopesList, getScopePath)
-from pyft.variables import removeVarIfUnused
-from pyft.expressions import createExprPart
-        
-def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
-    """
-    Convert ':' in full array dimensions. Example if SIZE(A)=D%NKT, A(:) is converted to A(1:D%NKT) 
-    :param sub: section-subscript node from the working node
-    :param locNode: scope of the working node
-    :param varArrayNamesList: list of all variable arrays names (list of string)
-    :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
-    :param varName : string of the variable in reading fortran ('A' in the example)
-    """  
-    # Get the i sub-index of the current object of E-2
-    subPar = getParent(locNode,sub)
-    for j,el in enumerate(subPar):
-        if el == sub:
-            indextoTransform=j
-            break
-    # Get the variable object to find its declaration dimension
-    ind=varArrayNamesList.index(varName)
-    lowerBound = '1'
-    upperBound = str(varArray[ind]['as'][indextoTransform][1]) #e.g. D%NIJT; D%NKT; KSIZE; KPROMA etc
-    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
-    sub.insert(0,lowerXml)
-    sub.insert(1,upperXml)
-    sub.text = '' # Delete the initial ':'    
-
-@debugDecor
-def E2StmtToDoStmt(node_astmt):
-    """
-    Conversion function to remove the array syntax on the first arrayR of E-2 node for elemental subroutine
-    For now, this function is used only to adapt array-syntax in CALL of an ELEMENTAL SUBROUTINE: 
-    a lot of the functionnality taken from aStmtToDoStmt is not useful (such as onlyNumbers and the if + 2 elif cases within for loop on subsE2)
-    :param node_astmt: a-stmt node to work on
-    """
-    doToBuild = []
-    arrayR = node_astmt.findall('.//{*}E-2//{*}array-R')
-    if len(arrayR) > 0:
-        subsE2=arrayR[0].findall('.//{*}section-subscript')
-        for i,sub in enumerate(subsE2):
-            if len(sub.findall('.//{*}upper-bound')) == 0:
-                if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
-                    # Creation of the array-R object needed to be converted futher in parens-R
-#                    ind=varArrayNamesList.index(varName)
-#                    lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-#                    upperBound = str(varArray[ind]['as'][i][1])
-#                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
-#                    sub.insert(0,lowerXml)
-#                    sub.insert(1,upperXml)
-#                    sub.text = '' # Delete the initial ':'
-#                    doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
-                    pass # This case does not exit yet in the form of PHYEX 0.5.0 : case of calling an elemental subroutine with calling arg such as A(IKTB:)
-                else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
-                    pass
-            else:
-                lowerBounds=sub.findall('.//{*}lower-bound')
-                upperBounds=sub.findall('.//{*}upper-bound')
-                lowerBound=alltext(lowerBounds[0])
-                upperBound=alltext(upperBounds[0])
-                if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
-                    break
-                else:
-                    doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
-    return doToBuild
-
-@debugDecor
-def placeArrayRtoparensR(doc, locNode, node_opE):
-    """
-    Convert ArrayR to parensR (remove the array-R and add parensR)
-    :param doc: etree to use for parent retrieval
-    :param node_opE: working node
-    :param locNode: scope of the working node
-    """
-    def arrayRtoparensR(doc,arrayR):
-        """
-        Return a parensR node from an array-R
-        :param loopIndex: string for the fortran loop index 
-        :param lowerBound: string for the fortran lower bound of the do loop
-        :param upperBound: string for the fortran upper bound of the do loop
-        """
-        
-        subs=arrayR.findall('.//{*}section-subscript')
-        parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
-        parensR.text = '('
-        parensR.tail = ')'
-        elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
-        for i,sub in enumerate(subs): 
-            element = ET.Element('{http://fxtran.net/#syntax}element')
-            if alltext(sub) == ':': # (:) only
-                pass
-                #try to guess from the dimension declaration (need to first find the element from varList)
-            elif sub.text is not None and sub.text.strip(' ') == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
-                u = sub.find('.//{*}upper-bound/{*}*/{*}*/{*}n')
-                if u is None:
-                    #fxtran bug workaround
-                    u = sub.find('.//{*}lower-bound/{*}*/{*}*/{*}n')
-                upperBound = alltext(u)
-                element.insert(0, createExprPart(getIndexLoop('1',upperBound)))      
-            elif len(sub.findall('.//{*}upper-bound')) == 0:
-                if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
-                    pass
-                else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
-                    element.insert(0,sub.findall('.//{*}lower-bound')[0]) 
-            else:
-                lowerBounds=sub.findall('.//{*}lower-bound')
-                upperBounds=sub.findall('.//{*}upper-bound')
-                lowerBound=alltext(lowerBounds[0])
-                upperBound=alltext(upperBounds[0])
-                element.insert(0, createExprPart(getIndexLoop(lowerBound,upperBound)))
-            elementLT.append(element)
-    
-        for i in range(len(elementLT)-1):
-            elementLT[i].tail = ','
-        parensR.insert(0,elementLT)
-        return parensR
-
-    # Replace the array-like index selection by index loop on all variables (array-R)
-    arrayR = node_opE.findall('.//{*}array-R')
-    for node in arrayR:
-        parensR=arrayRtoparensR(locNode,node)
-        par = getParent(node_opE,node)
-        par.insert(1,parensR)
-        par.remove(node)
+                       alltext,
+                       PYFTError, getFileName)
+from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath, isScopeNode
+from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar
+from pyft.expressions import createExprPart, simplifyExpr
+from pyft.cosmetics import changeIfStatementsInIfConstructs        
+import re
+import logging
         
 @debugDecor
 def createDoConstruct(loopVariables, indent=0, concurrent=False):
@@ -601,6 +483,539 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
     for n in constructNodes:
         removeConstructNode(doc, n, simplifyVar, False)
 
+@debugDecor
+def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
+                      loopVar=None, reuseLoop=True, funcList=None,
+                      updateMemSet=False, updateCopy=False):
+    """
+    Transform array syntax into DO loops
+    :param doc: etree to use
+    :param concurrent: use 'DO CONCURRENT' instead of simple 'DO' loops
+    :param useMnhExpand: use the mnh directives to transform the entire bloc in a single loop
+    :param everywhere: transform all array syntax in DO loops
+    :param loopVar: None to create new variable for each added DO loop
+                    or a function that return the name of the variable to use for the loop control.
+                    This function returns a string (name of the variable), or True to create
+                    a new variable, or False to not transform this statement
+                    The functions takes as arguments:
+                      - lower and upper bounds as defined in the declaration statement
+                      - lower and upper bounds as given in the statement
+                      - name of the array
+                      - index of the rank
+    :param reuseLoop: if True, try to reuse loop created whith everywhere=True
+    :param funcList: list of entity names that must be recognized as array functions
+                     (in addition to the intrisic ones) to discard from transformation
+                     statements that make use of them. None is equivalent to an empty list.
+    :param updateMemSet: True to put affectation to constante in DO loops
+    :param updateCopy: True to put array copy in DO loops
+
+    Notes: * With useMnhExpand, the function checks if the coding is conform to what is needed
+             for the filepp/mnh_expand tool (to not breack compatibility with this tool)
+           * Arrays are transformed only if ':' are used.
+             A=A(:) is not transformed at all (or raises an exception if found in a WHERE block)
+             A(:)=A is wrongly transformed into "DO...; A(J1)=A; ENDDO" and will produce a compilation error
+             WHERE(L) X(:)=0. is not transformed at all (unknown behaviour in case of nested WHERE)
+           * This function is not compatible with functions that return arrays:
+             X(1:5)=FUNC(1) will be transformed into "DO J1=1,5; X(J1)=FUNC(1); ENDDO"
+             x(1:5)=FUNC(X(1:5)) will be transformed into "DO J1=1,5; X(J1)=FUNC(X(J1)); ENDDO"
+             But intrinsic functions (COUNT, ANY...) are recognised and corresponding statements
+             are not transformed.
+             The list of intrinsic array functions can be extended by user functions with the funcList
+             argument.
+    """
+
+    #Developer notes:
+    #We use recursivity to avoid the use of the 'getParent' function.
+    #We start from the top node and call 'recur'.
+    #
+    #The 'recur' function loops over the different nodes and:
+    # - search for mnh directives (if 'useMnhExpand' is True):
+    #     - when it is an opening directive:
+    #         - decode the directive to identify bounds and variables to use ('decode' function)
+    #         - introduce the DO loops (with 'createDoConstruct')
+    #         - activate the 'in_mnh' flag
+    #     - when it is a closing directive:
+    #         - deactivate the 'in_mnh' flag
+    # - while the 'in_mnh' flag is activated:
+    #     - update ('updateStmt' function, that uses 'arrayR2parensR') and put all statements in the DO loops
+    # - in case (if 'everywhere' is True) statement is expressed using array-syntax:
+    #     - find the bounds and guess a set of variables to use ('find_bounds' function)
+    #     - introduce the DO loops (with 'createDoConstruct') if we cannot reuse the previous one
+    #     - update ('updateStmt' function, that uses 'arrayR2parensR') and put all statements in the DO loops
+    # - in case the statement contains other statements (SUBROUTINE, DO loop...), call 'recur' on it
+    #
+    #Because we iterate on the statements, the tree structure cannot be modified during the iteration.
+    #All the modifications to apply are, instead, stored in objetcs ('toinsert', 'toremove' and 'varList') and
+    #are applied afterwards.
+    #
+    #In addition, a number of instructions are needed to preserve and/or modify the indentation and can
+    #somewhat obfuscate the source code.
+
+    def decode(directive):
+        """
+        Decode mnh_expand directive
+        :param directive: mnh directive text
+        :return: (table, kind) where
+                 table is a dictionnary: keys are variable names, values are tuples with first and last index
+                 kind is 'array' or 'where'
+        """
+        #E.g. !$mnh_expand_array(JIJ=IIJB:IIJE,JK=1:IKT)
+        #We expect that the indexes are declared in the same order as the one they appear in arrays
+        #For the example given, arrays are addressed with (JIJ, JK)
+        #For this example, return would be ('array', {'JIJ':('IIJB', 'IIJE'), 'JK':('1', 'IKT')})
+        table = directive.split('(')[1].split(')')[0].split(',')
+        table = {c.split('=')[0]:c.split('=')[1].split(':') for c in table} #ordered since python 3.7
+        if directive.lstrip(' ').startswith('!$mnh_expand'):
+            kind = directive[13:].lstrip(' ').split('(')[0].strip()
+        else:
+            kind = directive[17:].lstrip(' ').split('(')[0].strip()
+        return table, kind
+
+    
+    def find_bounds(arr, varList, currentScope, loopVar):
+        """
+        Find bounds and loop variable given a array
+        :param arr: array node (named-E node with a array-R child)
+        :param varList: list of variables
+        :param loopVar: see removeArraySyntax docstring
+        :return table: as the table returned by the decode function, or None if unable to fill it
+        """
+        table = {} #ordered since python 3.7
+        name = n2name(arr.find('./{*}N'))
+
+        #Iteration on the different subscript
+        for iss, ss in enumerate(arr.findall('./{*}R-LT/{*}array-R/{*}section-subscript-LT/{*}section-subscript')):
+            #We are only interested by the subscript containing ':'
+            #we must not iterate over the others, eg: X(:,1)
+            if ':' in alltext(ss):
+                #Look for lower and upper bounds for iteration and declaration
+                lower_used = ss.find('./{*}lower-bound')
+                upper_used = ss.find('./{*}upper-bound')
+                varDesc = findVar(doc, name, currentScope, varList, array=True)
+                if varDesc is not None:
+                    lower_decl, upper_decl = varDesc['as'][iss]
+                    if lower_decl is None: lower_decl = '1' #default lower index for FORTRAN arrays
+                else:
+                    lower_decl, upper_decl = None, None
+
+                #name of the loop variable
+                if loopVar is None:
+                    #loopVar is not defined, we create a new variable for the loop
+                    #only if lower and upper bounds have been found (easy way to discard character strings)
+                    guess = lower_decl is not None and upper_decl is not None
+                    varName = False
+                else:
+                    varName = loopVar(lower_decl, upper_decl,
+                                      None if lower_used is None else alltext(lower_used),
+                                      None if upper_used is None else alltext(upper_used), name, iss)
+                    if varName is not False and varName in table.keys():
+                        raise PYFTError(("The variable {var} must be used for the rank #{i1} whereas it " + \
+                                         "is already used for rank #{i2} (for array {name}).").format(
+                                           var=varName, i1=str(iss), i2=str(list(table.keys()).index(varName)),
+                                           name=name))
+                    if varName is not False and findVar(doc, varName, currentScope,
+                                                        varList, array=False, exactScope=True) is None:
+                        #We must declare the variable
+                        varDesc = {'n':varName, 'scope':currentScope, 'new':True}
+                        varList.append(varDesc)
+                    #varName can be a string (name to use), True (to create a variable), False (to discard the array)
+                    guess = varName is True
+                if guess:
+                    j = 1
+                    #We look for a variable name that don't already exist
+                    #We can reuse a newly created varaible only if it is not used for the previous indexes
+                    #of the same statement
+                    while any([v['n'] for v in varList
+                               if ((v['n'].upper() == 'J' + str(j) and not v.get('new', False)) or
+                                   'J' + str(j) in table.keys())]):
+                        j += 1
+                    varName = 'J' + str(j)
+                    varDesc = {'n':varName, 'scope':currentScope, 'new':True}
+                    if varDesc not in varList:
+                        varList.append(varDesc)
+
+                #fill table
+                table[varName] = (lower_decl if lower_used is None else alltext(lower_used),
+                                  upper_decl if upper_used is None else alltext(upper_used))
+
+        return None if False in table.keys() else table
+
+    def arrayR2parensR(namedE, table, varList, currentScope):
+        """
+        Transform a array-R into a parens-R node by replacing slices by variables
+        In 'A(:)', the ':' is in a array-R node whereas in 'A(JL)', 'JL' is in a parens-R node.
+        Both the array-R and the parens-R nodes are inside a R-LT node
+        :param namedE: a named-E node
+        :param table: dictionnary returned by the decode function
+        :param varList: description of declared variables
+        :param currentScope: current scope
+        """
+        #Before A(:): <f:named-E>
+        #               <f:N><f:n>A</f:n></f:N>
+        #               <f:R-LT>
+        #                 <f:array-R>(
+        #                   <f:section-subscript-LT>
+        #                     <f:section-subscript>:</f:section-subscript>
+        #                   </f:section-subscript-LT>)
+        #                 </f:array-R>
+        #               </f:R-LT>
+        #              </f:named-E>
+        #After  A(I): <f:named-E>
+        #               <f:N><f:n>A</f:n></f:N>
+        #               <f:R-LT>
+        #                 <f:parens-R>(
+        #                   <f:element-LT>
+        #                     <f:element><f:named-E><f:N><f:n>I</f:n></f:N></f:named-E></f:element>
+        #                   </f:element-LT>)
+        #                 </f:parens-R>
+        #               </f:R-LT>
+        #             </f:named-E>
+
+        RLT = namedE.find('./{*}R-LT')
+        arrayR = RLT.find('./{*}array-R') #Not always in first position, eg: ICED%XRTMIN(:)
+        if arrayR is not None:
+            index = list(RLT).index(arrayR)
+            parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
+            parensR.text = '('
+            parensR.tail = ')'
+            elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
+            parensR.append(elementLT)
+            ivar = -1
+            for ss in RLT[index].findall('./{*}section-subscript-LT/{*}section-subscript'):
+                element = ET.Element('{http://fxtran.net/#syntax}element')
+                element.tail = ', '
+                elementLT.append(element)
+                if ':' in alltext(ss):
+                    ivar += 1
+                    v = list(table.keys())[ivar] #variable name
+                    lower = ss.find('./{*}lower-bound')
+                    upper = ss.find('./{*}upper-bound')
+                    if lower is not None: lower = alltext(lower)
+                    if upper is not None: upper = alltext(upper)
+                    if lower is not None and ss.text is not None and ':' in ss.text:
+                        #fxtran bug workaround
+                        upper = lower
+                        lower = None
+                    if lower is None and upper is None:
+                        #E.g. 'A(:)'
+                        #In this case we use the DO loop bounds without checking validity with
+                        #respect to the array declared bounds
+                        element.append(createExprPart(v))
+                    else:
+                        #E.g.:
+                        #!$mnh_expand_array(JI=2:15)
+                        #A(2:15) or A(:15) or A(2:)
+                        if lower is None:
+                            #lower bound not defined, getting lower declared bound for this array
+                            lower = findVar(doc, n2name(namedE.find('{*}N')),
+                                            currentScope, varList, array=True)['as'][ivar][0]
+                            if lower is None: lower = '1' #default fortran lower bound
+                        elif upper is None:
+                            #upper bound not defined, getting lower declared bound for this array
+                            upper = findVar(doc, n2name(namedE.find('{*}N')),
+                                    currentScope, varList, array=True)['as'][ivar][1]
+                        #If the DO loop starts from JI=I1 and goes to JI=I2; and array bounds are J1:J2
+                        #We compute J1-I1+JI and J2-I2+JI and they should be the same
+                        #E.g: array bounds could be 'I1:I2' (becoming JI:JI) or 'I1+1:I2+1" (becoming JI+1:JI+1)
+                        newlower = simplifyExpr(lower, add=v, sub=table[v][0])
+                        newupper = simplifyExpr(upper, add=v, sub=table[v][1])
+                        if newlower != newupper:
+                            raise PYFTError(("Don't know how to do with an array declared with '{la}:{ua}' " + \
+                                             "and a loop from '{ll}' to '{ul}'").format(la=lower, ua=upper,
+                                                                                        ll=table[v][0],
+                                                                                        ul=table[v][1]))
+                        element.append(createExprPart(newlower))
+                else:
+                    element.append(ss.find('./{*}lower-bound'))
+            element.tail = None #last element
+            RLT.remove(RLT[index])
+            RLT.insert(index, parensR)
+
+    def updateStmt(doc, e, table, kind, extraindent, parent, varList, currentScope):
+        """
+        Updates the statement given the table dictionnary '(:, :)' is replaced by '(JI, JK)' if
+        table.keys() is ['JI', 'JK']
+        :param e: statement to update
+        :param table: dictionnary retruned by the decode function
+        :param kind: kind of mnh directives: 'array' or 'where'
+                                             or None if transformation is not governed by mnh directive
+        :param varList: description of declared variables
+        :param currentScope: current scope
+        """
+
+        def add_extra(node, extra):
+            """Helper function to add indentation spaces"""
+            if extra != 0 and (not node.tail is None) and '\n' in node.tail:
+                #We add indentation after new line only
+                #- if tail already contains a '\n' to discard
+                #  a-stmt followed by a comment
+                #  or '&' immediatly followed by something at the beginning of a line
+                #- if not folowed by another new line (with optional space in between)
+                node.tail = re.sub(r"(\n[ ]*)(\Z|[^\n ]+)", r"\1" + extra * ' ' + r"\2", node.tail)
+
+        add_extra(e, extraindent) #Set indentation for the *next* node
+        if e.tag.split('}')[1] == 'C':
+            pass
+        elif e.tag.split('}')[1] == 'cpp':
+            i = list(parent).index(e)
+            if i == 0:
+                #In this case, it would be a solution to add an empty comment before the
+                #node e to easilty control the indentation contained in the tail
+                raise PYFTError("How is it possible?")
+            parent[i - 1].tail = parent[i - 1].tail.rstrip(' ') #Remove the indentation
+        elif e.tag.split('}')[1] == 'a-stmt':
+            sss = e.findall('./{*}E-1/{*}named-E/{*}R-LT/{*}array-R/' + \
+                            '{*}section-subscript-LT/{*}section-subscript')
+            if len([ss for ss in sss if ':' in alltext(ss)]) != len(table):
+                raise PYFTError("Inside code sections to transform in DO loops, all affectations must use ':'.\n" + \
+                                "This is not the case in:\n{stmt}".format(stmt=alltext(e)))
+            if e.find('./{*}E-1/{*}named-E/{*}N').tail is not None and kind is not None:
+                raise PYFTError("To keep the compatibility with the filepp version of loop " + \
+                                "expansion, nothing must appear between array names and opening " + \
+                                "parethesis inside mnh directive sections.")
+            #We loop on named-E nodes (and not directly on array-R nodes to prevent using the costly getParent)
+            for namedE in e.findall('.//{*}R-LT/..'):
+                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable
+            for cnt in e.findall('.//{*}cnt'):
+                add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
+        elif e.tag.split('}')[1] == 'if-stmt':
+            logging.warning("An if statement is inside a code " + \
+                            "section transformed in DO loop in {f}".format(f=getFileName(doc)))
+            #Update the statement contained in the action node
+            updateStmt(doc, e.find('./{*}action-stmt')[0], table, kind, 0, e, varList, currentScope)
+        elif e.tag.split('}')[1] == 'if-construct':
+            logging.warning("An if construct is inside a code " + \
+                            "section transformed in DO loop in {f}".format(f=getFileName(doc)))
+            for ifBlock in e.findall('./{*}if-block'): #Loop over the blocks (if, elseif, else)
+                for child in ifBlock: #Loop over each statement inside the block
+                    if child.tag.split('}')[1] not in ('if-then-stmt', 'else-if-stmt', 'else-stmt', 'end-if-stmt'):
+                        updateStmt(doc, child, table, kind, extraindent, ifBlock, varList, currentScope)
+                    else:
+                        add_extra(child, extraindent) #Update indentation because the loop is here and not in recur
+                        for cnt in child.findall('.//{*}cnt'):
+                            add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
+        elif e.tag.split('}')[1] == 'where-stmt':
+            #Where statement becomes if statement
+            e.tag = e.tag.split('}')[0] + '}if-stmt'
+            e.text = 'IF (' + e.text.split('(', 1)[1]
+            updateStmt(doc, e.find('./{*}action-stmt')[0], table, kind, extraindent, e, varList, currentScope) #Update the action part
+            mask = e.find('./{*}mask-E')
+            mask.tag = mask.tag.split('}')[0] + '}condition-E' #rename the condition tag
+            for namedE in mask.findall('.//{*}R-LT/..'):
+                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable
+            for cnt in e.findall('.//{*}cnt'):
+                add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
+        elif e.tag.split('}')[1] == 'where-construct':
+            if kind != 'where' and kind is not None:
+                raise PYFTError('To keep the compatibility with the filepp version of loop " + \
+                                "expansion, no where construct must appear in mnh_expand_array blocks.')
+            #Where construct becomes if construct
+            e.tag = e.tag.split('}')[0] + '}if-construct'
+            for whereBlock in e.findall('./{*}where-block'): #Loop over the blocks (where, elsewhere)
+                whereBlock.tag = whereBlock.tag.split('}')[0] + '}if-block'
+                for child in whereBlock: #Loop over each statement inside the block
+                    if child.tag.split('}')[1] == 'end-where-stmt':
+                        #rename ENDWHERE into ENDIF
+                        child.tag = child.tag.split('}')[0] + '}end-if-stmt'
+                        child.text = 'END IF'
+                        add_extra(child, extraindent) #Update indentation because the loop is here and not in recur
+                    elif child.tag.split('}')[1] in ('where-construct-stmt', 'else-where-stmt'):
+                        add_extra(child, extraindent) #Update indentation because the loop is here and not in recur
+                        if child.tag.split('}')[1] == 'where-construct-stmt':
+                            #rename WHERE into IF (the THEN part is attached to the condition)
+                            child.tag = child.tag.split('}')[0] + '}if-then-stmt'
+                            child.text = 'IF (' + child.text.split('(', 1)[1]
+                        else:
+                            #In where construct the same ELSEWHERE keyword is used with or without mask
+                            #Whereas for if structure ELSEIF is used with a condition and ELSE without condition
+                            if '(' in child.text:
+                                #rename ELSEWHERE into ELSEIF
+                                child.tag = child.tag.split('}')[0] + '}else-if-stmt'
+                                child.text = 'ELSE IF (' + child.text.split('(', 1)[1]
+                            else:
+                                #rename ELSEWHERE into ELSE
+                                child.tag = child.tag.split('}')[0] + '}else-stmt'
+                                child.text = 'ELSE'
+                        for mask in child.findall('./{*}mask-E'): #would a find be enough?
+                            #add THEN
+                            mask.tag = mask.tag.split('}')[0] + '}condition-E'
+                            mask.tail += ' THEN'
+                            for namedE in mask.findall('.//{*}R-LT/..'):
+                                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable in the condition
+                        for cnt in child.findall('.//{*}cnt'):
+                            add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
+                    else:
+                        updateStmt(doc, child, table, kind, extraindent, whereBlock, varList, currentScope)
+        else:
+            raise PYFTError('Unexpected tag found in mnh_expand directives: {t}'.format(t=e.tag.split('}')[1]))
+        return e
+
+    def closeLoop(loopdesc):
+        """Helper function to deal with indetation"""
+        if loopdesc:
+            inner, outer, indent, extraindent = loopdesc
+            if inner[-2].tail is not None:
+                outer.tail = inner[-2].tail[:-extraindent] #tail of last statement in DO loop before transformation
+            inner[-2].tail = '\n' + (indent + extraindent - 2) * ' ' #position of the ENDDO
+        return False
+
+    toinsert = [] #list of nodes to insert
+    toremove = [] #list of nodes to remove
+    varList = [] #list of variables
+    def recur(elem, currentScope):
+        in_mnh = False #are we in a DO loop created by a mnh directive
+        in_everywhere = False #are we in a created DO loop (except loops created with mnh directive)
+        tailSave = {} #Save tail content before transformation (to retrieve original indentation)
+        currentScope = getScopePath(doc, elem) if isScopeNode(elem) else currentScope
+        for ie, e in enumerate(list(elem)): #we loop on elements in the natural order
+            if e.tag.split('}')[1] == 'C' and e.text.lstrip(' ').startswith('!$mnh_expand') and useMnhExpand:
+                #This is an opening mnh directive
+                if in_mnh:
+                    raise PYFTError('Nested mnh_directives are not allowed')
+                in_mnh = True
+                in_everywhere = closeLoop(in_everywhere) #close other loop if needed
+
+                #Directive decoding
+                table, kind = decode(e.text)
+                indent = len(e.tail) - len(e.tail.rstrip(' ')) #indentation of the next statement
+                toremove.append((elem, e)) #we remove the directive itself
+                if ie != 0:
+                    #We add, to the tail of the previous node, the tail of the directive (except one \n)
+                    if elem[ie - 1].tail is None: elem[ie - 1].tail = ''
+                    elem[ie - 1].tail += e.tail.replace('\n', '', 1).rstrip(' ')
+                #Building loop
+                inner, outer, extraindent = createDoConstruct(table, indent=indent, concurrent=concurrent)
+                toinsert.append((elem, outer, ie)) #Place to insert the loop
+
+            elif e.tag.split('}')[1] == 'C' and e.text.lstrip(' ').startswith('!$mnh_end_expand') and useMnhExpand:
+                #This is a closing mnh directive
+                if not in_mnh:
+                    raise PYFTError('End mnh_directive found before begin directive')
+                if (table, kind) != decode(e.text):
+                    raise PYFTError("Opening and closing mnh directives must be conform")
+                in_mnh = False
+                toremove.append((elem, e)) #we remove the directive itself
+                #We add, to the tail of outer DO loop, the tail of the directive (except one \n)
+                outer.tail += e.tail.replace('\n', '', 1) #keep all but one new line characters
+                elem[ie - 1].tail = elem[ie - 1].tail[:-2] #previous item controls the position of ENDDO
+
+            elif in_mnh:
+                #This statement is between the opening and closing mnh directive
+                toremove.append((elem, e)) #we remove it from its old place
+                inner.insert(-1, e) #Insert first in the DO loop
+                updateStmt(doc, e, table, kind, extraindent, inner, varList, currentScope) #then update, providing new parent in argument
+
+            elif everywhere and e.tag.split('}')[1] in ('a-stmt', 'if-stmt', 'where-stmt', 'where-construct'):
+                #This node could contain array-syntax
+
+                #Is the node written using array-syntax? Getting the first array...
+                if e.tag.split('}')[1] == 'a-stmt':
+                    #Left side of the assignment
+                    arr = e.find('./{*}E-1/{*}named-E/{*}R-LT/{*}array-R/../..')
+                    #Right side
+                    is_memSet = False
+                    is_copy = False
+                    E2 = e.find('./{*}E-2')
+                    num = len(E2.findall('.//{*}array-R')) #Number of arrays using array-syntax
+                    if num == 0:
+                        #It is an array initialisation when there is no array-syntax on the right side
+                        #If array-syntax is used without explicit '(:)', it could be detected as an initialisation
+                        is_memSet = True
+                    elif len(E2) == 1 and E2[0].tag.split('}')[1] == 'named-E' and num == 1 and \
+                        E2[0].find('.//{*}parens-R') is None:
+                        #It is an array copy when there is only one child in the right hand side
+                        #    and this child is a named-E and this child contains only
+                        #    one array-R node and no parens-R
+                        is_copy = True
+                    #Discard?
+                    if (is_memSet and not updateMemSet) or (is_copy and not updateCopy):
+                        arr = None
+                elif e.tag.split('}')[1] == 'if-stmt':
+                    #We only deal with assignment in the if statement case
+                    arr = e.find('./{*}action-stmt/{*}a-stmt/{*}E-1/{*}named-E/{*}R-LT/{*}array-R/../..')
+                    if arr is not None:
+                        #In this case we transform the if statement into an if-construct
+                        changeIfStatementsInIfConstructs(doc, singleItem=e, parent=elem)
+                        recur(e, currentScope) #to transform the content of the if
+                        arr = None #to do nothing more on this node
+                elif e.tag.split('}')[1] == 'where-stmt':
+                    arr = e.find('./{*}mask-E//{*}named-E/{*}R-LT/{*}array-R/../..')
+                elif e.tag.split('}')[1] == 'where-construct':
+                    arr = e.find('./{*}where-block/{*}where-construct-stmt/{*}mask-E//{*}named-E/{*}R-LT/{*}array-R/../..')
+
+                #Check if it is written using array-syntax and must not be excluded; then compute bounds
+                if arr is None:
+                    #There is no array-syntax
+                    newtable = None
+                elif len(set([alltext(a).count(':') for a in e.findall('.//{*}R-LT/{*}array-R')])) > 1:
+                    #All the elements written using array-syntax don't have the same rank
+                    #(can be due to function calls, eg: "X(:)=FUNC(Y(:,:))")
+                    newtable = None
+                elif len(set(['ALL', 'ANY', 'COSHAPE', 'COUNT', 'CSHIFT', 'DIMENSION',
+                              'DOT_PRODUCT', 'EOSHIFT', 'LBOUND', 'LCOBOUND', 'MATMUL',
+                              'MAXLOC', 'MAXVAL', 'MERGE', 'MINLOC', 'MINVAL', 'PACK',
+                              'PRODUCT', 'REDUCE', 'RESHAPE', 'SHAPE', 'SIZE', 'SPREAD',
+                              'SUM', 'TRANSPOSE', 'UBOUND', 'UCOBOUND', 'UNPACK'] + \
+                              (funcList if funcList is not None else [])
+                            ).intersection(set([n2name(N) for N in e.findall('.//{*}named-E/{*}N')]))) > 0:
+                    #At least one intrinsic array function is used
+                    newtable = None
+                else:
+                    if len(varList) == 0:
+                        #Get all the variables declared in the tree
+                        varList.extend(getVarList(doc))
+                    #Guess a variable name
+                    newtable = find_bounds(arr, varList, currentScope, loopVar) if arr is not None else None
+
+                if newtable is None:
+                    #We cannot convert the statement (not in array-syntax, excluded or no variable found to loop)
+                    in_everywhere = closeLoop(in_everywhere) #close previous loop if needed
+                else:
+                    #we have to transform the statement
+                    if not (in_everywhere and table == newtable):
+                        #No opened previous loop, or not coresponding
+                        in_everywhere = closeLoop(in_everywhere) #close previous loop, if needed
+                        #We must create a DO loop
+                        if ie != 0 and elem[ie -1].tail is not None:
+                            #Indentation of the current node, attached to the previous sibling
+                            tail = tailSave.get(elem[ie -1], elem[ie -1].tail) #get tail before transformation
+                            indent = len(tail) - len(tail.rstrip(' '))
+                        else:
+                            indent = 0
+                        table = newtable #save the information on the newly build loop
+                        kind = None #not built from mnh directives
+                        #Building loop
+                        inner, outer, extraindent = createDoConstruct(table, indent=indent, concurrent=concurrent)
+                        toinsert.append((elem, outer, ie)) #place to insert the loop
+                        in_everywhere = (inner, outer, indent, extraindent) #we are now in a loop
+                    tailSave[e] = e.tail #save tail for future indentation computation
+                    toremove.append((elem, e)) #we remove it from its old place
+                    inner.insert(-1, e) #Insert first in the DO loop
+                    updateStmt(doc, e, table, kind, extraindent, inner, varList, currentScope) #then update, providing new parent in argument
+                    if not reuseLoop:
+                        #Prevent from reusing this DO loop
+                        in_everywhere = closeLoop(in_everywhere)
+
+            else:
+                in_everywhere = closeLoop(in_everywhere) #close loop if needed
+                if len(e) >= 1:
+                    #Iteration
+                    recur(e, currentScope)
+        in_everywhere = closeLoop(in_everywhere)
+
+    recur(doc, getScopePath(doc, doc))
+    #First, element insertion by reverse order (in order to keep the insertion index correct)
+    for elem, outer, ie in toinsert[::-1]:
+        elem.insert(ie, outer)
+    #Then, suppression
+    for parent, elem in toremove:
+        parent.remove(elem)
+    #And variable creation
+    addVar(doc, [(v['scope'], v['n'], 'INTEGER :: {name}'.format(name=v['n']), None)
+                 for v in varList if v.get('new', False)])
+
+    return doc
+
 class Statements():
     @copy_doc(removeCall)
     def removeCall(self, *args, **kwargs):
@@ -610,4 +1025,7 @@ class Statements():
     def removePrints(self, *args, **kwargs):
         return removePrints(self._xml, *args, **kwargs)
 
+    @copy_doc(removeArraySyntax)
+    def removeArraySyntax(self, *args, **kwargs):
+        return removeArraySyntax(self._xml, *args, **kwargs)
 

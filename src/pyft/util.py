@@ -440,27 +440,6 @@ def moveInGrandParent(doc,node,nestedObj=[]):
         par.insert(ind,node)
     par.remove(node)
 
-def getIndexLoop(lowerBound,upperBound):
-    if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
-    or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\
-    or 'IGWET' in upperBound:
-        n = 'JL'
-    elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
-        n = 'JIJ'
-    elif 'IKB' in upperBound or 'IKE' in upperBound or 'KT' in upperBound:
-        n = 'JK'
-    elif 'SV' in lowerBound or 'SV' in upperBound:
-        n = 'JSV'
-    elif 'KRR' in upperBound:
-        n = 'JRR'
-    elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound or 'IIU' in upperBound:
-        n = 'JI'
-    elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
-        n = 'JJ'
-    else:
-        exit
-    return n
-
 def insertInList(pos, item, l):
     """
     :param pos: insertion position
