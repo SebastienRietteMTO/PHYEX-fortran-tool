@@ -45,6 +45,8 @@ if __name__ == '__main__':
     gParser.add_argument('--parserOption', nargs='*', action='append',
                          help='Option to pass to fxtran, defaults' + \
                               ' to {}'.format(str(PYFT.DEFAULT_FXTRAN_OPTIONS)))
+    gParser.add_argument('--wrapH', default=False, action='store_true',
+                         help='Wrap .h file content into a MODULE to enable the reading')
 
     #Variables
     gVariables = parser.add_argument_group('Options to deal with variables')
@@ -199,7 +201,8 @@ if __name__ == '__main__':
         parserOptions = [el for elements in args.parserOption for el in elements]
     if args.addIncludes:
         parserOptions = [opt for opt in parserOptions if opt not in ('-no-include', '-noinclude')]
-    pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions, verbosity=args.logLevel)
+    pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
+               verbosity=args.logLevel, wrapH=args.wrapH)
 
     #File name manipulations
     if args.renamefF: pft.renameUpper()

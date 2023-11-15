@@ -890,9 +890,9 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
             elif e.tag.split('}')[1] == 'C' and e.text.lstrip(' ').startswith('!$mnh_end_expand') and useMnhExpand:
                 #This is a closing mnh directive
                 if not in_mnh:
-                    raise PYFTError('End mnh_directive found before begin directive')
+                    raise PYFTError('End mnh_directive found before begin directive in {f}'.format(f=getFileName(doc)))
                 if (table, kind) != decode(e.text):
-                    raise PYFTError("Opening and closing mnh directives must be conform")
+                    raise PYFTError("Opening and closing mnh directives must be conform in {f}".format(f=getFileName(doc)))
                 in_mnh = False
                 toremove.append((elem, e)) #we remove the directive itself
                 #We add, to the tail of outer DO loop, the tail of the directive (except one \n)

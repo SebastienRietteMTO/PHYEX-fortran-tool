@@ -13,13 +13,16 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-no-cpp', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
-    def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None):
+    def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None, wrapH=False):
         """
         :param filename: Input file name containing FORTRAN code
         :param output: Output file name, None to replace input file
         :param parser: path to the fxtran parser
         :param parserOptions: dictionnary holding the parser options
         :param verbosity: if not None, sets the verbosity level
+        :param wrapH: if True, content of .h file is put in a .F90 file (to force
+                      fxtran to recognize it as free form) inside a module (to
+                      enable the reading of files containing only a code part)
         """
         self._filename = filename
         self._originalName = filename
@@ -30,7 +33,7 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
         for option in self.MANDATORY_FXTRAN_OPTIONS:
             if option not in self._parserOptions:
                 self._parserOptions.append(option)
-        self._ns, self._xml = fortran2xml(self._filename, self._parser, self._parserOptions)
+        self._ns, self._xml = fortran2xml(self._filename, self._parser, self._parserOptions, wrapH)
         if verbosity is not None:
             set_verbosity(verbosity)
 

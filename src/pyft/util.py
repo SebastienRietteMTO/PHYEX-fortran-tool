@@ -5,6 +5,7 @@ import tempfile
 import os
 import subprocess
 import time
+import re
 
 """
 This module implements some tools to manipulate the xml
@@ -95,12 +96,15 @@ class PYFTError(Exception): pass
 ################################################################################
 ### Conversions
 
-def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
+def fortran2xml(fortranSource, parser='fxtran', parserOptions=None, wrapH=False):
     """
     :param fortranSource: a string containing a fortran source code
                           or a filename
     :param parser: path to the fxtran parser
     :param parserOptions: dictionnary holding the parser options
+    :param wrapH: if True, content of .h file is put in a .F90 file (to force
+                  fxtran to recognize it as free form) inside a module (to
+                  enable the reading of files containing only a code part)
     :returns: (ns, xml) where ns is a namespace dictionnary and xml
               is an ET xml document
     """
@@ -119,12 +123,30 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
         parserOptions = pyft.PYFT.DEFAULT_FXTRAN_OPTIONS
 
     #Call to fxtran
+    renamed = False
+    moduleAdded = False
     with tempfile.NamedTemporaryFile(buffering=0, suffix='.F90') as f:
         if os.path.exists(fortranSource):
-            #tempfile not needed in this case but I found easier to write code
+            #tempfile not needed in this case if wrapH is False but I found easier to write code
             #like this to have only one subprocess call and automatic
             #deletion of the temporary file
             filename = fortranSource
+            if wrapH and filename.endswith('.h'):
+                renamed = True
+                filename = f.name
+                with open(fortranSource, 'r') as src:
+                    content = src.read()
+                #renaming is enough for .h files containing SUBROUTINE or FUNCTION
+                #but if the file contains a code fragment, it must be included in a
+                #program-unit
+                firstLine = [l for l in content.split('\n') if not (re.search(r'^[\t ]*!', l) or
+                                                                    re.search(r'^[\t ]*$', l))][0]
+                fisrtLine = firstLine.upper().split()
+                if not ('SUBROUTINE' in fisrtLine or 'FUNCTION' in firstLine):
+                    #Needs to be wrapped in a program-unit
+                    moduleAdded = True
+                    content = 'MODULE FOO\n' + content + '\nEND MODULE FOO'
+                f.write(content.encode('UTF8'))
         else:
             filename = f.name
             f.write(fortranSource.encode('UTF-8'))
@@ -133,6 +155,15 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None):
                              stdout=subprocess.PIPE, check=True,
                              encoding='UTF-8').stdout
         xml = ET.fromstring(xml, parser=ET.XMLParser(encoding='UTF-8'))
+        if renamed:
+            xml.find('./{*}file').attrib['name'] = fortranSource
+        if moduleAdded:
+            file = xml.find('./{*}file')
+            programUnit = file.find('./{*}program-unit')
+            for node in programUnit[1:-1]: #all nodes inside program-unit except 'MODULE' and 'END MODULE'
+                file.append(node)
+            node.tail = node.tail[:-1] #remove '\n' added before 'END MODULE'
+            file.remove(programUnit)
 
     return ns, xml
 
