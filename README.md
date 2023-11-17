@@ -25,6 +25,6 @@ Quick Start Guide:
   - if you don't have a github ssh key or don't know what it is:
     > git clone https://github.com/UMR-CNRM/pyft.git  
     > ./pyft/bin/INSTALL.sh
-  - if you have a github a github ssh key:
+  - if you have a github ssh key:
     > git clone git@github.com:UMR-CNRM/pyft.git  
     > ./pyft/bin/INSTALL.sh --ssh
