@@ -191,6 +191,11 @@ if __name__ == '__main__':
     gMisc.add_argument('--showScopes', default=False, action='store_true',
                        help='Show the different scopes found in the source code')
 
+    #Tree
+    gTree = parser.add_argument_group('Tree')
+    gMisc.add_argument('--tree', default=None, action='append',
+                       help='Directories where source code must be searched for')
+
     args = parser.parse_args()
     simplify = {'simplify': args.simplify}
 
@@ -202,7 +207,7 @@ if __name__ == '__main__':
     if args.addIncludes:
         parserOptions = [opt for opt in parserOptions if opt not in ('-no-include', '-noinclude')]
     pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
-               verbosity=args.logLevel, wrapH=args.wrapH)
+               verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree)
 
     #File name manipulations
     if args.renamefF: pft.renameUpper()

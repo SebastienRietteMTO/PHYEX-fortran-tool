@@ -8,13 +8,15 @@ from pyft.cosmetics import Cosmetics
 from pyft.applications import Applications
 from pyft.scope import Scope
 from pyft.statements import Statements
+from pyft.tree import Tree
 from pyft.util import tostring, tofortran, fortran2xml, set_verbosity, print_infos, PYFTError
 
-class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
+class PYFT(Variables, Cosmetics, Applications, Scope, Statements, Tree):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-no-cpp', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
-    def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None, wrapH=False):
+    def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None,
+                 wrapH=False, tree=None):
         """
         :param filename: Input file name containing FORTRAN code
         :param output: Output file name, None to replace input file
@@ -24,6 +26,7 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
         :param wrapH: if True, content of .h file is put in a .F90 file (to force
                       fxtran to recognize it as free form) inside a module (to
                       enable the reading of files containing only a code part)
+        :param tree: list of directories where code can be searched for
         """
         if not sys.version_info >= (3, 8):
             #At least version 3.7 for ordered dictionary
@@ -34,7 +37,11 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
         assert os.path.exists(filename), 'Input filename must exist'
         self._output = output
         self._parser = 'fxtran' if parser is None else parser
+        self.tree = tree
         self._parserOptions = self.DEFAULT_FXTRAN_OPTIONS if parserOptions is None else parserOptions
+        self._parserOptions = self._parserOptions.copy()
+        for t in self.getDirs():
+            self._parserOptions.extend(['-I', t])
         for option in self.MANDATORY_FXTRAN_OPTIONS:
             if option not in self._parserOptions:
                 self._parserOptions.append(option)

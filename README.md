@@ -19,6 +19,7 @@ Prerequisites:
   - an internet connexion (with access to the github servers) is needed only for the installation of fxtran
   - python > 3.8 (but only tested with version 3.10)
   - a C compiler (tested with cc 11.4.0)
+  - some classical unix tools: make and git
 
 Quick Start Guide:
   - open a terminal on a system satisfying the prerequisites and enter the following commands
