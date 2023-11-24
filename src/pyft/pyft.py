@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 
 from pyft.variables import Variables
 from pyft.cosmetics import Cosmetics
 from pyft.applications import Applications
 from pyft.scope import Scope
 from pyft.statements import Statements
-from pyft.util import tostring, tofortran, fortran2xml, set_verbosity, print_infos
+from pyft.util import tostring, tofortran, fortran2xml, set_verbosity, print_infos, PYFTError
 
 class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-no-cpp', '-line-length', '9999']
@@ -24,6 +25,10 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements):
                       fxtran to recognize it as free form) inside a module (to
                       enable the reading of files containing only a code part)
         """
+        if not sys.version_info >= (3, 8):
+            #At least version 3.7 for ordered dictionary
+            #At least verison 3.8 for namsepace wildcard (use of '{*}' in find or findall)
+            raise PYFTError("pyft needs at least version 3.8 of python")
         self._filename = filename
         self._originalName = filename
         assert os.path.exists(filename), 'Input filename must exist'

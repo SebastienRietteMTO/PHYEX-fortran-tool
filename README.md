@@ -17,7 +17,7 @@ file (in the bin directory). E.g. '. \<path to the current directory\>/bin/env.s
 
 Prerequisites:
   - an internet connexion (with access to the github servers) is needed only for the installation of fxtran
-  - python > 3.7 (but only tested with version 3.10)
+  - python > 3.8 (but only tested with version 3.10)
   - a C compiler (tested with cc 11.4.0)
 
 Quick Start Guide:
