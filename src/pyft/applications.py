@@ -256,69 +256,6 @@ def checkStackArginCall(doc):
                     addDeclStackAROME(doc,loc)
             
 @debugDecor
-def applyCPP(doc, Lkeys=['REPRO48']):
-    """
-    Apply #ifdef for each CPP-key in Lkeys
-    WARNING : this functions is in a basic form. It handles only :
-        #ifdef <KEY>
-        #ifndef <KEY>
-        #else
-        #endif
-    :param doc: etree to use
-    :param Lkeys: list of keys to apply CPP-like transformation of ifdef
-    """
-    def removeInBetweenCPP(par):
-        # Remove everything between #cpp block
-        for j,el in enumerate(par[index+1:]): #from the first element after #ifdef or #ifndef
-            if j==0 and el.tag.endswith('}cpp'): #case with empty ifdef
-                break
-            if not el.tag.endswith('}cpp'):
-                par.remove(el)
-            else:
-                break
-    ifdefKeys = doc.findall('.//{*}cpp')
-    toRemove = []
-    removeElse = False
-    for cppNode in ifdefKeys:
-        par = getParent(doc,cppNode)
-        if par is not None:
-            allsiblings = par.findall('./{*}*')
-            index = allsiblings.index(cppNode)
-            cppTxt=alltext(cppNode).replace('#','') #e.g. ['ifndef', 'PHYEXMERGE']
-            cppTxt=cppTxt.split(' ')
-            if len(cppTxt) == 1: cppTxt.append('') #case #else and #endif
-            if cppTxt[0] == 'ifdef':
-                if cppTxt[1] in Lkeys:
-                    # Keep the block between #ifdef and next cppNode
-                    removeElse = True
-                    toRemove.append(cppNode)
-                else:
-                    # Remove everything between #ifdef and next cppNode, Keep Else block
-                    removeInBetweenCPP(par)
-                    removeElse = False
-            elif cppTxt[0] == 'ifndef':
-                if cppTxt[1] in Lkeys:
-                    # Remove everything between #ifndef and next cppNode
-                    removeInBetweenCPP(par)
-                    removeElse = False
-                    toRemove.append(cppNode)
-                else:
-                    # Keep the block between #ifndef and next cppNode
-                    removeElse = True
-                    toRemove.append(cppNode)
-            elif cppTxt[0] == 'else' and removeElse:
-                removeInBetweenCPP(par)
-                toRemove.append(cppNode)
-            elif cppTxt[0] == 'endif':
-                toRemove.append(cppNode)
-            else:
-                pass         
-    # Remove all cpp keys
-    for cppNode in toRemove:         
-        par = getParent(doc,cppNode)
-        par.remove(cppNode)
-
-@debugDecor
 def inlineContainedSubroutines(doc):
     """
     Inline all contained subroutines in the main subroutine
@@ -1023,10 +960,6 @@ class Applications():
     @copy_doc(checkStackArginCall)
     def checkStackArginCall(self, *args, **kwargs):
         return checkStackArginCall(self._xml, *args, **kwargs)  
-    
-    @copy_doc(applyCPP)
-    def applyCPP(self, *args, **kwargs):
-        return applyCPP(self._xml, *args, **kwargs)
     
     @copy_doc(addIncludes)
     def addIncludes(self, *args, **kwargs):

@@ -190,10 +190,18 @@ points (multiple column dependency).
 
 **\--addIncludes** add .h includes in the file and remove the INCLUDE statement.
 
-**\--applyCPP** apply ifdef key.
-
 **\--checkStackArginCall** check in all CALL statements if YLSTACK must be present.
 
 **\--mnhExpand** apply the mnh\_expand directives using DO loops.
 
 **\--mnhExpandConcurrent** apply the mnh\_expand directives using DO CONCURRENT loops.
+
+### Preprocessor
+
+**\--applyCPPifdef** This option is followed by the list of defined or undefined CPP keys.
+All #ifdef and #ifndef concerning these keys are evaluated. Undefined keys are preceded by
+a percentage sign '%' (e.g. if we use '--applyCPPifdef K', '#ifdef K' is evaluated to True;
+whereas if we use '--applyCPPifdef %K', '#ifdef K' is evaluated to False.
+But the method does not evaluate more complicated cpp directives such as '#if defined'.
+
+

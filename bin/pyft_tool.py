@@ -149,8 +149,6 @@ if __name__ == '__main__':
                                help='Add local arrays to the stack')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
                                help='Add .h includes in the file and remove the INCLUDE statement')  
-    gApplications.add_argument('--applyCPP', default=False, action='store_true',
-                               help='Apply ifdef key')
     gApplications.add_argument('--checkStackArginCall', default=False, action='store_true',
                                help='Check in all CALL statements if YLSTACK must be present')
     gApplications.add_argument('--mnhExpand', default=False, action='store_true',
@@ -196,6 +194,15 @@ if __name__ == '__main__':
     gMisc.add_argument('--tree', default=None, action='append',
                        help='Directories where source code must be searched for')
 
+
+    #Preprocessor
+    gCpp = parser.add_argument_group('Preprocessor')
+    gCpp.add_argument('--applyCPPifdef', nargs='*', action='append',
+                      help="This option is followed by the list of defined or undefined CPP keys. " + \
+                           "All #ifdef and #ifndef concerning these keys are evaluated. " + \
+                           "Undefined keys are preceded by a percentage sign '%'.")
+
+
     args = parser.parse_args()
     simplify = {'simplify': args.simplify}
 
@@ -239,7 +246,6 @@ if __name__ == '__main__':
     if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
     if args.addIncludes: pft.addIncludes()
     if args.checkStackArginCall: pft.checkStackArginCall()
-    if args.applyCPP: pft.applyCPP()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
     if args.deleteNonColumnCalls: pft.deleteNonColumnCalls(**simplify)
@@ -292,6 +298,9 @@ if __name__ == '__main__':
 
     #Misc
     if args.showScopes: pft.showScopesList()
+
+    #Preprocessor
+    if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
 
     #Writing
     if args.xml is not None: pft.writeXML(args.xml)
