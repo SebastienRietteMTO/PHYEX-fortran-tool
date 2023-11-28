@@ -177,7 +177,7 @@ call statements must be suppressed (it is a scope as described in [Concepts](#co
 
 **\--deleteBudgetDDH** delete Budget/DDH use.
 
-**\--deleteNonColumnCalls** delete call to routines that needs information on horizontal
+**\--deleteNonColumnCallsPHYEX** delete call to PHYEX routines that needs information on horizontal
 points (multiple column dependency).
 
 **\--removeIJLoops** remove DO loops on I and J dimensions (1, KLON).

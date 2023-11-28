@@ -133,8 +133,9 @@ if __name__ == '__main__':
                                help='Delete DR HOOK use')
     gApplications.add_argument('--deleteBudgetDDH', default=False, action='store_true',
                                help='Delete Budget/DDH use')
-    gApplications.add_argument('--deleteNonColumnCalls', default=False, action='store_true',
-                               help='Delete call to routines that needs information on horizontal points (multiple column dependency')
+    gApplications.add_argument('--deleteNonColumnCallsPHYEX', default=False, action='store_true',
+                               help='Delete call to PHYEX routines that needs information on horizontal ' + \
+                                    'points (multiple column dependency')
     gApplications.add_argument('--removeIJLoops', default=False, action='store_true',
                                help='Remove DO loops on I and J dimensions (1,KLON)')
     gApplications.add_argument('--expandAllArraysPHYEX', default=False, action='store_true',
@@ -200,7 +201,7 @@ if __name__ == '__main__':
     gCpp.add_argument('--applyCPPifdef', nargs='*', action='append',
                       help="This option is followed by the list of defined or undefined CPP keys. " + \
                            "All #ifdef and #ifndef concerning these keys are evaluated. " + \
-                           "Undefined keys are preceded by a percentage sign '%'.")
+                           "Undefined keys are preceded by a percentage sign.")
 
 
     args = parser.parse_args()
@@ -248,7 +249,7 @@ if __name__ == '__main__':
     if args.checkStackArginCall: pft.checkStackArginCall()
     if args.deleteDrHook: pft.deleteDrHook(**simplify)
     if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
-    if args.deleteNonColumnCalls: pft.deleteNonColumnCalls(**simplify)
+    if args.deleteNonColumnCallsPHYEX: pft.deleteNonColumnCallsPHYEX(**simplify)
     if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
     if args.expandAllArrays: pft.removeArraySyntax()
     if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()

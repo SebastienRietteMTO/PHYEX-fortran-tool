@@ -24,9 +24,9 @@ def addIncludes(doc):
         par.remove(includeStmt)
 
 @debugDecor
-def deleteNonColumnCalls(doc, simplify=False):
+def deleteNonColumnCallsPHYEX(doc, simplify=False):
     """
-    Remove Routines that compute with different vertical columns not needed for AROME
+    Remove PHYEX routines that compute with different vertical columns not needed for AROME
     MODE_ROTATE_WIND, UPDATE_ROTATE_WIND
     If Simplify is True, also remove all variables only needed for these calls
     :param doc: etree to use
@@ -37,8 +37,6 @@ def deleteNonColumnCalls(doc, simplify=False):
     removeCall(doc, 'BL_DEPTH_DIAG_3D', None, simplify=simplify)
     removeCall(doc, 'TM06_H', None, simplify=simplify)
     removeCall(doc, 'TURB_HOR_SPLT', None, simplify=simplify)
-
-
 
 @debugDecor
 def deleteDrHook(doc, simplify=False):
@@ -973,9 +971,9 @@ class Applications():
     def deleteBudgetDDH(self, *args, **kwargs):
         return deleteBudgetDDH(self._xml, *args, **kwargs)
 
-    @copy_doc(deleteNonColumnCalls)
-    def deleteNonColumnCalls(self, *args, **kwargs):
-        return deleteNonColumnCalls(self._xml, *args, **kwargs)
+    @copy_doc(deleteNonColumnCallsPHYEX)
+    def deleteNonColumnCallsPHYEX(self, *args, **kwargs):
+        return deleteNonColumnCallsPHYEX(self._xml, *args, **kwargs)
 
     @copy_doc(removeIJLoops)
     def removeIJLoops(self, *args, **kwargs):
