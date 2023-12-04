@@ -110,6 +110,8 @@ in [Concepts](#concepts)) where unused variables are searched for.
 **\--removePHYEXUnusedLocalVariables WHERE EXCLUDE** variation aroud the \--removeUnusedLocalVariables
 to deal with the variables declared in the mnh\_expand directives
 
+**\--addExplicitArrayBounds** Adds explicit bounds to arrays that already have parentheses.
+
 ### Cosmetics
 
 **\--upperCase** puts the FORTRAN code into upper case letters.

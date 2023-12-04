@@ -7,7 +7,7 @@ from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debug
                        PYFTError, getFileName)
 from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath, isScopeNode
 from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar
-from pyft.expressions import createExprPart, simplifyExpr
+from pyft.expressions import createExprPart, simplifyExpr, createArrayBounds
 from pyft.cosmetics import changeIfStatementsInIfConstructs        
 import re
 import logging
@@ -119,28 +119,6 @@ def createDoConstruct(loopVariables, indent=0, concurrent=False):
                 doconstruct.tail += (indent + 2 * i - 2) * ' ' #Indentation for the ENDDO statement
     return inner, outer, 2 if concurrent else 2 * len(loopVariables)
 
-@debugDecor
-def createArrayBounds(lowerBoundstr, upperBoundstr, context):
-    """
-    Return a lower-bound and upper-bound node
-    :param lowerBoundstr: string for the fortran lower bound of an array
-    :param upperBoundstr: string for the fortran upper bound of an array
-    :param context: 'DO' for DO loops
-                    'DOCONCURRENT' for DO CONCURRENT loops
-                    'ARRAY' for arrays
-    """
-    lowerBound = ET.Element('{http://fxtran.net/#syntax}lower-bound')
-    lowerBound.insert(0, createExprPart(lowerBoundstr))
-    upperBound = ET.Element('{http://fxtran.net/#syntax}upper-bound')
-    upperBound.insert(0, createExprPart(upperBoundstr))
-    if context == 'DO':
-        lowerBound.tail = ', '
-    elif context in ('DOCONCURRENT', 'ARRAY'):
-        lowerBound.tail = ':'
-    else:
-        raise PYFTError('Context unknown in createArrayBounds: {c}'.format(c=str(context)))
-    return lowerBound, upperBound    
-    
 @debugDecor
 def setFalseIfStmt(doc, flags, scopePath, simplify=False):
     """

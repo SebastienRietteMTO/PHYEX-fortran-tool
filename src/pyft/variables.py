@@ -2,10 +2,12 @@
 This module implements functions to deal with variables
 """
 
+import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, PYFTError, debugDecor,
                        tostring, alltext, getFileName, removeFromList, getParent,
                        getSiblings, insertInList, fortran2xml, isExecutable, n2name)
-from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList
+from pyft.expressions import createArrayBounds
+from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList, getScopePath
 from xml.etree.ElementTree import Element
 import logging
 
@@ -155,6 +157,66 @@ def attachArraySpecToEntity(doc):
                     elem.append(array_spec)
                 # Remove the dimension and array-spec elements
                 removeFromList(doc, attr_elem, decl)
+
+@debugDecor
+def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
+    """
+    Replace ':' by explicit arrays bounds.
+    :param doc: etree to use
+    :param node: xml node in which ':' must be replaced (None to replace everywhere)
+    :param varList: var list or None to compute it
+    :param scope: scope. If node is not None, scope can be None (and the scope will be guessed)
+                                              or must correspond to the node.
+                         If node is None, scope can be None to search everywhere or be defined
+                                          to restrain search to this scope or list of scopes.
+    """
+    #List of variables
+    if varList is None:
+        varList = getVarList(doc)
+
+    #Scopes (as string path)
+    if scope is None:
+        scopes = [getParentScopeNode(doc, node)] if node is not None else getScopesList(doc)
+    else:
+        scopes = [scope] if not isinstance(scope, list) else scope
+    scopes = [getScopePath(doc, scope) if isinstance(scope, ET.Element) else scope
+              for scope in scopes]
+
+    for scope in scopes: #loop on scope
+        #We loop on some nodes: those contained in the scope if node is None or only on the provided node
+        for childNode in [node] if node is not None else getScopeChildNodes(doc, scope):
+            for parent4 in childNode.findall('.//{*}section-subscript/../../../..'): #named-E
+                if parent4.find('./{*}R-LT/{*}component-R') is None:
+                    #Shape of type members is unknown
+                    for parent in parent4.findall('.//{*}section-subscript/..'):
+                        for sub in parent.findall('.//{*}section-subscript'):
+                            lower_used = sub.find('./{*}lower-bound') 
+                            upper_used = sub.find('./{*}upper-bound')
+                            #A slice can be A(:), A(I:) or A(:I), but not A(I)
+                            #With A(:) and A(:I), lower_used is None
+                            #With A(I:) lower_used.tail contains a ':'
+                            #With A(I) lower_used.tail  doesn't contain a ':'
+                            if lower_used is None or (lower_used.tail is not None and ':' in lower_used.tail):
+                                if lower_used is None or upper_used is None:
+                                    #At least one array bound is implicit
+                                    varDesc = findVar(doc, n2name(parent4.find('.//{*}N')), scope, varList=varList)
+                                    if varDesc is not None and varDesc['t'] is not None and not 'CHAR' in varDesc['t']: #module array or character
+                                        lower_decl, upper_decl = varDesc['as'][list(parent).index(sub)]
+                                        if lower_decl is None: lower_decl = '1'
+                                        #When a bound is explicit, we keep it, otherwise we take the declared bound
+                                        lowerBound = lower_decl if lower_used is None else alltext(lower_used)
+                                        upperBound = upper_decl if upper_used is None else alltext(upper_used)
+                                        if upperBound is not None: #case of implicit shape
+                                            lowerXml, upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
+                                            #We remove current explicit bounds or the ':', and replace them
+                                            #by the new explicit declaration
+                                            for n in sub:
+                                                if n.tag.split('}')[1] in ('lower-bound', 'upper-bound'):
+                                                    sub.remove(n)
+                                                else:
+                                                    raise PYFTError("Unexpected case, tag is {}".format(n.tag.split('}')[1]))
+                                            sub.text = '' # Delete the initial ':'
+                                            sub.extend([lowerXml, upperXml])
 
 @debugDecor
 def getImplicitNoneText(doc, loc):
@@ -738,3 +800,7 @@ class Variables():
     @copy_doc(removeUnusedLocalVar)
     def removeUnusedLocalVar(self, *args, **kwargs):
         return removeUnusedLocalVar(self._xml, *args, **kwargs)
+
+    @copy_doc(addExplicitArrayBounds)
+    def addExplicitArrayBounds(self, *args, **kwargs):
+        return addExplicitArrayBounds(self._xml, *args, **kwargs)

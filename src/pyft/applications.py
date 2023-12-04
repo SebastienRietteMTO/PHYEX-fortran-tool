@@ -454,6 +454,8 @@ def inlineContainedSubroutines(doc):
                             if 'ELEMENTAL' in alltext(prefix[0]): 
                                 arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
                                 if len(arrayRincallStmt) > 0:
+                                    #We should be able to use the following statement
+                                    #addExplicitArrayBounds(doc, node=callStmt, varList=mainVarList, scope=loc[1])
                                     addExplicitArrayBounds(loc[1], callStmt, mainVarList)
                         #
                         subContaintedVarList = getVarList(doc,getScopePath(doc,containedRoutines[containedRoutine]))
