@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pyft import PYFT
+import logging
 
 def isint(s):
     """
@@ -216,100 +217,108 @@ if __name__ == '__main__':
         parserOptions = [el for elements in args.parserOption for el in elements]
     if args.addIncludes:
         parserOptions = [opt for opt in parserOptions if opt not in ('-no-include', '-noinclude')]
-    pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
-               verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree)
 
-    #File name manipulations
-    if args.renamefF: pft.renameUpper()
-    if args.renameFf: pft.renameLower()
+    try:
+        pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
+                   verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree)
 
-    #Variables
-    if args.showVariables: pft.showVarList()
-    if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
-    if args.removeVariable is not None: pft.removeVar(args.removeVariable, **simplify)
-    if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
-    if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
-    if args.showUnusedVariables is not None:
-        if len(args.showUnusedVariables) == 1 and args.showUnusedVariables[0] is None:
-            pft.showUnusedVar()
-        else:
-            pft.showUnusedVar(args.showUnusedVariables)
-    if args.removeUnusedLocalVariables is not None:
-        for where, exclude in args.removeUnusedLocalVariables:
-            pft.removeUnusedLocalVar(where if where != 'ALL' else None,
-                                     [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
-                                     **simplify)
-    if args.removePHYEXUnusedLocalVariables is not None:
-        for where, exclude in args.removePHYEXUnusedLocalVariables:
-            pft.removePHYEXUnusedLocalVar(where if where != 'ALL' else None,
-                                          [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
-                                          **simplify)
-    if args.addExplicitArrayBounds: pft.addExplicitArrayBounds()
+        #File name manipulations
+        if args.renamefF: pft.renameUpper()
+        if args.renameFf: pft.renameLower()
 
-    #Applications
-    if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
-    if args.addIncludes: pft.addIncludes()
-    if args.checkStackArginCall: pft.checkStackArginCall()
-    if args.deleteDrHook: pft.deleteDrHook(**simplify)
-    if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
-    if args.deleteNonColumnCallsPHYEX: pft.deleteNonColumnCallsPHYEX(**simplify)
-    if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
-    if args.expandAllArrays: pft.removeArraySyntax()
-    if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
-    if args.removeIJLoops: pft.removeIJLoops()
-    assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
-    if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
-    if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
+        #Variables
+        if args.showVariables: pft.showVarList()
+        if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
+        if args.removeVariable is not None: pft.removeVar(args.removeVariable, **simplify)
+        if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
+        if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
+        if args.showUnusedVariables is not None:
+            if len(args.showUnusedVariables) == 1 and args.showUnusedVariables[0] is None:
+                pft.showUnusedVar()
+            else:
+                pft.showUnusedVar(args.showUnusedVariables)
+        if args.removeUnusedLocalVariables is not None:
+            for where, exclude in args.removeUnusedLocalVariables:
+                pft.removeUnusedLocalVar(where if where != 'ALL' else None,
+                                         [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                         **simplify)
+        if args.removePHYEXUnusedLocalVariables is not None:
+            for where, exclude in args.removePHYEXUnusedLocalVariables:
+                pft.removePHYEXUnusedLocalVar(where if where != 'ALL' else None,
+                                              [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                              **simplify)
+        if args.addExplicitArrayBounds: pft.addExplicitArrayBounds()
 
-    #Cosmetics
-    if args.upperCase: pft.upperCase()
-    if args.lowerCase: pft.lowerCase()
-    if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
-    if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
-    if args.indent: pft.indent()
-    if args.removeIndent: pft.indent(indent_programunit=0, indent_branch=0)
-    if args.removeEmptyLines: pft.removeEmptyLines()
-    if args.removeComments: pft.removeComments()
-    if args.updateSpaces: pft.updateSpaces()
-    kw_updateCnt = dict(align=args.alignContinuation,
-                        addBegin=args.addBeginContinuation,
-                        removeBegin=args.removeBeginContinuation,
-                        removeALL=args.removeALLContinuation)
-    if True in kw_updateCnt.values(): pft.updateContinuation(**kw_updateCnt)
-    if args.prettify:
-        pft.indent()
-        pft.upperCase()
-        pft.removeEmptyLines()
-        pft.updateSpaces()
-        pft.updateContinuation()
-    if args.minify:
-        pft.indent(indent_programunit=0, indent_branch=0)
-        pft.upperCase()
-        pft.removeComments()
-        pft.removeEmptyLines()
-        pft.updateSpaces()
-        pft.updateContinuation(align=False, removeALL=True, addBegin=False)
+        #Applications
+        if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
+        if args.addIncludes: pft.addIncludes()
+        if args.checkStackArginCall: pft.checkStackArginCall()
+        if args.deleteDrHook: pft.deleteDrHook(**simplify)
+        if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
+        if args.deleteNonColumnCallsPHYEX: pft.deleteNonColumnCallsPHYEX(**simplify)
+        #mnhExpand must be before inlineContainedSubroutines as inlineContainedSubroutines can change
+        #variable names used by mnh_expand directives
+        assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
+        if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
+        if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
+        if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
+        if args.expandAllArrays: pft.removeArraySyntax()
+        if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
+        if args.removeIJLoops: pft.removeIJLoops()
 
-    #Checks
-    if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
-    if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
+        #Cosmetics
+        if args.upperCase: pft.upperCase()
+        if args.lowerCase: pft.lowerCase()
+        if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
+        if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
+        if args.indent: pft.indent()
+        if args.removeIndent: pft.indent(indent_programunit=0, indent_branch=0)
+        if args.removeEmptyLines: pft.removeEmptyLines()
+        if args.removeComments: pft.removeComments()
+        if args.updateSpaces: pft.updateSpaces()
+        kw_updateCnt = dict(align=args.alignContinuation,
+                            addBegin=args.addBeginContinuation,
+                            removeBegin=args.removeBeginContinuation,
+                            removeALL=args.removeALLContinuation)
+        if True in kw_updateCnt.values(): pft.updateContinuation(**kw_updateCnt)
+        if args.prettify:
+            pft.indent()
+            pft.upperCase()
+            pft.removeEmptyLines()
+            pft.updateSpaces()
+            pft.updateContinuation()
+        if args.minify:
+            pft.indent(indent_programunit=0, indent_branch=0)
+            pft.upperCase()
+            pft.removeComments()
+            pft.removeEmptyLines()
+            pft.updateSpaces()
+            pft.updateContinuation(align=False, removeALL=True, addBegin=False)
 
-    #Statements
-    if args.removeCall is not None:
-        for rc in args.removeCall: pft.removeCall(rc[1], None if rc[0] == 'ALL' else rc[0], **simplify)
-    if args.removePrints is not None:
-        for rp in args.removePrints: pft.removePrints(None if rp == 'ALL' else rp, **simplify)
+        #Checks
+        if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
+        if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
 
-    #Misc
-    if args.showScopes: pft.showScopesList()
+        #Statements
+        if args.removeCall is not None:
+            for rc in args.removeCall: pft.removeCall(rc[1], None if rc[0] == 'ALL' else rc[0], **simplify)
+        if args.removePrints is not None:
+            for rp in args.removePrints: pft.removePrints(None if rp == 'ALL' else rp, **simplify)
 
-    #Preprocessor
-    if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
+        #Misc
+        if args.showScopes: pft.showScopesList()
 
-    #Writing
-    if args.xml is not None: pft.writeXML(args.xml)
-    if not args.dryRun:
-        pft.write()
+        #Preprocessor
+        if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
 
-    #Closing
-    pft.close()
+        #Writing
+        if args.xml is not None: pft.writeXML(args.xml)
+        if not args.dryRun:
+            pft.write()
+
+        #Closing
+        pft.close()
+
+    except:
+        logging.error("The following error has occurred in the file " + args.INPUT)
+        raise

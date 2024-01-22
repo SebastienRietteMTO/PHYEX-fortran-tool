@@ -6,7 +6,7 @@ from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debug
                        alltext,
                        PYFTError, getFileName)
 from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath, isScopeNode
-from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar
+from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar, findArrayBounds
 from pyft.expressions import createExprPart, simplifyExpr, createArrayBounds
 from pyft.cosmetics import changeIfStatementsInIfConstructs        
 import re
@@ -517,7 +517,7 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
     # - while the 'in_mnh' flag is activated:
     #     - update ('updateStmt' function, that uses 'arrayR2parensR') and put all statements in the DO loops
     # - in case (if 'everywhere' is True) statement is expressed using array-syntax:
-    #     - find the bounds and guess a set of variables to use ('find_bounds' function)
+    #     - find the bounds and guess a set of variables to use ('findArrayBounds' function)
     #     - introduce the DO loops (with 'createDoConstruct') if we cannot reuse the previous one
     #     - update ('updateStmt' function, that uses 'arrayR2parensR') and put all statements in the DO loops
     # - in case the statement contains other statements (SUBROUTINE, DO loop...), call 'recur' on it
@@ -548,75 +548,6 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
         else:
             kind = directive[17:].lstrip(' ').split('(')[0].strip()
         return table, kind
-
-    
-    def find_bounds(arr, varList, currentScope, loopVar):
-        """
-        Find bounds and loop variable given a array
-        :param arr: array node (named-E node with a array-R child)
-        :param varList: list of variables
-        :param loopVar: see removeArraySyntax docstring
-        :return table: as the table returned by the decode function, or None if unable to fill it
-        """
-        table = {} #ordered since python 3.7
-        name = n2name(arr.find('./{*}N'))
-
-        #Iteration on the different subscript
-        for iss, ss in enumerate(arr.findall('./{*}R-LT/{*}array-R/{*}section-subscript-LT/{*}section-subscript')):
-            #We are only interested by the subscript containing ':'
-            #we must not iterate over the others, eg: X(:,1)
-            if ':' in alltext(ss):
-                #Look for lower and upper bounds for iteration and declaration
-                lower_used = ss.find('./{*}lower-bound')
-                upper_used = ss.find('./{*}upper-bound')
-                varDesc = findVar(doc, name, currentScope, varList, array=True)
-                if varDesc is not None:
-                    lower_decl, upper_decl = varDesc['as'][iss]
-                    if lower_decl is None: lower_decl = '1' #default lower index for FORTRAN arrays
-                else:
-                    lower_decl, upper_decl = None, None
-
-                #name of the loop variable
-                if loopVar is None:
-                    #loopVar is not defined, we create a new variable for the loop
-                    #only if lower and upper bounds have been found (easy way to discard character strings)
-                    guess = lower_decl is not None and upper_decl is not None
-                    varName = False
-                else:
-                    varName = loopVar(lower_decl, upper_decl,
-                                      None if lower_used is None else alltext(lower_used),
-                                      None if upper_used is None else alltext(upper_used), name, iss)
-                    if varName is not False and varName in table.keys():
-                        raise PYFTError(("The variable {var} must be used for the rank #{i1} whereas it " + \
-                                         "is already used for rank #{i2} (for array {name}).").format(
-                                           var=varName, i1=str(iss), i2=str(list(table.keys()).index(varName)),
-                                           name=name))
-                    if varName is not False and findVar(doc, varName, currentScope,
-                                                        varList, array=False, exactScope=True) is None:
-                        #We must declare the variable
-                        varDesc = {'n':varName, 'scope':currentScope, 'new':True}
-                        varList.append(varDesc)
-                    #varName can be a string (name to use), True (to create a variable), False (to discard the array)
-                    guess = varName is True
-                if guess:
-                    j = 1
-                    #We look for a variable name that don't already exist
-                    #We can reuse a newly created varaible only if it is not used for the previous indexes
-                    #of the same statement
-                    while any([v['n'] for v in varList
-                               if ((v['n'].upper() == 'J' + str(j) and not v.get('new', False)) or
-                                   'J' + str(j) in table.keys())]):
-                        j += 1
-                    varName = 'J' + str(j)
-                    varDesc = {'n':varName, 'scope':currentScope, 'new':True}
-                    if varDesc not in varList:
-                        varList.append(varDesc)
-
-                #fill table
-                table[varName] = (lower_decl if lower_used is None else alltext(lower_used),
-                                  upper_decl if upper_used is None else alltext(upper_used))
-
-        return None if False in table.keys() else table
 
     def arrayR2parensR(namedE, table, varList, currentScope):
         """
@@ -943,7 +874,11 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
                         #Get all the variables declared in the tree
                         varList.extend(getVarList(doc))
                     #Guess a variable name
-                    newtable = find_bounds(arr, varList, currentScope, loopVar) if arr is not None else None
+                    if arr is not None:
+                        newtable, varNew = findArrayBounds(doc, arr, varList, currentScope, loopVar)
+                        varList.extend(varNew)
+                    else:
+                        newtable = None
 
                 if newtable is None:
                     #We cannot convert the statement (not in array-syntax, excluded or no variable found to loop)

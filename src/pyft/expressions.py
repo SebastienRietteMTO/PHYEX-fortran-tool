@@ -56,11 +56,12 @@ def simplifyExpr(expr, add=None, sub=None):
     :return: simplified expression
     E.g. simplifyExpr('1+1+I+JI-I') => '2+JI'
     Note: only additions and substractions are considered
+          addition and subtraction within parentheses are forbidden
     """
     #We could have used external module, such as sympy, but this routine (as long as it's sufficient)
     #avoids introducing dependencies.
-    if '(' in expr or ')' in expr:
-        raise NotImplementedError("Expression cannot (yet) contain '(' or ')'.")
+    if re.search('\([^()]*[+-][^()]*\)', expr):
+        raise NotImplementedError("Expression cannot (yet) contain + or - sign inside parenthesis: {expr}".format(expr=expr))
 
     def split(expr):
         """

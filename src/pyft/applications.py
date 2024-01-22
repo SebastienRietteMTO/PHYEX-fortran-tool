@@ -3,25 +3,41 @@ This module implements functions for high-to-moderate level transformation
 """
 
 import xml.etree.ElementTree as ET
-from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml
+from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, n2name, PYFTError
 from pyft.statements import (removeCall, setFalseIfStmt, removeStmtNode,
                              removeArraySyntax, createDoConstruct, createArrayBounds)
-from pyft.variables import removeUnusedLocalVar, getVarList, addVar, addModuleVar, removeVar
+from pyft.variables import (removeUnusedLocalVar, getVarList, addVar, addModuleVar,
+                            removeVar, findArrayBounds, varSpec2stmt, renameVar)
 from pyft.cosmetics import changeIfStatementsInIfConstructs
 from pyft.scope import getScopesList, getScopePath
 from pyft.expressions import createExprPart
 import copy
+import re
 
 @debugDecor
 def addIncludes(doc):
     """
-    Remove the INCLUDE "file.h" statement and add the content of the .h with the option no-include absent of fxtran
+    fxtran includes the file but:
+    - it does not remove the INCLUDE "file.h" statement
+    - include the file with its file node
+    This function removes the INCLUDE statement and the file node
     :param doc: etree to use
     """
+    #Remove the include statement
     includeStmts = doc.findall('.//{*}include')
     for includeStmt in includeStmts:
-        par = getParent(doc,includeStmt)
+        par = getParent(doc, includeStmt)
         par.remove(includeStmt)
+    #Remove the file node
+    mainfile = doc.find('./{*}file')
+    for file in mainfile.findall('.//{*}file'):
+        par = getParent(doc, file)
+        index = list(par).index(file)
+        if file.tail is not None:
+            file[-1].tail = file.tail if file[-1].tail is None else (file[-1].tail + file.tail)
+        for node in file[::-1]:
+            par.insert(index, node)
+        par.remove(file)
 
 @debugDecor
 def deleteNonColumnCallsPHYEX(doc, simplify=False):
@@ -266,64 +282,6 @@ def inlineContainedSubroutines(doc):
     :param doc: xml fragment containing main and contained subroutine
     """
 
-    def getIndexLoop(lowerBound,upperBound):
-        if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
-        or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\
-        or 'IGWET' in upperBound:
-            n = 'JL'
-        elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
-            n = 'JIJ'
-        elif 'IKB' in upperBound or 'IKE' in upperBound or 'KT' in upperBound:
-            n = 'JK'
-        elif 'SV' in lowerBound or 'SV' in upperBound:
-            n = 'JSV'
-        elif 'KRR' in upperBound:
-            n = 'JRR'
-        elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound or 'IIU' in upperBound:
-            n = 'JI'
-        elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
-            n = 'JJ'
-        else:
-            exit
-        return n
-
-    def E2StmtToDoStmt(node_astmt):
-        """
-        Conversion function to remove the array syntax on the first arrayR of E-2 node for elemental subroutine
-        For now, this function is used only to adapt array-syntax in CALL of an ELEMENTAL SUBROUTINE: 
-        a lot of the functionnality taken from aStmtToDoStmt is not useful (such as onlyNumbers and the if + 2 elif cases within for loop on subsE2)
-        :param node_astmt: a-stmt node to work on
-        """
-        doToBuild = []
-        arrayR = node_astmt.findall('.//{*}E-2//{*}array-R')
-        if len(arrayR) > 0:
-            subsE2=arrayR[0].findall('.//{*}section-subscript')
-            for i,sub in enumerate(subsE2):
-                if len(sub.findall('.//{*}upper-bound')) == 0:
-                    if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
-                        # Creation of the array-R object needed to be converted futher in parens-R
-    #                    ind=varArrayNamesList.index(varName)
-    #                    lowerBound = alltext(sub.findall('.//{*}lower-bound/{*}*/{*}*/{*}n')[0])
-    #                    upperBound = str(varArray[ind]['as'][i][1])
-    #                    lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
-    #                    sub.insert(0,lowerXml)
-    #                    sub.insert(1,upperXml)
-    #                    sub.text = '' # Delete the initial ':'
-    #                    doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
-                        pass # This case does not exit yet in the form of PHYEX 0.5.0 : case of calling an elemental subroutine with calling arg such as A(IKTB:)
-                    else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
-                        pass
-                else:
-                    lowerBounds=sub.findall('.//{*}lower-bound')
-                    upperBounds=sub.findall('.//{*}upper-bound')
-                    lowerBound=alltext(lowerBounds[0])
-                    upperBound=alltext(upperBounds[0])
-                    if len(sub.findall('.//{*}literal-E')) == 2: #lower and upper Bounds
-                        break
-                    else:
-                        doToBuild.append(createDoConstruct({getIndexLoop(lowerBound, upperBound):(lowerBound, upperBound)})[1])
-        return doToBuild
-
     def placeArrayRtoparensR(doc, locNode, node_opE):
         """
         Convert ArrayR to parensR (remove the array-R and add parensR)
@@ -331,6 +289,27 @@ def inlineContainedSubroutines(doc):
         :param node_opE: working node
         :param locNode: scope of the working node
         """
+        def getIndexLoop(lowerBound,upperBound):
+            if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
+            or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\
+            or 'IGWET' in upperBound:
+                n = 'JL'
+            elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
+                n = 'JIJ'
+            elif 'IKB' in upperBound or 'IKE' in upperBound or 'KT' in upperBound:
+                n = 'JK'
+            elif 'SV' in lowerBound or 'SV' in upperBound:
+                n = 'JSV'
+            elif 'KRR' in upperBound:
+                n = 'JRR'
+            elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound or 'IIU' in upperBound:
+                n = 'JI'
+            elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
+                n = 'JJ'
+            else:
+                exit
+            return n
+
         def arrayRtoparensR(doc,arrayR):
             """
             Return a parensR node from an array-R
@@ -433,7 +412,7 @@ def inlineContainedSubroutines(doc):
     # Inline contained subroutines : look for sub: / sub:
     for loc in locations:
         if loc[0].count('sub:') >= 2:
-            containedRoutines[alltext(loc[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = loc[1]
+            containedRoutines[alltext(loc[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = (loc[0], loc[1])
     # Start by nested contained subroutines call, and end up with the last index = the main subroutine to treat 
     locations.reverse()
     for loc in locations: # For all subroutines (main + contained)
@@ -441,6 +420,7 @@ def inlineContainedSubroutines(doc):
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
             for callStmtNn in callStmtsNn: # For all CALL statements
                 mainVarList = getVarList(doc,getScopePath(doc,loc[1]))
+                totalVarList = getVarList(doc) #Must be recomputed to take into account new variables
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
                         callStmt = getParent(doc,callStmtNn,level=4)
@@ -449,85 +429,95 @@ def inlineContainedSubroutines(doc):
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
                             par = getParent(doc, callStmt) #update parent
                         # Specific case for ELEMENTAL subroutines: need to add explicit arrays bounds for further arrays expansion
-                        prefix = containedRoutines[containedRoutine].findall('.//{*}prefix')
+                        prefix = containedRoutines[containedRoutine][1].findall('.//{*}prefix')
                         if len(prefix)>0:
                             if 'ELEMENTAL' in alltext(prefix[0]): 
                                 arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
                                 if len(arrayRincallStmt) > 0:
-                                    #We should be able to use the following statement
+                                    #We should be able to use the following statement, with addExplicitArrayBounds taken from Variables
                                     #addExplicitArrayBounds(doc, node=callStmt, varList=mainVarList, scope=loc[1])
                                     addExplicitArrayBounds(loc[1], callStmt, mainVarList)
                         #
-                        subContaintedVarList = getVarList(doc,getScopePath(doc,containedRoutines[containedRoutine]))
+                        subContaintedVarList = getVarList(doc,getScopePath(doc,containedRoutines[containedRoutine][1]))
                         # Inline
-                        nodeInlined, localVarToAdd = inline(doc, containedRoutines[containedRoutine], callStmt, subContaintedVarList, mainVarList)
-                        # Add local var to main routine
-                        for var in localVarToAdd:
-                            arrayTxt=''
-                            if var['as']:
-                                arrayTxt=', DIMENSION('
-                                for el in var['as']:
-                                    if el[0] is None:
-                                        arrayTxt+=str(el[1])+','
-                                tempArrayTxt = arrayTxt
-                                if arrayTxt[-1] == ',': # remove last ',' if present
-                                    tempArrayTxt = arrayTxt[:-1]
-                                arrayTxt = tempArrayTxt
-                                arrayTxt+=')'
-                            addVar(doc,[[loc[0], var['n'], var['t']+arrayTxt+' :: '+var['n'], None]])
-                            
+                        nodeInlined, localVarToAdd, localUseToAdd = inline(doc,
+                                                                           containedRoutines[containedRoutine][1],
+                                                                           callStmt, subContaintedVarList,
+                                                                           mainVarList,
+                                                                           containedRoutines[containedRoutine][0],
+                                                                           totalVarList)
+                        # Add local var and use to main routine
+                        addVar(doc, [[loc[0], var['n'], varSpec2stmt(var), None] for var in localVarToAdd])
+                        addModuleVar(doc, [[loc[0], n2name(use_stmt.find('.//{*}module-N//{*}N')),
+                                            [n2name(v.find('.//{*}N')) for v in use_stmt.findall('.//{*}use-N')]]
+                                           for use_stmt in localUseToAdd])
+
                         # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
                         if len(prefix)>0:
                             if 'ELEMENTAL' in alltext(prefix[0]) and len(arrayRincallStmt) > 0:
-                                loopIndexToCheck = []
-                                Node_aStmt = nodeInlined.findall('.//{*}a-stmt')
-                                doToBuild = []
-                                doI=0
-                                # Loop for the Do loops to build
-                                while len(doToBuild) == 0:
-                                    doToBuild = E2StmtToDoStmt(Node_aStmt[doI])
-                                    doToBuild.reverse() # To write first loops from the latest index (K or SV)
-                                    for dostmt in doToBuild:
-                                        if alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]) not in loopIndexToCheck:
-                                            loopIndexToCheck.append(alltext(dostmt.findall('.//{*}do-V/{*}named-E/{*}N/{*}n')[0]))
-                                    doI += 1
+                                # Look for an array affectation to guess the DO loops to put around the call
+                                # We use an up-to-date version of the var list
+                                firstArr = nodeInlined.find('.//{*}a-stmt//{*}E-2//{*}array-R/../..')
+                                table, newVar = findArrayBounds(doc, firstArr, getVarList(doc),
+                                                                loc[0], _loopVarPHYEX)
+
+                                # Add declaration of loop index if missing
+                                for varName in table.keys():
+                                    #TODO use findVar
+                                    if not varName in [v['n'] for v in mainVarList]:
+                                        v = {'as': [], 'asx': [],
+                                             'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
+                                             'use': False, 'opt': False, 'allocatable': False,
+                                             'parameter': False, 'init': None}
+                                        addVar(doc, [[loc[0], v['n'], varSpec2stmt(v), None]])
+
+                                # Create the DO loops
+                                inner, outer, _ = createDoConstruct(table)
+
                                 # Replace the array-syntax by loop index in every a-stmt node
-                                ArrayRLT = nodeInlined.findall('.//{*}R-LT') # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
-                                for node_opE in ArrayRLT: 
+                                for node_opE in nodeInlined.findall('.//{*}R-LT'):
+                                    # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
                                     placeArrayRtoparensR(doc, nodeInlined, node_opE) 
+
                                 # Place the Do loops on top of the inlined routine
-                                doToBuild[-1][-1].insert(-1,nodeInlined) # place the nodeInlined in the last object (inner loop)
-                                # Insert nested DO-loops into the previous object of doToBuild until reach the 0e object
-                                for i in range(len(doToBuild)-1):
-                                    doToBuild[len(doToBuild)-1-(i+1)][0].insert(3,doToBuild[len(doToBuild)-1-i])
-                                nodeInlined = doToBuild[0]
+                                # nodeInlined is a program-unit, we must insert the subelements
+                                for node in nodeInlined[::-1]:
+                                    inner.insert(-1, node)
+                                # In the general case, nodeInlined is a program-unit. We must
+                                # add this node for being compatible
+                                nodeInlined = ET.Element('{http://fxtran.net/#syntax}program-unit')
+                                nodeInlined.append(outer)
                             
                         # Remove call statement of the contained routines
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)
                         par.remove(callStmt)
-                        nodeInlined.tail='\n' #to avoid extra spaces in tail for #ifdef #else statements
-                        par.insert(index,nodeInlined)
+                        if callStmt.tail is not None:
+                            if nodeInlined[-1].tail is None:
+                                nodeInlined[-1].tail = callStmt.tail
+                            else:
+                                nodeInlined[-1].tail = nodeInlined[-1].tail + callStmt.tail
+                        for node in nodeInlined[::-1]:
+                            #nodeInlined is a program-unit, we must insert the subelements
+                            par.insert(index, node)
                         exit
                 # Update containedRoutines
                 containedRoutines = {}
                 # Inline contained subroutines : look for sub: / sub:
                 for locs in locations:
                     if locs[0].count('sub:') >= 2:
-                        containedRoutines[alltext(locs[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = locs[1]
+                        containedRoutines[n2name(locs[1].find('.//{*}subroutine-N/{*}N'))] = (locs[0], locs[1])
 
-    #Remove original containted subroutines and 'CONTAINS' statement
-    #contains = doc.find('.//{*}contains-stmt')
-    #if contains is not None:
-    #    par = getParent(doc,contains)
-    #    par.remove(contains)
     for loc in locations:
         if loc[0].count('sub:') >= 2:
-            par = getParent(doc,loc[1])
-            par.remove(loc[1])
+            name = loc[0].split(':')[-1].upper() # Subroutine name
+            nodes = [N for N in doc.findall('.//{*}N') if n2name(N).upper() == name] # All nodes refering the subroutine
+            if all([N in loc[1].iter() for N in nodes]):
+                # Subroutine name not used (apart in its definition scope)
+                getParent(doc, loc[1]).remove(loc[1])
 
 
-def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList):
+def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subScope, totalVarList):
     """
     Inline a subContainted subroutine
     Steps :
@@ -540,32 +530,24 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList):
     :param callStmt : the call-stmt to get the values of the intent args
     :param subContaintedVarList: var list of the subContained subroutine
     :param mainVarList: var list of the main (calling) subroutine
+    :param subScope: scope of the contained subroutine to include
+    :param totalVarList: var list of all scopes
     """
-    def setPRESENTbyTrue(node, var, varsNamedNn):
+    def setPRESENTbyTrue(node, var):
         """
         Replace PRESENT(var) by .True. on node if var is found in varsNamedN
         :param node: xml node to work on (a contained subroutine)
         :param var: string of the name of the optional variable to check
-        :param varsNamedNn : list of xml element named-E/N/n of node
         """
-        for el in varsNamedNn: #On all named-E, check for the current arg to replace
-                    if el.text == var:
-                        potentialPresentNode = getParent(node, el, level=8)
-                        if potentialPresentNode: # level 8 parent may not exit
-                            presentNode = potentialPresentNode.findall('.//{*}named-E/{*}N/{*}n')
-                            if len(presentNode) > 0:
-                                if alltext(presentNode[0]).upper() == 'PRESENT': #Replace 'PRESENT()' by True
-                                    TrueNode = ET.Element('{http://fxtran.net/#syntax}literal-E')
-                                    TrueNode.text = ' .TRUE. '
-                                    tail = potentialPresentNode.tail
-                                    TrueNode.tail = tail
-                                    par = getParent(node,potentialPresentNode)
-                                    allsiblings = par.findall('./{*}*')
-                                    index=allsiblings.index(potentialPresentNode)
-                                    par.remove(potentialPresentNode)
-                                    par.insert(index, TrueNode)
-                                    
-    
+        for namedE in node.findall('.//{*}named-E/{*}N/..'):
+            if n2name(namedE.find('./{*}N')).upper() == 'PRESENT':
+                presentarg = n2name(namedE.find('./{*}R-LT/{*}parens-R/{*}element-LT/{*}element/{*}named-E/{*}N'))
+                if presentarg.upper() == var.upper():
+                    for n in namedE[:]:
+                        namedE.remove(n)
+                    namedE.tag = '{http://fxtran.net/#syntax}literal-E'
+                    namedE.text = '.TRUE.'
+
     # Deep copy the object to possibly modify the original one multiple times
     node = copy.deepcopy(subContained)
     nodeToRemove, varPermutted = [], []
@@ -573,211 +555,305 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList):
     
     # Get local variables that are not present in the main routine for later addition
     localVarToAdd = []
-    for var in subContaintedVarList:
-        if not var['arg']: # for local variables only
-            localVarToAdd.append(var)
-            for mainVar in mainVarList:
-                if var['n'] == mainVar['n']: # the local variable name in the subcontained is already present in the main routine, we do not add it
-                    localVarToAdd.remove(var)
+    subst = []
+    for var in [v for v in subContaintedVarList if not v['arg'] and not v['use']]: #for local variables only
+        #TODO use variables.findVar instead of searching in totalVarList
+        if var['n'].upper() in [v['n'].upper() for v in totalVarList]:
+            # There is a name conflict, the local variable must be renamed before being declared in the main routine
+           newName = re.sub(r'_\d+$', '', var['n'])
+           i = 1
+           while newName + '_' + str(i) in [v['n'].upper() for v in subContaintedVarList + totalVarList]:
+               i += 1
+           newName += '_' + str(i)
+           renameVar(node, var['n'], newName)
+           subst.append((var['n'], newName))
+           var['n'] = newName
+        localVarToAdd.append(var)
+
+    #In case a substituted variable is used in the declaration of another variable
+    for oldName, newName in subst:
+        for n in range(len(localVarToAdd)):
+           if localVarToAdd[n]['as'] is not None:
+               localVarToAdd[n]['as'] = [[re.sub(r'\b' +oldName + r'\b', newName, dim[i])
+                                          if dim[i] is not None else None
+                                          for i in (0, 1)]
+                                         for dim in localVarToAdd[n]['as']]
+
 
     # if any variable declaration (only local, declared in main routine), go directly to 2nd part of the removing algo
     if not node.findall('.//{*}T-decl-stmt'):
         declStmtFound = True
 
-    # Remove all objects that is implicit none, comment or else until reach something interesting
+    # Remove all objects that is implicit none, comment or else until reach something interesting; except USE
+    localUseToAdd = []
     for n in node:
         if not declStmtFound:
             if not n.tag.endswith('}T-decl-stmt'):
+                if n.tag.endswith('}use-stmt'):
+                    localUseToAdd.append(n)
                 nodeToRemove.append(n)
             elif n.tag.endswith('}T-decl-stmt'):
                 declStmtFound = True
                 nodeToRemove.append(n)
         else:
-            if n.tag.endswith('}T-decl-stmt') or n.tag.endswith('}C') or n.tag.endswith('}subroutine-stmt') or n.tag.endswith('}implicit-none-stmt') : # We also delete comments in the variable declaration block
+            if n.tag.endswith('}T-decl-stmt') or n.tag.endswith('}C') or n.tag.endswith('}subroutine-stmt') or n.tag.endswith('}implicit-none-stmt') or n.tag.endswith('}use-stmt'): # We also delete comments in the variable declaration block
+                if n.tag.endswith('}use-stmt'):
+                    localUseToAdd.append(n)
                 nodeToRemove.append(n)
             else:
                 break
     nodeToRemove.append(node.find('.//{*}end-subroutine-stmt'))
     for n in nodeToRemove:
         node.remove(n)
-        
-    # List of Arguments of the contained subroutine
-    varsRoutine = [] 
-    argsN = subContained.findall('.//{*}subroutine-stmt/{*}dummy-arg-LT/{*}arg-N')
-    for args in argsN:
-        varsRoutine.append(alltext(args))
-    # List of Optional arguments
-    varsOpt = []
-    for var in subContaintedVarList:
-        if var['arg']:
-            if var['opt']: varsOpt.append(var['n'])
-    # Permute args
-    varsCall = callStmt.findall('.//{*}arg')
-    varsNamedNn = node.findall('.//{*}named-E/{*}N/{*}n')
-    for i,var in enumerate(varsCall): # For each Call arguments
-        if var.find('.//{*}arg-N'): # Check if arg is of type VAR=value
-            n = var.findall('.//{*}n')
-            if alltext(var.find('.//{*}k')) in varsOpt: # First, check if the permutted argument is optional. If true, look for PRESENT(var) and replace it by True
-                setPRESENTbyTrue(node, alltext(var.find('.//{*}k')), varsNamedNn)
-                varsNamedNn = node.findall('.//{*}named-E/{*}N/{*}n') #Update the list of named-E for later
-            if len(n):    
-                if alltext(n[0]) == alltext(var.find('.//{*}k')):
-                    if alltext(var.find('.//{*}k')) not in varPermutted: varPermutted.append(alltext(var.find('.//{*}k')))
-                    pass # Do nothing, var names are already matching
-                else:
-                    for el in varsNamedNn:
-                        if el.text == alltext(var.find('.//{*}k')):
-                            subs=var.findall('.//{*}section-subscript')
-                            onlyFullArray = False
-                            if el.text not in varPermutted: varPermutted.append(el.text)
-                            for sub in subs:
-                                if alltext(sub) == ':': # ':' alone
-                                    onlyFullArray = True #if at least one : is found
-                                    pass
-                                else: # but another dimension is not :
-                                    onlyFullArray = False
-                                    exit
-                            if var.find('.//{*}R-LT') and not onlyFullArray: #variable with array or component, e.g. D%NIJB or ZA(JIJ,:IKB) but not only ':' such as ZA(:,:)
-                                par = getParent(node,el)
-                                allsiblings = par.findall('./{*}*')
-                                index=allsiblings.index(el)
-                                tail = el.tail
-                                par.remove(el)
-                                if var.find('.//{*}R-LT'): #variable with array or component, e.g. D%NIJB
-                                    copyvar = copy.deepcopy(var.find('.//{*}named-E'))
-                                else: # classic variable
-                                    copyvar = copy.deepcopy(n[0])
-                                copyvar.tail = tail
-                                par.insert(index,copyvar)
-                            else: # only copy the name of the variable (without ':')
-                                el.text = alltext(n[0])
-            else: # the argument given is a string-E or literal-E
-                for el in varsNamedNn:
-                        if el.text == alltext(var.find('.//{*}k')):
-                            if el.text not in varPermutted: varPermutted.append(el.text)
-                            par = getParent(node,el)
-                            allsiblings = par.findall('./{*}*')
-                            index=allsiblings.index(el)
-                            par.remove(el)
-                            par.insert(index,copy.deepcopy(var[1])) # 0 is the arg-N ; 1 is the value of arg (string-E or literal-E)
-        else: # Classic argument (only the var name is given)
-            n = var.findall('.//{*}n')
-            if varsRoutine[i] in varsOpt: # First, check if the permutted argument is optional. If true, look for PRESENT(var) and replace it by True
-                setPRESENTbyTrue(node, varsRoutine[i], varsNamedNn)
-                varsNamedNn = node.findall('.//{*}named-E/{*}N/{*}n') #Update the list of named-E for later
-            if len(n):
-                if alltext(var) == varsRoutine[i]:
-                    if varsRoutine[i] not in varPermutted: varPermutted.append(varsRoutine[i])
-                    pass # Do nothing, var names are already matching
-                else:
-                    for el in varsNamedNn:
-                        if el.text == varsRoutine[i]:
-                            if el.text not in varPermutted: varPermutted.append(el.text)
-                            subs=var.findall('.//{*}section-subscript')
-                            onlyFullArray = False
-                            for sub in subs:
-                                if alltext(sub) == ':': # ':' alone
-                                    onlyFullArray = True #if at least one : is found
-                                    pass
-                                else: # but another dimension is not :
-                                    onlyFullArray = False
-                                    exit
-                            if not onlyFullArray: #variable with array or component, e.g. ICEP%TOTO(JIJ,:IKB) or ZA(JIJ,:IKB)
-                                if getParent(node,el, level=2).findall('.//{*}R-LT'): # if the replaced variable already has an array information, we replace all subs ':' by the target variable's 'element'
-                                    el.text = alltext(n[0]) # name of the variable is permutted
-                                    if getParent(node,el, level=2).findall('.//{*}R-LT/{*}parens-R'): # the target is of type number
-                                        elementLT = getParent(node,el, level=2).find('.//{*}parens-R/{*}element-LT')
-                                        for j,sub in enumerate(subs):
-                                            if alltext(sub) == ':':
-                                                pass # do nothing, the target subs is kept
-                                            else:
-                                                new_el = ET.Element('{http://fxtran.net/#syntax}element')
-                                                if j > 0:
-                                                    new_el.text=','
-                                                new_el.insert(0,sub.find('.//{*}lower-bound')[0])
-                                                elementLT.insert(j,new_el)
-                                    else: # the target is an array-R
-                                        subsLT = getParent(node,el, level=2).find('.//{*}section-subscript-LT')
-                                        for j,sub in enumerate(subs):
-                                            if alltext(sub) == ':':
-                                                pass # do nothing, the target subs is kept
-                                            else:
-                                                if j > 0:
-                                                    sub.text=','
-                                                subsLT.insert(j,sub)   
-                                else: # the replaced variable is a simple namedE or component eg. ZA or D%NIJT
-                                    par = getParent(node,el)
-                                    allsiblings = par.findall('./{*}*')
-                                    index=allsiblings.index(el)
-                                    tail = el.tail # save the tail of the replaced object
-                                    par.remove(el)
-                                    copyvar = copy.deepcopy(var.find('.//{*}named-E'))
-                                    copyvar.tail = tail
-                                    par.insert(index,copyvar)
-                            elif var.find('.//{*}R-LT/{*}component-R'): #R-LT/component-R with full array (:) such as ICEP%TOTO(:)
-                                par = getParent(node,el)
-                                allsiblings = par.findall('./{*}*')
-                                index=allsiblings.index(el)
-                                tail = el.tail # save the tail of the replaced object
-                                par.remove(el) # remove the target
-                                copyvar = copy.deepcopy(var.find('.//{*}named-E'))
-                                copyvar.tail = tail
-                                arrayR=copyvar.find('.//{*}array-R') #remove the array-R (:)
-                                parArrayR = getParent(copyvar,arrayR)
-                                parArrayR.remove(arrayR)
-                                par.insert(index,copyvar)    
-                            else: # R-LT/array Full array : only copy the name of the variable (without ':') such as ZA(:,:)
-                                el.text = alltext(n[0])
-            else: # var is literal-E or string-E (only possible as INTENT IN)
-                for el in varsNamedNn:
-                        if el.text == varsRoutine[i]:
-                            if el.text not in varPermutted: varPermutted.append(el.text)
-                            par = getParent(node,el)
-                            allsiblings = par.findall('./{*}*')
-                            index=allsiblings.index(el)
-                            tail = el.tail
-                            par.remove(el)
-                            copyvar = copy.deepcopy(var)
-                            copyvar.tail = tail
-                            par.insert(index,copyvar)
 
-    # Remove all statements related to optional arguments not given by the CALL statement in the main routine to the inlined-contained routine
-    for var in subContaintedVarList:
-        if var['arg']:
-            if var['opt'] and var['n'] not in varPermutted:
-                namedEs = node.findall('.//{*}named-E/{*}N/{*}n')
-                for namedE in namedEs:
-                    if namedE.text == var['n']:
-                        par = getParent(node,namedE,level=4)
-                        # The deletion of a variable is complex and depends on the context
-                        # Context 1 : an a-stmt of type E1 = E2
-                        level = 4
-                        par = getParent(node, namedE, level=level)
-                        while par:
-                            if par.tag.endswith('}a-stmt'):
-                                getParent(node, par).remove(par)
+    # Variable correspondance
+    # For each dummy argument, we look for the calling arg name and shape
+    # CALL FOO(Z(:))
+    # SUBROUTINE FOO(P)
+    # vartable = {'P':{'name': 'Z', dim=[':']}}
+    vartable = {} #ordered dict
+    for argN in subContained.findall('.//{*}subroutine-stmt/{*}dummy-arg-LT/{*}arg-N'):
+        vartable[alltext(argN).upper()] = None #Not present by default
+    for iarg, arg in enumerate(callStmt.findall('.//{*}arg')):
+        key = arg.find('.//{*}arg-N')
+        if key is not None:
+            #arg is VAR=value
+            dummyName = alltext(key).upper()
+            argnode = arg[1]
+        else:
+            dummyName = list(vartable.keys())[iarg]
+            argnode = arg[0]
+        RLTarray = argnode.findall('.//{*}R-LT/{*}array-R')
+        if len(RLTarray) > 0:
+            #array
+            if len(RLTarray) > 1 or \
+               argnode.find('./{*}R-LT/{*}array-R') is None or \
+               argnode.tag.split('}')[1] != 'named-E':
+                #Only simple cases are treated
+                raise PYFTError('Argument to complicated: ' + str(alltext(argnode)))
+            dim = RLTarray[0].find('./{*}section-subscript-LT')[:]
+        else:
+            dim = None
+        if dim is None:
+            #A%B => argname = 'A%B'
+            #Z(1) => argname = 'Z(1)'
+            argname = "".join(argnode.itertext())
+        else:
+            #Z(:) => argname = 'Z'
+            tmp = copy.deepcopy(argnode)
+            RLT = tmp.find('./{*}R-LT')
+            RLT.remove(RLT.find('./{*}array-R'))
+            argname = "".join(tmp.itertext())
+        vartable[dummyName] = {'node': argnode, 'name': argname, 'dim': dim}
+
+    # Look for PRESENT(var) and replace it by True when variabl is present
+    for dummyName in [dummyName for (dummyName, value) in vartable.items() if value is not None]:
+        setPRESENTbyTrue(node, dummyName)
+
+    # Look for usage of variable not present and delete corresponding code
+    for dummyName in [dummyName for (dummyName, value) in vartable.items() if value is None]:
+        for namedE in node.findall('.//{*}named-E/{*}N'):
+            if n2name(namedE).upper() == dummyName:
+                par = getParent(node, namedE,level=4)
+                # The deletion of a variable is complex and depends on the context
+                # Context 1 : an a-stmt of type E1 = E2
+                level = 4
+                par = getParent(node, namedE, level=level)
+                while par:
+                    if par.tag.endswith('}a-stmt'):
+                        getParent(node, par).remove(par)
+                    else:
+                        level += 1
+                    par = getParent(node, namedE, level=level)
+                # Context 2 : an if-stmt of type  : IF(PRESENT(variable) ...)
+                level = 4
+                par = getParent(node, namedE, level=level)
+                while par:
+                    if par.tag.endswith('}if-stmt'):
+                        getParent(node, par).remove(par)
+                    else:
+                        level += 1
+                    par = getParent(node, namedE, level=level)
+                # Context 3 : an if-block of type  : IF(PRESENT(variable) THEN...
+                level = 4
+                par = getParent(node, namedE, level=level)
+                while par:
+                    if par.tag.endswith('}if-block'):
+                        getParent(node, par).remove(par)
+                    else:
+                        level += 1
+                    par = getParent(node, namedE, level=level)
+
+    # Loop on the dummy argument
+    for name in vartable:
+        dummy = vartable[name] #This is the dummy argument information
+        # Loop on all variables in the contained routine
+        # It is important to build again the list of nodes, because it may have changed during the previous
+        # dummy argument substitution
+        for namedE in node.findall('.//{*}named-E/{*}N/{*}n/../..'):
+            if n2name(namedE.find('{*}N')).upper() == name:
+                #0 Concatenation of n nodes (a name could be split over several n nodes)
+                N = namedE.find('./{*}N')
+                ns = N.findall('./{*}n')
+                ns[0].text = n2name(N)
+                for n in ns[1:]:
+                    N.remove(n)
+
+                #1 We get info about variables (such as declared in the main or in the contained routines)
+                #TODO move these lines in the vartable computation, using scope and variables.findVar
+                desc_main = [v for v in mainVarList if v['n'].upper() == dummy['name'].upper()]
+                desc_sub = [v for v in subContaintedVarList if v['n'].upper() == name.upper()][0]
+                #In case variable is used for the declaration of another variable, we must update desc_sub
+                for n in range(len(subContaintedVarList)):
+                    if subContaintedVarList[n]['as'] is not None:
+                        subContaintedVarList[n]['as'] = [[re.sub(r'\b' + name + r'\b', dummy['name'], dim[i])
+                                                          if dim[i] is not None else None
+                                                          for i in (0, 1)]
+                                                         for dim in subContaintedVarList[n]['as']]
+
+                #3 We select the indexes (only for array argument and not structure argument containing an array)
+                #  using the occurrence to replace inside the subcontained routine body
+                RLT = namedE.find('./{*}R-LT')
+                if RLT is not None and RLT[0].tag.split('}')[1] != 'component-R':
+                    #The variable name is immediately followed by a parenthesis
+                    assert RLT[0].tag.split('}')[1] in ('array-R', 'parens-R'), 'Internal error'
+                    slices = RLT[0].findall('./{*}section-subscript-LT/{*}section-subscript')
+                    slices += RLT[0].findall('./{*}element-LT/{*}element')
+                else:
+                    #No parenthesis
+                    if (len(desc_main) == 1 and len(desc_main[0]['as']) > 0) or \
+                       len(desc_sub['as']) > 0 or dummy['dim'] is not None:
+                        #No parenthesis, but this is an array, we add as many ':' as needed
+                        if len(desc_sub['as']) > 0:
+                            ndim = len(desc_sub['as'])
+                        else:
+                            #ELEMENTAL routine, dummy arg is scalar
+                            if dummy['dim'] is not None:
+                                #We use the variable passed as argument because parenthesis were used
+                                ndim = len([d for d in dummy['dim'] if ':' in alltext(d)])
                             else:
-                                level +=1
-                            par = getParent(node, namedE, level=level)
-                        # Context 2 : an if-stmt of type  : IF(PRESENT(variable) ...)
-                        level = 4
-                        par = getParent(node, namedE, level=level)
-                        while par:
-                            if par.tag.endswith('}if-stmt'):
-                                getParent(node, par).remove(par)
+                                #We use the declared version in main
+                                ndim = len(desc_main[0]['as'])
+                        ns[0].text += '(' + (', '.join([':'] * ndim)) + ')'
+                        updatedNamedE = createExprPart(alltext(namedE))
+                        namedE.tag = updatedNamedE.tag
+                        namedE.text = updatedNamedE.text
+                        for n in namedE[:]:
+                            namedE.remove(n)
+                        namedE.extend(updatedNamedE[:])
+                        slices = namedE.find('./{*}R-LT')[0].findall('./{*}section-subscript-LT/{*}section-subscript')
+                    else:
+                        #This is not an array
+                        slices = []
+
+                #4 New name (the resultig xml is not necessarily a valid fxtran xml)
+                namedE.find('./{*}N')[0].text = dummy['name']
+
+                #5 We update the indexes to take into account a different declaration (lower bound especially)
+                #  in the main and in the contained routines.
+                #  Moreover, we could need to add indexes
+                if len(slices) > 0:
+                    #This is an array
+                    for isl, sl in enumerate(slices):
+                        #0 Compute bounds for array
+                        if len(desc_sub['as']) == 0 or desc_sub['as'][isl][1] is None:
+                            #ELEMENTAL or array with implicit shape
+                            for i in (0, 1): #0 for lower bound and 1 for upper bound
+                                if dummy['dim'] is not None:
+                                    #Parenthesis in the call statement
+                                    tag = './{*}lower-bound' if i == 0 else './{*}upper-bound'
+                                    desc_sub[i] = dummy['dim'][isl].find(tag)
+                                else:
+                                    desc_sub[i] = None
+                                if desc_sub[i] is not None:
+                                    #lower/upper limit was given in the call statement
+                                    desc_sub[i] = alltext(desc_sub[i])
+                                else:
+                                    #if available we take lower/upper limit set in the declaration 
+                                    if len(desc_main) == 1 and desc_main[0]['as'][isl][1] is not None:
+                                        #Declaration found in main, and not using implicit shape
+                                        desc_sub[i] = desc_main[0]['as'][isl][i]
+                                        if i == 0 and desc_sub[i] is None: desc_sub[i] = '1' #Default FORTRAN value
+                                    else:
+                                        desc_sub[i] = "L" if i == 0 else "U"
+                                        desc_sub[i] += "BOUND({name}, {isl})".format(name=dummy['name'], isl=isl + 1)
+                        else:
+                            desc_sub[0] = desc_sub['as'][isl][0]
+                            if desc_sub[0] is None: desc_sub[0] = '1' #Default FORTRAN value
+                            desc_sub[1] = desc_sub['as'][isl][1]
+
+                        #1 Offset computation
+                        #  if only a subset is passed
+                        #  and/or if lower bound of array is different in main and in sub contained routine
+                        #REAL, DIMENSION(M1:M2):: Z; CALL FOO(N1:N2)
+                        #SUBROUTINE FOO(P); REAL, DIMENSION(K1:K2):: P; P(I1:I2)
+                        #If M1 or K1 is not set, they defaults to 1; if not set, N1 defaults to M1 and I1 to K1
+                        #P(I1:I2)=Z(I1-K1+N1:I2-K1+N1)
+                        offset = 0
+                        if dummy['dim'] is not None and not alltext(dummy['dim'][isl]).strip().startswith(':'):
+                            offset = alltext(dummy['dim'][isl].find('./{*}lower-bound'))
+                        else:
+                            if len(desc_main) == 1:
+                                offset = desc_main[0]['as'][isl][0]
+                                if offset is None:
+                                    offset = '1' #Default FORTRAN value
+                                elif offset.strip().startswith('-'):
+                                    offset = '(' + offset + ')'
                             else:
-                                level +=1
-                            par = getParent(node, namedE, level=level)
-                        # Context 3 : an if-block of type  : IF(PRESENT(variable) THEN...
-                        level = 4
-                        par = getParent(node, namedE, level=level)
-                        while par:
-                            if par.tag.endswith('}if-block'):
-                                getParent(node, par).remove(par)
+                                offset = "LBOUND({name}, {isl})".format(name=dummy['name'], isl=isl + 1)
+                        if offset.upper() == desc_sub[0].upper():
+                            offset = 0
+                        else:
+                            if desc_sub[0].strip().startswith('-'):
+                                offset += '- (' + desc_sub[0] + ')'
                             else:
-                                level +=1
-                            par = getParent(node, namedE, level=level)
-    return node, localVarToAdd
+                                offset += '-' + desc_sub[0]
+
+                        #2 Update index with the offset and add indexes instead of ':'
+                        if sl.tag.split('}')[1] == 'element' or \
+                           (sl.tag.split('}')[1] == 'section-subscript' and not ':' in alltext(sl)):
+                            #Z(I) or last index of Z(:, I)
+                            bounds = sl
+                        else:
+                            low = sl.find('./{*}lower-bound')
+                            if low is None:
+                                low = ET.Element('{http://fxtran.net/#syntax}lower-bound')
+                                low.append(createExprPart(desc_sub[0]))
+                                low.tail = sl.text #':'
+                                sl.text = None
+                                sl.insert(0, low)
+                            up = sl.find('./{*}upper-bound')
+                            if up is None:
+                                up = ET.Element('{http://fxtran.net/#syntax}upper-bound')
+                                up.append(createExprPart(desc_sub[1]))
+                                sl.append(up)
+                            bounds = [low, up]
+                        if offset != 0:
+                            for bound in bounds:
+                                #bound[-1] is a named-E, literal-E, op-E...
+                                if bound[-1].tail is None: bound[-1].tail = ''
+                                bound[-1].tail += '+' + offset #Not valid fxtran xml
+
+                    #We must add extra indexes
+                    #CALL FOO(Z(:,1))
+                    #SUBROUTINE FOO(P); REAL, DIMENSION(K1:K2):: P
+                    #P(I) => Z(I, 1)
+                    if dummy['dim'] is not None and len(dummy['dim']) > len(slices):
+                        slices[-1].tail = ', '
+                        par = getParent(namedE, slices[-1])
+                        par.extend(dummy['dim'][len(slices):])
+
+                #6 Convert (wrong) xml into text and into xml again (to obtain a valid fxtran xml)
+                #  This double conversion is not sufficient in some case.
+                #  E.g. variable (N/n tag) replaced by real value
+                updatedNamedE = createExprPart(alltext(namedE))
+                namedE.tag = updatedNamedE.tag
+                namedE.text = updatedNamedE.text
+                for n in namedE[:]:
+                    namedE.remove(n)
+                namedE.extend(updatedNamedE[:])
+
+    return node, localVarToAdd, localUseToAdd
     
 @debugDecor            
 def removeIJLoops(doc):
@@ -900,16 +976,19 @@ def _loopVarPHYEX(lower_decl, upper_decl, lower_used, upper_used, name, i):
     :param i: index of the rank
     :return: the variable name of False to discard this statement
     """
-    if upper_decl is None or lower_decl is None:
+    if lower_used is not None and lower_used.upper() == 'IIJB' and \
+       upper_used is not None and upper_used.upper() == 'IIJE':
+        varName = 'JIJ'
+    elif upper_decl is None or lower_decl is None:
         varName = False
     elif upper_decl.upper() in ('KSIZE', 'KPROMA', 'KMICRO',
                               'IGRIM', 'IGACC', 'IGDRY', 'IGWET'):
         varName = 'JL'
-    elif upper_decl.upper() in ('D%NIJT', 'IIJ') or lower_decl.upper() in ('D%NIJT', 'IIJ') or \
+    elif upper_decl.upper() in ('D%NIJT', 'IIJE') or lower_decl.upper() in ('D%NIJT', 'IIJB') or \
          'D%NIJT' in upper_decl.upper() + lower_decl.upper():
         #REAL, DIMENSION(MERGE(D%NIJT, 0, PARAMI%LDEPOSC)), INTENT(OUT) :: PINDEP
         varName = 'JIJ'
-    elif upper_decl.upper() in ('IKB', 'IKE', 'IKT', 'D%NKT') or \
+    elif upper_decl.upper() in ('IKB', 'IKE', 'IKT', 'D%NKT', 'KT') or \
          'D%NKT' in upper_decl.upper():
         #REAL, DIMENSION(MERGE(D%NIJT, 0, OCOMPUTE_SRC),  MERGE(D%NKT, 0, OCOMPUTE_SRC)), INTENT(OUT) :: PSIGS
         varName = 'JK'

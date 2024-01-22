@@ -29,7 +29,9 @@ def getVarList(doc, scopePath=None):
               - use: false if variable is not a module variable
                      module name otherwise
               - opt: true if variable is optional
-              -scope: its scope
+              - scope: its scope
+              - allocatable: boolean
+              - parameter: boolean
     Notes: - variables are found in modules only if the 'ONLY' attribute is used
            - array specification and type is unknown for module variables
            - function is not able to follow the 'ASSOCIATE' statements
@@ -65,9 +67,13 @@ def getVarList(doc, scopePath=None):
             i_spec = decl_stmt.find('.//{*}intent-spec')
             if i_spec is not None: i_spec = i_spec.text
             opt_spec = False
+            allocatable = False
+            parameter = False
             allattributes = decl_stmt.findall('.//{*}attribute/{*}attribute-N')
             for attribute in allattributes:
                 if alltext(attribute).upper() == 'OPTIONAL': opt_spec = True
+                if alltext(attribute).upper() == 'ALLOCATABLE': allocatable = True
+                if alltext(attribute).upper() == 'PARAMETER': parameter = True
             #Dimensions declared with the DIMENSION attribute
             array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
             as0_list, asx0_list = decode_array_specs(array_specs)
@@ -79,11 +85,15 @@ def getVarList(doc, scopePath=None):
                 #Dimensions declared after the variable name
                 array_specs = en_decl.findall('.//{*}array-spec//{*}shape-spec')
                 as_list, asx_list = decode_array_specs(array_specs)
+                #Initial value (parameter or not)
+                init = en_decl.find('./{*}init-E')
+                if init is not None: init = alltext(init)
 
                 result.append({'as': as_list if len(as0_list) == 0 else as0_list,
                                'asx': asx_list if len(asx0_list) == 0 else asx0_list,
                                'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
-                               'use':False, 'opt': opt_spec, 'scope': loc})
+                               'use': False, 'opt': opt_spec, 'allocatable': allocatable,
+                               'parameter': parameter, 'init': init, 'scope': loc})
 
         #Loop on each use statement
         use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
@@ -91,10 +101,45 @@ def getVarList(doc, scopePath=None):
             module = n2name(use_stmt.find('.//{*}module-N').find('.//{*}N'))
             for v in use_stmt.findall('.//{*}use-N'):
                 n = n2name(v.find('.//{*}N'))
-                result.append({'as': None, 'asx': None, 't': None, 'i': None, 'arg': False,
-                               'n': n, 'use': module, 'scope': loc})
+                result.append({'as': None, 'asx': None,
+                               'n': n, 'i': None, 't': None, 'arg': False,
+                               'use': module, 'opt': None, 'allocatable': None,
+                               'parameter': None, 'init': None, 'scope': loc})
 
     return result
+
+@debugDecor
+def varSpec2stmt(varSpec):
+    """
+    :param varSpec: a variable description, same form as the items return by getVarList
+    :return: the associated declarative statement
+    """
+    if varSpec['use'] is not False:
+        stmt = 'USE {module}, ONLY: {var}'.format(module=varSpec['use'], var=varSpec['n'])
+    else:
+        stmt = varSpec['t']
+        if varSpec['as']:
+            stmt += ', DIMENSION('
+            dl = []
+            for el in varSpec['as']:
+                if el[0] is None and el[1] is None:
+                    dl.append(':')
+                elif el[0] is None:
+                    dl.append(el[1])
+                else:
+                    dl.append(el[0] + ':' + el[1]) 
+            if (varSpec['allocatable'] and not all([d == ':' for d in dl])) or \
+               (any([d == ':' for d in dl]) and not varSpec['allocatable']):
+                raise PYFTError('Missing dim are mandatory and allowed only for allocatable arrays')
+            stmt += ', '.join(dl) + ')'
+            if varSpec['allocatable']:
+                stmt += ", ALLOCATABLE"
+        if varSpec['parameter']:
+            stmt += ", PARAMETER"
+        stmt += " :: " + varSpec['n']
+        if varSpec['init'] is not None:
+            stmt += "=" + varSpec['init']
+    return stmt
 
 @debugDecor
 def showVarList(doc, scopePath=None):
@@ -157,6 +202,96 @@ def attachArraySpecToEntity(doc):
                     elem.append(array_spec)
                 # Remove the dimension and array-spec elements
                 removeFromList(doc, attr_elem, decl)
+
+@debugDecor
+def findArrayBounds(doc, arr, varList, currentScope, loopVar):
+    """
+    Find bounds and loop variable given an array
+    :param doc: etree to use
+    :param arr: array node (named-E node with a array-R child)
+    :param varList: list of currently declared variables obtained by getVarList
+    :param currentScope: scope where the array is used
+    :param loopVar: None to create new variable for each added DO loop
+                    or a function that return the name of the variable to use for the loop control.
+                    This function returns a string (name of the variable), or True to create
+                    a new variable, or False to not transform this statement
+                    The functions takes as arguments:
+                      - lower and upper bounds as defined in the declaration statement
+                      - lower and upper bounds as given in the statement
+                      - name of the array
+                      - index of the rank
+    :return: the tuple (table, newVar) where:
+                table is a dictionnary: keys are loop variable names
+                                        values are tuples with lower and upper bounds
+                newVar is a list of loop variables not found in varList. This list has the same
+                       format as the varList list but has also the attribute 'new' that can be kept or discard
+
+    In case the loop variable cannot be defined, the function returns (None, [])
+    """
+    table = {} #ordered since python 3.7
+    name = n2name(arr.find('./{*}N'))
+    varNew = []
+
+    #Iteration on the different subscript
+    for iss, ss in enumerate(arr.findall('./{*}R-LT/{*}array-R/{*}section-subscript-LT/{*}section-subscript')):
+        #We are only interested by the subscript containing ':'
+        #we must not iterate over the others, eg: X(:,1)
+        if ':' in alltext(ss):
+            #Look for lower and upper bounds for iteration and declaration
+            lower_used = ss.find('./{*}lower-bound')
+            upper_used = ss.find('./{*}upper-bound')
+            varDesc = findVar(doc, name, currentScope, varList, array=True)
+            if varDesc is not None:
+                lower_decl, upper_decl = varDesc['as'][iss]
+                if lower_decl is None: lower_decl = '1' #default lower index for FORTRAN arrays
+            else:
+                lower_decl, upper_decl = None, None
+
+            #name of the loop variable
+            if loopVar is None:
+                #loopVar is not defined, we create a new variable for the loop
+                #only if lower and upper bounds have been found (easy way to discard character strings)
+                guess = lower_decl is not None and upper_decl is not None
+                varName = False
+            else:
+                varName = loopVar(lower_decl, upper_decl,
+                                  None if lower_used is None else alltext(lower_used),
+                                  None if upper_used is None else alltext(upper_used), name, iss)
+                if varName is not False and varName in table.keys():
+                    raise PYFTError(("The variable {var} must be used for the rank #{i1} whereas it " + \
+                                     "is already used for rank #{i2} (for array {name}).").format(
+                                       var=varName, i1=str(iss), i2=str(list(table.keys()).index(varName)),
+                                       name=name))
+                if varName is not False and findVar(doc, varName, currentScope,
+                                                    varList, array=False, exactScope=True) is None:
+                    #We must declare the variable
+                    varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
+                               't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
+                               'scope': currentScope, 'new': True}
+                    varList.append(varDesc)
+                #varName can be a string (name to use), True (to create a variable), False (to discard the array)
+                guess = varName is True
+            if guess:
+                j = 1
+                #We look for a variable name that don't already exist
+                #We can reuse a newly created varaible only if it is not used for the previous indexes
+                #of the same statement
+                while any([v['n'] for v in (varList + varNew)
+                           if ((v['n'].upper() == 'J' + str(j) and not v.get('new', False)) or
+                               'J' + str(j) in table.keys())]):
+                    j += 1
+                varName = 'J' + str(j)
+                varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
+                           't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
+                           'scope': currentScope, 'new': True}
+                if varDesc not in varNew:
+                    varNew.append(varDesc)
+
+            #fill table
+            table[varName] = (lower_decl if lower_used is None else alltext(lower_used),
+                              upper_decl if upper_used is None else alltext(upper_used))
+
+    return (None, []) if False in table.keys() else (table, varNew)
 
 @debugDecor
 def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
@@ -545,34 +680,73 @@ def addModuleVar(doc, moduleVarList):
                           a module variable specification is a list of three elements:
                           - scope (path to module, subroutine, function or type declaration)
                           - module name
-                          - variable name or None to add a USE statement without the ONLY attribute
+                          - variable name or or list of variable names
+                            or None to add a USE statement without the ONLY attribute
     For example addModuleVar('sub:FOO', 'MODD_XX', 'Y') will add the following line in subroutine FOO:
     USE MODD_XX, ONLY: Y
     """
     for (path, moduleName, varName) in moduleVarList:
+        if varName is None:
+            varName = []
+        elif not isinstance(varName, list):
+            varName = [varName]
         locNode = getScopeNode(doc, path)
 
-        #Statement building
-        fortranSource = "SUBROUTINE FOO598756\nUSE {}".format(moduleName)
-        if varName is not None:
-            fortranSource += ', ONLY:{}'.format(varName)
-        fortranSource += "\nEND SUBROUTINE"
-        _, xml = fortran2xml(fortranSource)
-        us = xml.find('.//{*}use-stmt')
-        previousTail = getSiblings(xml, us, after=False)[-1].tail
-
-        #node insertion index
+        #USE statement already present
         useLst = [node for node in getScopeChildNodes(doc, locNode) if node.tag.endswith('}use-stmt')]
-        if len(useLst) != 0:
-            #There already have use statements, we add the new one after them
-            index = list(locNode).index(useLst[-1]) + 1
-        else:
-            #There is no use statement, we add the new node just after the first node
-            index = 1
 
-        us.tail = locNode[index - 1].tail
-        locNode[index - 1].tail = previousTail
-        locNode.insert(index, us)
+        #Check if we need to add a USE
+        insertUse = True
+        for us in useLst:
+            us_name = n2name(us.find('.//{*}module-N//{*}N'))
+            us_var = [n2name(v.find('.//{*}N')).upper() for v in us.findall('.//{*}use-N')]
+            if len(varName) == 0 and len(us_var) == 0 and us_name.upper() == moduleName.upper():
+                #There aleardy is a 'USE MODULE' and we wanted to insert a 'USE MODULE' statement
+                insertUse = False
+            elif len(varName) > 0 and len(us_var) > 0 and us_name.upper() == moduleName.upper():
+                #There already is a 'USE MODULE, ONLY:' and we want to insert another 'USE MODULE, ONLY:'
+                #We suppress from the varName list, all the variables already defined
+                varName = [var for var in varName if var.upper() not in us_var]
+                if len(varName) == 0:
+                    #All the variables we wanted to import are already defined
+                    insertUse = False
+
+        if insertUse:
+            #Statement building
+            fortranSource = "SUBROUTINE FOO598756\nUSE {}".format(moduleName)
+            if len(varName) > 0:
+                fortranSource += ', ONLY:{}'.format(', '.join(varName))
+            fortranSource += "\nEND SUBROUTINE"
+            _, xml = fortran2xml(fortranSource)
+            us = xml.find('.//{*}use-stmt')
+            previousTail = getSiblings(xml, us, after=False)[-1].tail
+
+            #node insertion index
+            if len(useLst) != 0:
+                #There already have use statements, we add the new one after them
+                index = list(locNode).index(useLst[-1]) + 1
+            else:
+                #There is no use statement, we add the new node just after the first node
+                index = 1
+
+            us.tail = locNode[index - 1].tail
+            locNode[index - 1].tail = previousTail
+            locNode.insert(index, us)
+
+@debugDecor
+def renameVar(doc, oldName, newName):
+    """
+    :param doc: etree to use
+    :param oldName: old name of the variable
+    :param newName: new name of the variable
+    """
+    for node in doc.findall('.//{*}N'):
+        if n2name(node).upper() == oldName.upper():
+            #Remove all n tag but one
+            for n in node.findall('./{*}n')[1:]:
+                node.remove(n)
+            #Fill the first n with the new name
+            node.find('./{*}n').text = newName
 
 @debugDecor
 def isVarUsed(doc, varList, strictScope=False, dummyAreAlwaysUsed=False):
