@@ -307,7 +307,8 @@ def inlineContainedSubroutines(doc):
             elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
                 n = 'JJ'
             else:
-                exit
+                logging.warning('No index loop found for bounds {lower}:{upper}'.format(lower=str(lowerBound),
+                                                                                        upper=str(upperBound)))
             return n
 
         def arrayRtoparensR(doc,arrayR):
@@ -500,7 +501,6 @@ def inlineContainedSubroutines(doc):
                         for node in nodeInlined[::-1]:
                             #nodeInlined is a program-unit, we must insert the subelements
                             par.insert(index, node)
-                        exit
                 # Update containedRoutines
                 containedRoutines = {}
                 # Inline contained subroutines : look for sub: / sub:
@@ -579,32 +579,13 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                                           for i in (0, 1)]
                                          for dim in localVarToAdd[n]['as']]
 
-
-    # if any variable declaration (only local, declared in main routine), go directly to 2nd part of the removing algo
-    if not node.findall('.//{*}T-decl-stmt'):
-        declStmtFound = True
-
     # Remove all objects that is implicit none, comment or else until reach something interesting; except USE
-    localUseToAdd = []
-    for n in node:
-        if not declStmtFound:
-            if not n.tag.endswith('}T-decl-stmt'):
-                if n.tag.endswith('}use-stmt'):
-                    localUseToAdd.append(n)
-                nodeToRemove.append(n)
-            elif n.tag.endswith('}T-decl-stmt'):
-                declStmtFound = True
-                nodeToRemove.append(n)
-        else:
-            if n.tag.endswith('}T-decl-stmt') or n.tag.endswith('}C') or n.tag.endswith('}subroutine-stmt') or n.tag.endswith('}implicit-none-stmt') or n.tag.endswith('}use-stmt'): # We also delete comments in the variable declaration block
-                if n.tag.endswith('}use-stmt'):
-                    localUseToAdd.append(n)
-                nodeToRemove.append(n)
-            else:
-                break
-    nodeToRemove.append(node.find('.//{*}end-subroutine-stmt'))
-    for n in nodeToRemove:
+    localUseToAdd = node.findall('./{*}use-stmt')
+    for n in node.findall('./{*}T-decl-stmt') + localUseToAdd + node.findall('./{*}subroutine-stmt') + \
+             node.findall('./{*}end-subroutine-stmt') + node.findall('./{*}implicit-none-stmt'):
         node.remove(n)
+    while node[0].tag.split('}')[1] == 'C':
+        node.remove(node[0])
 
     # Variable correspondance
     # For each dummy argument, we look for the calling arg name and shape
