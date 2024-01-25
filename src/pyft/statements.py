@@ -6,8 +6,8 @@ from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debug
                        alltext,
                        PYFTError, getFileName)
 from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath, isScopeNode
-from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar, findArrayBounds
-from pyft.expressions import createExprPart, simplifyExpr, createArrayBounds
+from pyft.variables import removeVarIfUnused, getVarList, addVar, findVar, findArrayBounds, arrayR2parensR
+from pyft.expressions import createExprPart, createArrayBounds
 from pyft.cosmetics import changeIfStatementsInIfConstructs        
 import re
 import logging
@@ -548,97 +548,6 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
         else:
             kind = directive[17:].lstrip(' ').split('(')[0].strip()
         return table, kind
-
-    def arrayR2parensR(namedE, table, varList, currentScope):
-        """
-        Transform a array-R into a parens-R node by replacing slices by variables
-        In 'A(:)', the ':' is in a array-R node whereas in 'A(JL)', 'JL' is in a parens-R node.
-        Both the array-R and the parens-R nodes are inside a R-LT node
-        :param namedE: a named-E node
-        :param table: dictionnary returned by the decode function
-        :param varList: description of declared variables
-        :param currentScope: current scope
-        """
-        #Before A(:): <f:named-E>
-        #               <f:N><f:n>A</f:n></f:N>
-        #               <f:R-LT>
-        #                 <f:array-R>(
-        #                   <f:section-subscript-LT>
-        #                     <f:section-subscript>:</f:section-subscript>
-        #                   </f:section-subscript-LT>)
-        #                 </f:array-R>
-        #               </f:R-LT>
-        #              </f:named-E>
-        #After  A(I): <f:named-E>
-        #               <f:N><f:n>A</f:n></f:N>
-        #               <f:R-LT>
-        #                 <f:parens-R>(
-        #                   <f:element-LT>
-        #                     <f:element><f:named-E><f:N><f:n>I</f:n></f:N></f:named-E></f:element>
-        #                   </f:element-LT>)
-        #                 </f:parens-R>
-        #               </f:R-LT>
-        #             </f:named-E>
-
-        RLT = namedE.find('./{*}R-LT')
-        arrayR = RLT.find('./{*}array-R') #Not always in first position, eg: ICED%XRTMIN(:)
-        if arrayR is not None:
-            index = list(RLT).index(arrayR)
-            parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
-            parensR.text = '('
-            parensR.tail = ')'
-            elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
-            parensR.append(elementLT)
-            ivar = -1
-            for ss in RLT[index].findall('./{*}section-subscript-LT/{*}section-subscript'):
-                element = ET.Element('{http://fxtran.net/#syntax}element')
-                element.tail = ', '
-                elementLT.append(element)
-                if ':' in alltext(ss):
-                    ivar += 1
-                    v = list(table.keys())[ivar] #variable name
-                    lower = ss.find('./{*}lower-bound')
-                    upper = ss.find('./{*}upper-bound')
-                    if lower is not None: lower = alltext(lower)
-                    if upper is not None: upper = alltext(upper)
-                    if lower is not None and ss.text is not None and ':' in ss.text:
-                        #fxtran bug workaround
-                        upper = lower
-                        lower = None
-                    if lower is None and upper is None:
-                        #E.g. 'A(:)'
-                        #In this case we use the DO loop bounds without checking validity with
-                        #respect to the array declared bounds
-                        element.append(createExprPart(v))
-                    else:
-                        #E.g.:
-                        #!$mnh_expand_array(JI=2:15)
-                        #A(2:15) or A(:15) or A(2:)
-                        if lower is None:
-                            #lower bound not defined, getting lower declared bound for this array
-                            lower = findVar(doc, n2name(namedE.find('{*}N')),
-                                            currentScope, varList, array=True)['as'][ivar][0]
-                            if lower is None: lower = '1' #default fortran lower bound
-                        elif upper is None:
-                            #upper bound not defined, getting lower declared bound for this array
-                            upper = findVar(doc, n2name(namedE.find('{*}N')),
-                                    currentScope, varList, array=True)['as'][ivar][1]
-                        #If the DO loop starts from JI=I1 and goes to JI=I2; and array bounds are J1:J2
-                        #We compute J1-I1+JI and J2-I2+JI and they should be the same
-                        #E.g: array bounds could be 'I1:I2' (becoming JI:JI) or 'I1+1:I2+1" (becoming JI+1:JI+1)
-                        newlower = simplifyExpr(lower, add=v, sub=table[v][0])
-                        newupper = simplifyExpr(upper, add=v, sub=table[v][1])
-                        if newlower != newupper:
-                            raise PYFTError(("Don't know how to do with an array declared with '{la}:{ua}' " + \
-                                             "and a loop from '{ll}' to '{ul}'").format(la=lower, ua=upper,
-                                                                                        ll=table[v][0],
-                                                                                        ul=table[v][1]))
-                        element.append(createExprPart(newlower))
-                else:
-                    element.append(ss.find('./{*}lower-bound'))
-            element.tail = None #last element
-            RLT.remove(RLT[index])
-            RLT.insert(index, parensR)
 
     def updateStmt(doc, e, table, kind, extraindent, parent, varList, currentScope):
         """

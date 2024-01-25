@@ -6,8 +6,8 @@ import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, PYFTError, debugDecor,
                        tostring, alltext, getFileName, removeFromList, getParent,
                        getSiblings, insertInList, fortran2xml, isExecutable, n2name)
-from pyft.expressions import createArrayBounds
-from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList, getScopePath
+from pyft.expressions import createArrayBounds, simplifyExpr, createExprPart
+from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList, getScopePath, getParentScopeNode
 from xml.etree.ElementTree import Element
 import logging
 
@@ -294,6 +294,45 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
     return (None, []) if False in table.keys() else (table, varNew)
 
 @debugDecor
+def addArrayParentheses(doc, node, varList=None, scope=None):
+    """
+    Look for arrays and add parenthesis. A => A(:)
+    :param doc: etree to use
+    :param node: xml node in which ':' must be added
+    :param varList: var list or None to compute it
+    :param scope: scope corresponding to the node (None to compute it)
+    """
+    #List of variables
+    if varList is None:
+        varList = getVarList(doc)
+
+    #Scope (as a string path)
+    if scope is None:
+        scope = getScopePath(doc, getParentScopeNode(doc, node))
+
+    #Loop on variables
+    for namedE in node.findall('.//{*}named-E'):
+        if not namedE.find('./{*}R-LT'): #no parentheses
+            N = namedE.find('./{*}N')
+            var = findVar(doc, n2name(N), scope, varList)
+            if var is not None and var['as'] is not None and len(var['as']) > 0:
+                #This is a known array variable, with no parentheses
+                RLT = ET.Element('{http://fxtran.net/#syntax}R-LT')
+                namedE.insert(list(namedE).index(N) + 1, RLT)
+                arrayR = ET.Element('{http://fxtran.net/#syntax}array-R')
+                arrayR.text = '('
+                RLT.append(arrayR)
+                sectionSubscriptLT = ET.Element('{http://fxtran.net/#syntax}section-subscript-LT')
+                sectionSubscriptLT.tail = ')'
+                arrayR.append(sectionSubscriptLT)
+                for _ in var['as']:
+                    sectionSubscript = ET.Element('{http://fxtran.net/#syntax}section-subscript')
+                    sectionSubscript.text = ':'
+                    sectionSubscript.tail = ', '
+                    sectionSubscriptLT.append(sectionSubscript)
+                sectionSubscript.tail = None #last one
+
+@debugDecor
 def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
     """
     Replace ':' by explicit arrays bounds.
@@ -352,6 +391,98 @@ def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
                                                     raise PYFTError("Unexpected case, tag is {}".format(n.tag.split('}')[1]))
                                             sub.text = '' # Delete the initial ':'
                                             sub.extend([lowerXml, upperXml])
+
+@debugDecor
+def arrayR2parensR(namedE, table, varList, currentScope):
+    """
+    Transform a array-R into a parens-R node by replacing slices by variables
+    In 'A(:)', the ':' is in a array-R node whereas in 'A(JL)', 'JL' is in a parens-R node.
+    Both the array-R and the parens-R nodes are inside a R-LT node
+    :param namedE: a named-E node
+    :param table: dictionnary returned by the decode function
+    :param varList: description of declared variables
+    :param currentScope: current scope
+    """
+    #Before A(:): <f:named-E>
+    #               <f:N><f:n>A</f:n></f:N>
+    #               <f:R-LT>
+    #                 <f:array-R>(
+    #                   <f:section-subscript-LT>
+    #                     <f:section-subscript>:</f:section-subscript>
+    #                   </f:section-subscript-LT>)
+    #                 </f:array-R>
+    #               </f:R-LT>
+    #              </f:named-E>
+    #After  A(I): <f:named-E>
+    #               <f:N><f:n>A</f:n></f:N>
+    #               <f:R-LT>
+    #                 <f:parens-R>(
+    #                   <f:element-LT>
+    #                     <f:element><f:named-E><f:N><f:n>I</f:n></f:N></f:named-E></f:element>
+    #                   </f:element-LT>)
+    #                 </f:parens-R>
+    #               </f:R-LT>
+    #             </f:named-E>
+
+    RLT = namedE.find('./{*}R-LT')
+    arrayR = RLT.find('./{*}array-R') #Not always in first position, eg: ICED%XRTMIN(:)
+    if arrayR is not None:
+        index = list(RLT).index(arrayR)
+        parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
+        parensR.text = '('
+        parensR.tail = ')'
+        elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
+        parensR.append(elementLT)
+        ivar = -1
+        for ss in RLT[index].findall('./{*}section-subscript-LT/{*}section-subscript'):
+            element = ET.Element('{http://fxtran.net/#syntax}element')
+            element.tail = ', '
+            elementLT.append(element)
+            if ':' in alltext(ss):
+                ivar += 1
+                v = list(table.keys())[ivar] #variable name
+                lower = ss.find('./{*}lower-bound')
+                upper = ss.find('./{*}upper-bound')
+                if lower is not None: lower = alltext(lower)
+                if upper is not None: upper = alltext(upper)
+                if lower is not None and ss.text is not None and ':' in ss.text:
+                    #fxtran bug workaround
+                    upper = lower
+                    lower = None
+                if lower is None and upper is None:
+                    #E.g. 'A(:)'
+                    #In this case we use the DO loop bounds without checking validity with
+                    #respect to the array declared bounds
+                    element.append(createExprPart(v))
+                else:
+                    #E.g.:
+                    #!$mnh_expand_array(JI=2:15)
+                    #A(2:15) or A(:15) or A(2:)
+                    if lower is None:
+                        #lower bound not defined, getting lower declared bound for this array
+                        lower = findVar(doc, n2name(namedE.find('{*}N')),
+                                        currentScope, varList, array=True)['as'][ivar][0]
+                        if lower is None: lower = '1' #default fortran lower bound
+                    elif upper is None:
+                        #upper bound not defined, getting lower declared bound for this array
+                        upper = findVar(doc, n2name(namedE.find('{*}N')),
+                                currentScope, varList, array=True)['as'][ivar][1]
+                    #If the DO loop starts from JI=I1 and goes to JI=I2; and array bounds are J1:J2
+                    #We compute J1-I1+JI and J2-I2+JI and they should be the same
+                    #E.g: array bounds could be 'I1:I2' (becoming JI:JI) or 'I1+1:I2+1" (becoming JI+1:JI+1)
+                    newlower = simplifyExpr(lower, add=v, sub=table[v][0])
+                    newupper = simplifyExpr(upper, add=v, sub=table[v][1])
+                    if newlower != newupper:
+                        raise PYFTError(("Don't know how to do with an array declared with '{la}:{ua}' " + \
+                                         "and a loop from '{ll}' to '{ul}'").format(la=lower, ua=upper,
+                                                                                    ll=table[v][0],
+                                                                                    ul=table[v][1]))
+                    element.append(createExprPart(newlower))
+            else:
+                element.append(ss.find('./{*}lower-bound'))
+        element.tail = None #last element
+        RLT.remove(RLT[index])
+        RLT.insert(index, parensR)
 
 @debugDecor
 def getImplicitNoneText(doc, loc):
@@ -978,3 +1109,7 @@ class Variables():
     @copy_doc(addExplicitArrayBounds)
     def addExplicitArrayBounds(self, *args, **kwargs):
         return addExplicitArrayBounds(self._xml, *args, **kwargs)
+
+    @copy_doc(addArrayParentheses)
+    def addArrayParentheses(self, *args, **kwargs):
+        return addArrayParentheses(self._xml, *args, **kwargs)

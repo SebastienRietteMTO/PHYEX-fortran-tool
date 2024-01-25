@@ -7,7 +7,8 @@ from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, n2n
 from pyft.statements import (removeCall, setFalseIfStmt, removeStmtNode,
                              removeArraySyntax, createDoConstruct, createArrayBounds)
 from pyft.variables import (removeUnusedLocalVar, getVarList, addVar, addModuleVar,
-                            removeVar, findArrayBounds, varSpec2stmt, renameVar, findVar)
+                            removeVar, findArrayBounds, varSpec2stmt, renameVar, findVar,
+                            addArrayParentheses, addExplicitArrayBounds, arrayR2parensR)
 from pyft.cosmetics import changeIfStatementsInIfConstructs
 from pyft.scope import getScopesList, getScopePath
 from pyft.expressions import createExprPart
@@ -282,114 +283,6 @@ def inlineContainedSubroutines(doc):
     :param doc: xml fragment containing main and contained subroutine
     """
 
-    def placeArrayRtoparensR(doc, locNode, node_opE, table):
-        """
-        Convert ArrayR to parensR (remove the array-R and add parensR)
-        :param doc: etree to use for parent retrieval
-        :param node_opE: working node
-        :param locNode: scope of the working node
-        :param table: loop indexes table
-        """
-        def arrayRtoparensR(doc, arrayR, table):
-            """
-            Return a parensR node from an array-R
-            :param loopIndex: string for the fortran loop index 
-            :param lowerBound: string for the fortran lower bound of the do loop
-            :param upperBound: string for the fortran upper bound of the do loop
-            :param table: loop indexes table
-            """
-            
-            subs=arrayR.findall('.//{*}section-subscript')
-            parensR = ET.Element('{http://fxtran.net/#syntax}parens-R')
-            parensR.text = '('
-            parensR.tail = ')'
-            elementLT = ET.Element('{http://fxtran.net/#syntax}element-LT')
-            for i,sub in enumerate(subs): 
-                element = ET.Element('{http://fxtran.net/#syntax}element')
-                if alltext(sub) == ':': # (:) only
-                    pass
-                    #try to guess from the dimension declaration (need to first find the element from varList)
-                elif sub.text is not None and sub.text.strip(' ') == ':': # :INDEX e.g. (:IKTE); transform it to 1:IKTE
-                    u = sub.find('.//{*}upper-bound/{*}*/{*}*/{*}n')
-                    if u is None:
-                        #fxtran bug workaround
-                        u = sub.find('.//{*}lower-bound/{*}*/{*}*/{*}n')
-                    upperBound = alltext(u)
-                    #element.insert(0, createExprPart(getIndexLoop('1',upperBound)))      
-                    element.insert(0, createExprPart(list(table.keys())[i]))
-                elif len(sub.findall('.//{*}upper-bound')) == 0:
-                    if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
-                        pass
-                    else:  # single literal-E : copy the object (e.g. IKA alone or operation such as IKE+1)
-                        element.insert(0,sub.findall('.//{*}lower-bound')[0]) 
-                else:
-                    lowerBounds=sub.findall('.//{*}lower-bound')
-                    upperBounds=sub.findall('.//{*}upper-bound')
-                    lowerBound=alltext(lowerBounds[0])
-                    upperBound=alltext(upperBounds[0])
-                    #element.insert(0, createExprPart(getIndexLoop(lowerBound,upperBound)))
-                    element.insert(0, createExprPart(list(table.keys())[i]))
-                elementLT.append(element)
-        
-            for i in range(len(elementLT)-1):
-                elementLT[i].tail = ','
-            parensR.insert(0,elementLT)
-            return parensR
-    
-        # Replace the array-like index selection by index loop on all variables (array-R)
-        arrayR = node_opE.findall('.//{*}array-R')
-        for node in arrayR:
-            parensR=arrayRtoparensR(locNode,node, table)
-            par = getParent(node_opE,node)
-            par.insert(1,parensR)
-            par.remove(node)
-
-    def addExplicitArrayBounds(node, callNode, varList):
-        """
-        Add explicit arrays bounds (for further arrays expansion) in Call arguments.
-        Used in call of elemental subroutine
-        :param node: xml node to work on (the calling subroutine)
-        :param callNode: xml node of the call statement
-        :param varList: var list of node
-        """
-        def convertColonArrayinDim(sub, locNode, varArrayNamesList, varArray, varName):
-            """
-            Convert ':' in full array dimensions. Example if SIZE(A)=D%NKT, A(:) is converted to A(1:D%NKT) 
-            :param sub: section-subscript node from the working node
-            :param locNode: scope of the working node
-            :param varArrayNamesList: list of all variable arrays names (list of string)
-            :param varArray: list of all variables arrays (list of Dictionnaray returned from getVarList)
-            :param varName : string of the variable in reading fortran ('A' in the example)
-            """  
-            # Get the i sub-index of the current object of E-2
-            subPar = getParent(locNode,sub)
-            for j,el in enumerate(subPar):
-                if el == sub:
-                    indextoTransform=j
-                    break
-            # Get the variable object to find its declaration dimension
-            ind=varArrayNamesList.index(varName)
-            lowerBound = '1'
-            upperBound = str(varArray[ind]['as'][indextoTransform][1]) #e.g. D%NIJT; D%NKT; KSIZE; KPROMA etc
-            lowerXml,upperXml = createArrayBounds(lowerBound, upperBound, 'ARRAY')
-            sub.insert(0,lowerXml)
-            sub.insert(1,upperXml)
-            sub.text = '' # Delete the initial ':'    
-
-
-        varArray,varArrayNamesList,localIntegers = [], [], []
-        for var in varList:
-            if not var['as'] and var['t'] == 'INTEGER' and not var['arg']:
-                localIntegers.append(var['n'])
-            if var['as']:
-                varArray.append(var)
-                varArrayNamesList.append(var['n'])
-        subs=callNode.findall('.//{*}section-subscript')
-        for sub in subs:
-            if alltext(sub) == ':': # ':' alone
-                varName = alltext(getParent(callNode, sub, level=4).find('.//{*}N/{*}n'))
-                convertColonArrayinDim(sub, callNode, varArrayNamesList, varArray, varName)
-                
     locations  = getScopesList(doc,withNodes='tuple')
     containedRoutines = {}
     # Inline contained subroutines : look for sub: / sub:
@@ -410,15 +303,47 @@ def inlineContainedSubroutines(doc):
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
                             changeIfStatementsInIfConstructs(doc,getParent(doc,par))
                             par = getParent(doc, callStmt) #update parent
-                        # Specific case for ELEMENTAL subroutines: need to add explicit arrays bounds for further arrays expansion
+
+                        # Specific case for ELEMENTAL subroutines
+                        # Introduce DO-loops if it is called on arrays
                         prefix = containedRoutines[containedRoutine][1].findall('.//{*}prefix')
-                        if len(prefix)>0:
-                            if 'ELEMENTAL' in alltext(prefix[0]): 
-                                arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
-                                if len(arrayRincallStmt) > 0:
-                                    #We should be able to use the following statement, with addExplicitArrayBounds taken from Variables
-                                    #addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=loc[1])
-                                    addExplicitArrayBounds(loc[1], callStmt, varList)
+                        if len(prefix) > 0 and 'ELEMENTAL' in [p.text.upper() for p in prefix]:
+                            #Add missing parentheses
+                            addArrayParentheses(doc, callStmt, varList=varList, scope=loc[0])
+
+                            #Add explcit bounds
+                            addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=loc[1])
+
+                            #Detect if subroutine is called on arrays
+                            arrayRincallStmt = callStmt.findall('.//{*}array-R')
+                            if len(arrayRincallStmt) > 0: #Called on arrays
+                                # Look for an array affectation to guess the DO loops to put around the call
+                                table, newVar = findArrayBounds(doc, getParent(doc, arrayRincallStmt[0], 2),
+                                                                varList, loc[0], _loopVarPHYEX)
+
+                                # Add declaration of loop index if missing
+                                for varName in table.keys():
+                                    if not findVar(doc, varName, loc[0], varList):
+                                        v = {'as': [], 'asx': [],
+                                             'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
+                                             'use': False, 'opt': False, 'allocatable': False,
+                                             'parameter': False, 'init': None, 'scope': loc[0]}
+                                        addVar(doc, [[loc[0], v['n'], varSpec2stmt(v), None]])
+                                        varList.append(v)
+
+                                # Create the DO loops
+                                inner, outer, _ = createDoConstruct(table)
+
+                                # Move the call statement in the DO loops
+                                inner.insert(-1, callStmt) #callStmt in the DO-loops
+                                par.insert(list(par).index(callStmt), outer) #DO-loops near the original call stmt
+                                par.remove(callStmt) #original call stmt removed
+                                par = inner #Update parent
+                                for namedE in callStmt.findall('./{*}arg-spec/{*}arg/{*}named-E'):
+                                    # Replace slices by indexes if any
+                                    if namedE.find('./{*}R-LT'):
+                                        arrayR2parensR(namedE, table, varList, loc[0])
+
                         # Inline
                         nodeInlined, localVarToAdd, localUseToAdd = inline(doc,
                                                                            containedRoutines[containedRoutine][1],
@@ -432,41 +357,6 @@ def inlineContainedSubroutines(doc):
                                             [n2name(v.find('.//{*}N')) for v in use_stmt.findall('.//{*}use-N')]]
                                            for use_stmt in localUseToAdd])
 
-                        # Specific case for ELEMENTAL subroutines: expand arrays within the inlined code (only E-2 arrays)
-                        if len(prefix)>0:
-                            if 'ELEMENTAL' in alltext(prefix[0]) and len(arrayRincallStmt) > 0:
-                                # Look for an array affectation to guess the DO loops to put around the call
-                                # We use an up-to-date version of the var list
-                                firstArr = nodeInlined.find('.//{*}a-stmt//{*}E-2//{*}array-R/../..')
-                                table, newVar = findArrayBounds(doc, firstArr, varList,
-                                                                loc[0], _loopVarPHYEX)
-
-                                # Add declaration of loop index if missing
-                                for varName in table.keys():
-                                    if not findVar(doc, varName, loc[0], varList):
-                                        v = {'as': [], 'asx': [],
-                                             'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
-                                             'use': False, 'opt': False, 'allocatable': False,
-                                             'parameter': False, 'init': None}
-                                        addVar(doc, [[loc[0], v['n'], varSpec2stmt(v), None]])
-
-                                # Create the DO loops
-                                inner, outer, _ = createDoConstruct(table)
-
-                                # Replace the array-syntax by loop index in every a-stmt node
-                                for node_opE in nodeInlined.findall('.//{*}R-LT'):
-                                    # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
-                                    placeArrayRtoparensR(doc, nodeInlined, node_opE, table) 
-
-                                # Place the Do loops on top of the inlined routine
-                                # nodeInlined is a program-unit, we must insert the subelements
-                                for node in nodeInlined[::-1]:
-                                    inner.insert(-1, node)
-                                # In the general case, nodeInlined is a program-unit. We must
-                                # add this node for being compatible
-                                nodeInlined = ET.Element('{http://fxtran.net/#syntax}program-unit')
-                                nodeInlined.append(outer)
-                            
                         # Remove call statement of the contained routines
                         allsiblings = par.findall('./{*}*')
                         index = allsiblings.index(callStmt)
