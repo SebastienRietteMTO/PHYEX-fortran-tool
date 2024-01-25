@@ -876,6 +876,8 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
                     #Guess a variable name
                     if arr is not None:
                         newtable, varNew = findArrayBounds(doc, arr, varList, currentScope, loopVar)
+                        for v in varNew:
+                            v['new'] = True
                         varList.extend(varNew)
                     else:
                         newtable = None

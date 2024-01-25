@@ -224,7 +224,7 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
                 table is a dictionnary: keys are loop variable names
                                         values are tuples with lower and upper bounds
                 newVar is a list of loop variables not found in varList. This list has the same
-                       format as the varList list but has also the attribute 'new' that can be kept or discard
+                       format as the varList list.
 
     In case the loop variable cannot be defined, the function returns (None, [])
     """
@@ -267,8 +267,8 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
                     #We must declare the variable
                     varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
                                't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
-                               'scope': currentScope, 'new': True}
-                    varList.append(varDesc)
+                               'scope': currentScope}
+                    varNew.append(varDesc)
                 #varName can be a string (name to use), True (to create a variable), False (to discard the array)
                 guess = varName is True
             if guess:
@@ -283,7 +283,7 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
                 varName = 'J' + str(j)
                 varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
                            't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
-                           'scope': currentScope, 'new': True}
+                           'scope': currentScope}
                 if varDesc not in varNew:
                     varNew.append(varDesc)
 

@@ -7,7 +7,7 @@ from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, n2n
 from pyft.statements import (removeCall, setFalseIfStmt, removeStmtNode,
                              removeArraySyntax, createDoConstruct, createArrayBounds)
 from pyft.variables import (removeUnusedLocalVar, getVarList, addVar, addModuleVar,
-                            removeVar, findArrayBounds, varSpec2stmt, renameVar)
+                            removeVar, findArrayBounds, varSpec2stmt, renameVar, findVar)
 from pyft.cosmetics import changeIfStatementsInIfConstructs
 from pyft.scope import getScopesList, getScopePath
 from pyft.expressions import createExprPart
@@ -282,41 +282,21 @@ def inlineContainedSubroutines(doc):
     :param doc: xml fragment containing main and contained subroutine
     """
 
-    def placeArrayRtoparensR(doc, locNode, node_opE):
+    def placeArrayRtoparensR(doc, locNode, node_opE, table):
         """
         Convert ArrayR to parensR (remove the array-R and add parensR)
         :param doc: etree to use for parent retrieval
         :param node_opE: working node
         :param locNode: scope of the working node
+        :param table: loop indexes table
         """
-        def getIndexLoop(lowerBound,upperBound):
-            if 'KSIZE' in upperBound or 'KPROMA' in upperBound or 'KMICRO' in upperBound \
-            or 'IGRIM' in upperBound or 'IGACC' in upperBound or 'IGDRY' in upperBound\
-            or 'IGWET' in upperBound:
-                n = 'JL'
-            elif 'NIJ' in lowerBound or 'NIJ' in upperBound or 'IIJ' in lowerBound or 'IIJ' in upperBound:
-                n = 'JIJ'
-            elif 'IKB' in upperBound or 'IKE' in upperBound or 'KT' in upperBound:
-                n = 'JK'
-            elif 'SV' in lowerBound or 'SV' in upperBound:
-                n = 'JSV'
-            elif 'KRR' in upperBound:
-                n = 'JRR'
-            elif 'NIT' in upperBound or 'IIB' in lowerBound or 'IIE' in upperBound or 'IIU' in upperBound:
-                n = 'JI'
-            elif 'NJT' in upperBound or 'IJB' in lowerBound or 'IJE' in upperBound or 'IJU' in upperBound:
-                n = 'JJ'
-            else:
-                logging.warning('No index loop found for bounds {lower}:{upper}'.format(lower=str(lowerBound),
-                                                                                        upper=str(upperBound)))
-            return n
-
-        def arrayRtoparensR(doc,arrayR):
+        def arrayRtoparensR(doc, arrayR, table):
             """
             Return a parensR node from an array-R
             :param loopIndex: string for the fortran loop index 
             :param lowerBound: string for the fortran lower bound of the do loop
             :param upperBound: string for the fortran upper bound of the do loop
+            :param table: loop indexes table
             """
             
             subs=arrayR.findall('.//{*}section-subscript')
@@ -335,7 +315,8 @@ def inlineContainedSubroutines(doc):
                         #fxtran bug workaround
                         u = sub.find('.//{*}lower-bound/{*}*/{*}*/{*}n')
                     upperBound = alltext(u)
-                    element.insert(0, createExprPart(getIndexLoop('1',upperBound)))      
+                    #element.insert(0, createExprPart(getIndexLoop('1',upperBound)))      
+                    element.insert(0, createExprPart(list(table.keys())[i]))
                 elif len(sub.findall('.//{*}upper-bound')) == 0:
                     if ':' in alltext(sub): # INDEX: e.g. (IKTB:)
                         pass
@@ -346,7 +327,8 @@ def inlineContainedSubroutines(doc):
                     upperBounds=sub.findall('.//{*}upper-bound')
                     lowerBound=alltext(lowerBounds[0])
                     upperBound=alltext(upperBounds[0])
-                    element.insert(0, createExprPart(getIndexLoop(lowerBound,upperBound)))
+                    #element.insert(0, createExprPart(getIndexLoop(lowerBound,upperBound)))
+                    element.insert(0, createExprPart(list(table.keys())[i]))
                 elementLT.append(element)
         
             for i in range(len(elementLT)-1):
@@ -357,7 +339,7 @@ def inlineContainedSubroutines(doc):
         # Replace the array-like index selection by index loop on all variables (array-R)
         arrayR = node_opE.findall('.//{*}array-R')
         for node in arrayR:
-            parensR=arrayRtoparensR(locNode,node)
+            parensR=arrayRtoparensR(locNode,node, table)
             par = getParent(node_opE,node)
             par.insert(1,parensR)
             par.remove(node)
@@ -420,10 +402,9 @@ def inlineContainedSubroutines(doc):
         if loc[0].count('sub:') >= 1:
             callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
             for callStmtNn in callStmtsNn: # For all CALL statements
-                mainVarList = getVarList(doc,getScopePath(doc,loc[1]))
-                totalVarList = getVarList(doc) #Must be recomputed to take into account new variables
                 for containedRoutine in containedRoutines:
                     if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
+                        varList = getVarList(doc) #Must be recomputed to take into account new variables
                         callStmt = getParent(doc,callStmtNn,level=4)
                         par = getParent(doc,callStmt)
                         if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
@@ -436,17 +417,15 @@ def inlineContainedSubroutines(doc):
                                 arrayRincallStmt = callStmt.findall('.//{*}array-R') # If the call-stmt is already done in a loop such as any arrayR is present
                                 if len(arrayRincallStmt) > 0:
                                     #We should be able to use the following statement, with addExplicitArrayBounds taken from Variables
-                                    #addExplicitArrayBounds(doc, node=callStmt, varList=mainVarList, scope=loc[1])
-                                    addExplicitArrayBounds(loc[1], callStmt, mainVarList)
-                        #
-                        subContaintedVarList = getVarList(doc,getScopePath(doc,containedRoutines[containedRoutine][1]))
+                                    #addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=loc[1])
+                                    addExplicitArrayBounds(loc[1], callStmt, varList)
                         # Inline
                         nodeInlined, localVarToAdd, localUseToAdd = inline(doc,
                                                                            containedRoutines[containedRoutine][1],
-                                                                           callStmt, subContaintedVarList,
-                                                                           mainVarList,
+                                                                           callStmt,
+                                                                           loc[0],
                                                                            containedRoutines[containedRoutine][0],
-                                                                           totalVarList)
+                                                                           varList)
                         # Add local var and use to main routine
                         addVar(doc, [[loc[0], var['n'], varSpec2stmt(var), None] for var in localVarToAdd])
                         addModuleVar(doc, [[loc[0], n2name(use_stmt.find('.//{*}module-N//{*}N')),
@@ -459,13 +438,12 @@ def inlineContainedSubroutines(doc):
                                 # Look for an array affectation to guess the DO loops to put around the call
                                 # We use an up-to-date version of the var list
                                 firstArr = nodeInlined.find('.//{*}a-stmt//{*}E-2//{*}array-R/../..')
-                                table, newVar = findArrayBounds(doc, firstArr, getVarList(doc),
+                                table, newVar = findArrayBounds(doc, firstArr, varList,
                                                                 loc[0], _loopVarPHYEX)
 
                                 # Add declaration of loop index if missing
                                 for varName in table.keys():
-                                    #TODO use findVar
-                                    if not varName in [v['n'] for v in mainVarList]:
+                                    if not findVar(doc, varName, loc[0], varList):
                                         v = {'as': [], 'asx': [],
                                              'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
                                              'use': False, 'opt': False, 'allocatable': False,
@@ -478,7 +456,7 @@ def inlineContainedSubroutines(doc):
                                 # Replace the array-syntax by loop index in every a-stmt node
                                 for node_opE in nodeInlined.findall('.//{*}R-LT'):
                                     # Need to take R-LT (and not a-stmt) because some array-R are not in a-stmt such as IF(A(:,:)) THEN...
-                                    placeArrayRtoparensR(doc, nodeInlined, node_opE) 
+                                    placeArrayRtoparensR(doc, nodeInlined, node_opE, table) 
 
                                 # Place the Do loops on top of the inlined routine
                                 # nodeInlined is a program-unit, we must insert the subelements
@@ -517,7 +495,7 @@ def inlineContainedSubroutines(doc):
                 getParent(doc, loc[1]).remove(loc[1])
 
 
-def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subScope, totalVarList):
+def inline(doc, subContained, callStmt, mainScope, subScope, varList):
     """
     Inline a subContainted subroutine
     Steps :
@@ -528,10 +506,9 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
     :param doc: xml fragment containing main and contained subroutine
     :param subContained: xml fragment corresponding to the sub: to inline
     :param callStmt : the call-stmt to get the values of the intent args
-    :param subContaintedVarList: var list of the subContained subroutine
-    :param mainVarList: var list of the main (calling) subroutine
+    :param mainScope: scope of the main (calling) subroutine
     :param subScope: scope of the contained subroutine to include
-    :param totalVarList: var list of all scopes
+    :param varList: var list of all scopes
     """
     def setPRESENTbyTrue(node, var):
         """
@@ -550,34 +527,34 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
 
     # Deep copy the object to possibly modify the original one multiple times
     node = copy.deepcopy(subContained)
-    nodeToRemove, varPermutted = [], []
-    declStmtFound = False # used to remove everything before a variable declaration
     
     # Get local variables that are not present in the main routine for later addition
     localVarToAdd = []
     subst = []
-    for var in [v for v in subContaintedVarList if not v['arg'] and not v['use']]: #for local variables only
-        #TODO use variables.findVar instead of searching in totalVarList
-        if var['n'].upper() in [v['n'].upper() for v in totalVarList]:
-            # There is a name conflict, the local variable must be renamed before being declared in the main routine
+    for var in [v for v in varList
+                if not v['arg'] and not v['use'] and v['scope'] == subScope]: #for local variables only
+        if findVar(doc, var['n'], mainScope, varList):
+           # Variable is already defined in main or upper, there is a name conflict,
+           # the local variable must be renamed before being declared in the main routine
            newName = re.sub(r'_\d+$', '', var['n'])
            i = 1
-           while newName + '_' + str(i) in [v['n'].upper() for v in subContaintedVarList + totalVarList]:
+           while findVar(doc, newName + '_' + str(i), subScope, varList):
                i += 1
            newName += '_' + str(i)
            renameVar(node, var['n'], newName)
            subst.append((var['n'], newName))
            var['n'] = newName
+        var['scope'] = mainScope #important for findVar(.., mainScope,...) to find it
         localVarToAdd.append(var)
 
     #In case a substituted variable is used in the declaration of another variable
     for oldName, newName in subst:
-        for n in range(len(localVarToAdd)):
-           if localVarToAdd[n]['as'] is not None:
-               localVarToAdd[n]['as'] = [[re.sub(r'\b' +oldName + r'\b', newName, dim[i])
-                                          if dim[i] is not None else None
-                                          for i in (0, 1)]
-                                         for dim in localVarToAdd[n]['as']]
+        for v in localVarToAdd + varList:
+            if v['as'] is not None:
+               v['as'] = [[re.sub(r'\b' +oldName + r'\b', newName, dim[i])
+                           if dim[i] is not None else None
+                           for i in (0, 1)]
+                          for dim in v['as']]
 
     # Remove all objects that is implicit none, comment or else until reach something interesting; except USE
     localUseToAdd = node.findall('./{*}use-stmt')
@@ -681,16 +658,15 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                     N.remove(n)
 
                 #1 We get info about variables (such as declared in the main or in the contained routines)
-                #TODO move these lines in the vartable computation, using scope and variables.findVar
-                desc_main = [v for v in mainVarList if v['n'].upper() == dummy['name'].upper()]
-                desc_sub = [v for v in subContaintedVarList if v['n'].upper() == name.upper()][0]
+                desc_main = findVar(doc, dummy['name'], mainScope, varList)
+                desc_sub = findVar(doc, name, subScope, varList)
                 #In case variable is used for the declaration of another variable, we must update desc_sub
-                for n in range(len(subContaintedVarList)):
-                    if subContaintedVarList[n]['as'] is not None:
-                        subContaintedVarList[n]['as'] = [[re.sub(r'\b' + name + r'\b', dummy['name'], dim[i])
-                                                          if dim[i] is not None else None
-                                                          for i in (0, 1)]
-                                                         for dim in subContaintedVarList[n]['as']]
+                for n in range(len(varList)):
+                    if varList[n]['as'] is not None:
+                        varList[n]['as'] = [[re.sub(r'\b' + name + r'\b', dummy['name'], dim[i])
+                                                  if dim[i] is not None else None
+                                                  for i in (0, 1)]
+                                                 for dim in varList[n]['as']]
 
                 #3 We select the indexes (only for array argument and not structure argument containing an array)
                 #  using the occurrence to replace inside the subcontained routine body
@@ -702,7 +678,7 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                     slices += RLT[0].findall('./{*}element-LT/{*}element')
                 else:
                     #No parenthesis
-                    if (len(desc_main) == 1 and len(desc_main[0]['as']) > 0) or \
+                    if (desc_main is not None and len(desc_main['as']) > 0) or \
                        len(desc_sub['as']) > 0 or dummy['dim'] is not None:
                         #No parenthesis, but this is an array, we add as many ':' as needed
                         if len(desc_sub['as']) > 0:
@@ -714,7 +690,7 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                                 ndim = len([d for d in dummy['dim'] if ':' in alltext(d)])
                             else:
                                 #We use the declared version in main
-                                ndim = len(desc_main[0]['as'])
+                                ndim = len(desc_main['as'])
                         ns[0].text += '(' + (', '.join([':'] * ndim)) + ')'
                         updatedNamedE = createExprPart(alltext(namedE))
                         namedE.tag = updatedNamedE.tag
@@ -751,9 +727,9 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                                     desc_sub[i] = alltext(desc_sub[i])
                                 else:
                                     #if available we take lower/upper limit set in the declaration 
-                                    if len(desc_main) == 1 and desc_main[0]['as'][isl][1] is not None:
+                                    if desc_main is not None and desc_main['as'][isl][1] is not None:
                                         #Declaration found in main, and not using implicit shape
-                                        desc_sub[i] = desc_main[0]['as'][isl][i]
+                                        desc_sub[i] = desc_main['as'][isl][i]
                                         if i == 0 and desc_sub[i] is None: desc_sub[i] = '1' #Default FORTRAN value
                                     else:
                                         desc_sub[i] = "L" if i == 0 else "U"
@@ -774,8 +750,8 @@ def inline(doc, subContained, callStmt, subContaintedVarList, mainVarList, subSc
                         if dummy['dim'] is not None and not alltext(dummy['dim'][isl]).strip().startswith(':'):
                             offset = alltext(dummy['dim'][isl].find('./{*}lower-bound'))
                         else:
-                            if len(desc_main) == 1:
-                                offset = desc_main[0]['as'][isl][0]
+                            if desc_main is not None:
+                                offset = desc_main['as'][isl][0]
                                 if offset is None:
                                     offset = '1' #Default FORTRAN value
                                 elif offset.strip().startswith('-'):
@@ -963,7 +939,7 @@ def _loopVarPHYEX(lower_decl, upper_decl, lower_used, upper_used, name, i):
     elif upper_decl is None or lower_decl is None:
         varName = False
     elif upper_decl.upper() in ('KSIZE', 'KPROMA', 'KMICRO',
-                              'IGRIM', 'IGACC', 'IGDRY', 'IGWET'):
+                                'IGRIM', 'IGACC', 'IGDRY', 'IGWET'):
         varName = 'JL'
     elif upper_decl.upper() in ('D%NIJT', 'IIJE') or lower_decl.upper() in ('D%NIJT', 'IIJB') or \
          'D%NIJT' in upper_decl.upper() + lower_decl.upper():

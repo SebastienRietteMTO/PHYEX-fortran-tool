@@ -4,9 +4,11 @@ This module includes functions to deal with expressions
 import xml.etree.ElementTree as ET
 from pyft.util import debugDecor, isint, isfloat, fortran2xml
 import re
+from functools import lru_cache
+import copy
 
-@debugDecor
-def createExprPart(value):
+@lru_cache
+def _cached_createExprPart(value):
     """
     :param value: expression part to put in a *-E node
 
@@ -42,10 +44,43 @@ def createExprPart(value):
         N.append(n)
         node = ET.Element('{http://fxtran.net/#syntax}named-E')
         node.append(N)
+    elif re.match(r'[a-zA-Z_][a-zA-Z0-9_]*%[a-zA-Z_][a-zA-Z0-9_]*$', value):
+        #A%B
+        n = ET.Element('{http://fxtran.net/#syntax}n')
+        n.text = value.split('%')[0]
+        N = ET.Element('{http://fxtran.net/#syntax}N')
+        N.append(n)
+        ct = ET.Element('{http://fxtran.net/#syntax}ct')
+        ct.text = value.split('%')[1]
+        componentR = ET.Element('{http://fxtran.net/#syntax}component-R')
+        componentR.text = '%'
+        componentR.append(ct)
+        RLT = ET.Element('{http://fxtran.net/#syntax}R-LT')
+        RLT.append(componentR)
+        node = ET.Element('{http://fxtran.net/#syntax}named-E')
+        node.append(N)
+        node.append(RLT)
     else:
         _, xml = fortran2xml("SUBROUTINE T; X={v}; END".format(v=value))
         node = xml.find('.//{*}E-2')[0]
     return node
+
+@debugDecor
+def createExprPart(value):
+    """
+    :param value: expression part to put in a *-E node
+
+    If value is:
+      - a FORTRAN string (python sting containing a ' or a "), returns
+        <f:string-E><f:S>...
+      - a FORTRAN value (python string convertible in real or int, or .FALSE./.TRUE.), returns
+        <f:literal-E><f:l>...
+      - a FORTRAN variable name (pyhon string with only alphanumerical characters and _), returns
+        <named-E/><N><n>...
+      - a FORTRAN operation (other python string), returns the right part of the X affectation statement
+        of the code: "SUBROUTINE T; X=" + value + "; END". The xml is obtained by calling fxtran.
+    """
+    return copy.deepcopy(_cached_createExprPart(value))
 
 @debugDecor
 def simplifyExpr(expr, add=None, sub=None):
