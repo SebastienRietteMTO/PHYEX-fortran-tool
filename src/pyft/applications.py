@@ -284,96 +284,32 @@ def inlineContainedSubroutines(doc, simplify=False):
     :param simplify: try to simplify code (construct or variables becoming useless)
     """
 
-    locations  = getScopesList(doc,withNodes='tuple')
-    containedRoutines = {}
+    locations  = getScopesList(doc, withNodes='tuple')
+
     # Inline contained subroutines : look for sub: / sub:
+    containedRoutines = {}
     for loc in locations:
         if loc[0].count('sub:') >= 2:
             containedRoutines[alltext(loc[1].find('.//{*}subroutine-N/{*}N/{*}n'))] = (loc[0], loc[1])
+
     # Start by nested contained subroutines call, and end up with the last index = the main subroutine to treat 
     locations.reverse()
-    for loc in locations: # For all subroutines (main + contained)
-        if loc[0].count('sub:') >= 1:
-            callStmtsNn = loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n')
-            for callStmtNn in callStmtsNn: # For all CALL statements
-                for containedRoutine in containedRoutines:
-                    if alltext(callStmtNn) == containedRoutine: # If name of the routine called = a contained subroutine
-                        varList = getVarList(doc) #Must be recomputed to take into account new variables
-                        callStmt = getParent(doc,callStmtNn,level=4)
-                        par = getParent(doc,callStmt)
-                        if par.tag.endswith('}action-stmt'): # Expand the if-construct if the call-stmt is in a one-line if-construct
-                            changeIfStatementsInIfConstructs(doc,getParent(doc,par))
-                            par = getParent(doc, callStmt) #update parent
+    # Loop on all subroutines (main + contained)
+    for loc in [loc for loc in locations if loc[0].count('sub:') >= 1]:
+        # Loop on all CALL statements
+        for callStmtNn in loc[1].findall('.//{*}call-stmt/{*}procedure-designator/{*}named-E/{*}N/{*}n'):
+            for containedRoutine in [cr for cr in containedRoutines if alltext(callStmtNn) == cr]:
+                # name of the routine called = a contained subroutine => inline
+                inline(doc,
+                       containedRoutines[containedRoutine][1],
+                       getParent(doc, callStmtNn, level=4),
+                       loc[0], containedRoutines[containedRoutine][0], # Scopes
+                       getVarList(doc), # Must be recomputed each time to take into account new variable
+                       simplify=simplify)
 
-                        # Specific case for ELEMENTAL subroutines
-                        # Introduce DO-loops if it is called on arrays
-                        prefix = containedRoutines[containedRoutine][1].findall('.//{*}prefix')
-                        if len(prefix) > 0 and 'ELEMENTAL' in [p.text.upper() for p in prefix]:
-                            #Add missing parentheses
-                            addArrayParentheses(doc, callStmt, varList=varList, scope=loc[0])
-
-                            #Add explcit bounds
-                            addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=loc[1])
-
-                            #Detect if subroutine is called on arrays
-                            arrayRincallStmt = callStmt.findall('.//{*}array-R')
-                            if len(arrayRincallStmt) > 0: #Called on arrays
-                                # Look for an array affectation to guess the DO loops to put around the call
-                                table, newVar = findArrayBounds(doc, getParent(doc, arrayRincallStmt[0], 2),
-                                                                varList, loc[0], _loopVarPHYEX)
-
-                                # Add declaration of loop index if missing
-                                for varName in table.keys():
-                                    if not findVar(doc, varName, loc[0], varList):
-                                        v = {'as': [], 'asx': [],
-                                             'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
-                                             'use': False, 'opt': False, 'allocatable': False,
-                                             'parameter': False, 'init': None, 'scope': loc[0]}
-                                        addVar(doc, [[loc[0], v['n'], varSpec2stmt(v), None]])
-                                        varList.append(v)
-
-                                # Create the DO loops
-                                inner, outer, _ = createDoConstruct(table)
-
-                                # Move the call statement in the DO loops
-                                inner.insert(-1, callStmt) #callStmt in the DO-loops
-                                par.insert(list(par).index(callStmt), outer) #DO-loops near the original call stmt
-                                par.remove(callStmt) #original call stmt removed
-                                par = inner #Update parent
-                                for namedE in callStmt.findall('./{*}arg-spec/{*}arg/{*}named-E'):
-                                    # Replace slices by indexes if any
-                                    if namedE.find('./{*}R-LT'):
-                                        arrayR2parensR(namedE, table, varList, loc[0])
-
-                        # Inline
-                        nodeInlined, localVarToAdd, localUseToAdd = inline(doc,
-                                                                           containedRoutines[containedRoutine][1],
-                                                                           callStmt,
-                                                                           loc[0],
-                                                                           containedRoutines[containedRoutine][0],
-                                                                           varList,
-                                                                           simplify=simplify)
-                        # Add local var and use to main routine
-                        addVar(doc, [[loc[0], var['n'], varSpec2stmt(var), None] for var in localVarToAdd])
-                        addModuleVar(doc, [[loc[0], n2name(use_stmt.find('.//{*}module-N//{*}N')),
-                                            [n2name(v.find('.//{*}N')) for v in use_stmt.findall('.//{*}use-N')]]
-                                           for use_stmt in localUseToAdd])
-
-                        # Remove call statement of the contained routines
-                        allsiblings = par.findall('./{*}*')
-                        index = allsiblings.index(callStmt)
-                        par.remove(callStmt)
-                        if callStmt.tail is not None:
-                            if nodeInlined[-1].tail is None:
-                                nodeInlined[-1].tail = callStmt.tail
-                            else:
-                                nodeInlined[-1].tail = nodeInlined[-1].tail + callStmt.tail
-                        for node in nodeInlined[::-1]:
-                            #nodeInlined is a program-unit, we must insert the subelements
-                            par.insert(index, node)
                 # Update containedRoutines
-                containedRoutines = {}
                 # Inline contained subroutines : look for sub: / sub:
+                containedRoutines = {}
                 for locs in locations:
                     if locs[0].count('sub:') >= 2:
                         containedRoutines[n2name(locs[1].find('.//{*}subroutine-N/{*}N'))] = (locs[0], locs[1])
@@ -386,18 +322,21 @@ def inlineContainedSubroutines(doc, simplify=False):
                 # Subroutine name not used (apart in its definition scope)
                 getParent(doc, loc[1]).remove(loc[1])
 
-
+@debugDecor
 def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=False):
     """
     Inline a subContainted subroutine
     Steps :
+        - update the main code if needed (if statement and/or elemental)
         - copy the subContained node
         - remove everything before the declarations variables and the variables declarations
+        - deal with optional argument
         - from the callStmt, replace all the arguments by their names 
-        - return the node to inline and the local variables to be added in the calling routine
+        - inline in the main code
+        - add local variables and use statements to the main code
     :param doc: xml fragment containing main and contained subroutine
     :param subContained: xml fragment corresponding to the sub: to inline
-    :param callStmt : the call-stmt to get the values of the intent args
+    :param callStmt: the call-stmt to replace
     :param mainScope: scope of the main (calling) subroutine
     :param subScope: scope of the contained subroutine to include
     :param varList: var list of all scopes
@@ -417,6 +356,54 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
                         namedE.remove(n)
                     namedE.tag = '{http://fxtran.net/#syntax}literal-E'
                     namedE.text = '.TRUE.' if val else '.FALSE.'
+
+    # Get parent of callStmt
+    parent = getParent(doc, callStmt)
+
+    # Expand the if-construct if the call-stmt is in a one-line if-construct
+    if parent.tag.endswith('}action-stmt'):
+        changeIfStatementsInIfConstructs(doc, getParent(doc, parent))
+        parent = getParent(doc, callStmt) #update parent
+
+    # Specific case for ELEMENTAL subroutines
+    # Introduce DO-loops if it is called on arrays
+    prefix = subContained.findall('.//{*}prefix')
+    if len(prefix) > 0 and 'ELEMENTAL' in [p.text.upper() for p in prefix]:
+        #Add missing parentheses
+        addArrayParentheses(doc, callStmt, varList=varList, scope=mainScope)
+
+        #Add explcit bounds
+        addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=mainScope)
+
+        #Detect if subroutine is called on arrays
+        arrayRincallStmt = callStmt.findall('.//{*}array-R')
+        if len(arrayRincallStmt) > 0: #Called on arrays
+            # Look for an array affectation to guess the DO loops to put around the call
+            table, newVar = findArrayBounds(doc, getParent(doc, arrayRincallStmt[0], 2),
+                                            varList, mainScope, _loopVarPHYEX)
+
+            # Add declaration of loop index if missing
+            for varName in table.keys():
+                if not findVar(doc, varName, mainScope, varList):
+                    v = {'as': [], 'asx': [],
+                         'n': varName, 'i': None, 't': 'INTEGER', 'arg': False,
+                         'use': False, 'opt': False, 'allocatable': False,
+                         'parameter': False, 'init': None, 'scope': mainScope}
+                    addVar(doc, [[mainScope, v['n'], varSpec2stmt(v), None]])
+                    varList.append(v)
+
+            # Create the DO loops
+            inner, outer, _ = createDoConstruct(table)
+
+            # Move the call statement in the DO loops
+            inner.insert(-1, callStmt) #callStmt in the DO-loops
+            parent.insert(list(parent).index(callStmt), outer) #DO-loops near the original call stmt
+            parent.remove(callStmt) #original call stmt removed
+            parent = inner #Update parent
+            for namedE in callStmt.findall('./{*}arg-spec/{*}arg/{*}named-E'):
+                # Replace slices by indexes if any
+                if namedE.find('./{*}R-LT'):
+                    arrayR2parensR(namedE, table, varList, mainScope)
 
     # Deep copy the object to possibly modify the original one multiple times
     node = copy.deepcopy(subContained)
@@ -722,8 +709,24 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
     node.remove(node.find('./{*}subroutine-stmt'))
     node.remove(node.find('./{*}end-subroutine-stmt'))
 
-    return node, localVarToAdd, localUseToAdd
-    
+    # Add local var and use to main routine
+    addVar(doc, [[mainScope, var['n'], varSpec2stmt(var), None] for var in localVarToAdd])
+    addModuleVar(doc, [[mainScope, n2name(use_stmt.find('.//{*}module-N//{*}N')),
+                        [n2name(v.find('.//{*}N')) for v in use_stmt.findall('.//{*}use-N')]]
+                       for use_stmt in localUseToAdd])
+
+    # Remove call statement of the contained routines
+    index = list(parent).index(callStmt)
+    parent.remove(callStmt)
+    if callStmt.tail is not None:
+        if node[-1].tail is None:
+            node[-1].tail = callStmt.tail
+        else:
+            node[-1].tail = node[-1].tail + callStmt.tail
+    for node in node[::-1]:
+        #node is a program-unit, we must insert the subelements
+        parent.insert(index, node)
+
 @debugDecor            
 def removeIJLoops(doc):
     """
