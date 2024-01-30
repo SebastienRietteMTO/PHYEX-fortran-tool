@@ -596,7 +596,7 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
                                 "parethesis inside mnh directive sections.")
             #We loop on named-E nodes (and not directly on array-R nodes to prevent using the costly getParent)
             for namedE in e.findall('.//{*}R-LT/..'):
-                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable
+                arrayR2parensR(doc, namedE, table, varList, currentScope) #Replace slices by variable
             for cnt in e.findall('.//{*}cnt'):
                 add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
         elif e.tag.split('}')[1] == 'if-stmt':
@@ -623,7 +623,7 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
             mask = e.find('./{*}mask-E')
             mask.tag = mask.tag.split('}')[0] + '}condition-E' #rename the condition tag
             for namedE in mask.findall('.//{*}R-LT/..'):
-                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable
+                arrayR2parensR(doc, namedE, table, varList, currentScope) #Replace slices by variable
             for cnt in e.findall('.//{*}cnt'):
                 add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
         elif e.tag.split('}')[1] == 'where-construct':
@@ -662,7 +662,7 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
                             mask.tag = mask.tag.split('}')[0] + '}condition-E'
                             mask.tail += ' THEN'
                             for namedE in mask.findall('.//{*}R-LT/..'):
-                                arrayR2parensR(namedE, table, varList, currentScope) #Replace slices by variable in the condition
+                                arrayR2parensR(doc, namedE, table, varList, currentScope) #Replace slices by variable in the condition
                         for cnt in child.findall('.//{*}cnt'):
                             add_extra(cnt, extraindent) #Add indentation spaces after continuation characters
                     else:
@@ -992,7 +992,7 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
             for namedE in callStmt.findall('./{*}arg-spec/{*}arg/{*}named-E'):
                 # Replace slices by indexes if any
                 if namedE.find('./{*}R-LT'):
-                    arrayR2parensR(namedE, table, varList, mainScope)
+                    arrayR2parensR(doc, namedE, table, varList, mainScope)
 
     # Deep copy the object to possibly modify the original one multiple times
     node = copy.deepcopy(subContained)

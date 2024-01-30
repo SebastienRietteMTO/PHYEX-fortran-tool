@@ -393,11 +393,12 @@ def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
                                             sub.extend([lowerXml, upperXml])
 
 @debugDecor
-def arrayR2parensR(namedE, table, varList, currentScope):
+def arrayR2parensR(doc, namedE, table, varList, currentScope):
     """
     Transform a array-R into a parens-R node by replacing slices by variables
     In 'A(:)', the ':' is in a array-R node whereas in 'A(JL)', 'JL' is in a parens-R node.
     Both the array-R and the parens-R nodes are inside a R-LT node
+    :param doc: etree
     :param namedE: a named-E node
     :param table: dictionnary returned by the decode function
     :param varList: description of declared variables
