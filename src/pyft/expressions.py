@@ -2,7 +2,7 @@
 This module includes functions to deal with expressions
 """
 import xml.etree.ElementTree as ET
-from pyft.util import debugDecor, isint, isfloat, fortran2xml
+from pyft.util import debugDecor, isint, isfloat, fortran2xml, PYFTError
 import re
 from functools import lru_cache
 import copy

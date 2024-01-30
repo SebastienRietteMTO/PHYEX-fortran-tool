@@ -1,0 +1,150 @@
+SUBROUTINE FOO
+
+USE MODD, ONLY: ICEPt
+
+REAL, DIMENSION(KSIZE1) :: Z1, Z2
+REAL, DIMENSION(KSIZE1, 2) :: Z3, Z4
+REAL, DIMENSION(-5:KSIZE1) :: Z5
+TYPE(ICEPt) :: ICEP
+TYPE(ICEPt), DIMENSION(5) :: ICEPARRAY
+
+print*, Z1(:)
+print*, Z1(1)
+print*, D%G
+print*, D%G%H
+
+!Call INC1
+CALL INC1(Z1(:), Z2(1:KSIZE1), &
+         &Z3(:, 1), Z4(1:KSIZE1, 1), &
+         &Z1, &
+         &ICEP%T(:), &
+         &1, Z1(1))
+
+!Call INC1 with keyword keys
+CALL INC1(P1=Z1(:), P2=Z2(1:KSIZE1), &
+         &P3=Z3(:, 1), P4=Z4(1:KSIZE1, 1), &
+         &P5=Z1, &
+         &P6=ICEP%T(:), &
+         &P=1, Q=Z1(1))
+
+!Call INC2 with arg name inversion
+CALL INC2(Z1, Z2)
+CALL INC2(Z2, Z1)
+
+!Call INC3 with optional arg
+CALL INC3(Z1)
+CALL INC3(P1=Z1)
+CALL INC3(P2=Z2)
+
+!Call INC4 with structure
+CALL INC4(A%B, ICEPARRAY, ICEPARRAY(4))
+
+!Call INC5 for offset
+CALL INC5(Z1(:), Z1(3:), Z1(3:KSIZE))
+CALL INC5(Z5(:), Z5(3:), Z5(3:KSIZE))
+
+!CALL INC6 for 2D arrays
+CALL INC6(Z3(:,:))
+
+CONTAINS
+
+SUBROUTINE INC1(P1, P2, P3, P4, P5, P6, P, Q)
+  REAL, DIMENSION(KSIZE2) :: P1, P2, P3, P4, P5, P6
+  REAL :: P, Q
+  P1(1)=P1(2)
+  P1(:)=P1(:)
+  P1(1:KSIZE2)=P1(1:KSIZE2)
+  P1=5.
+  P1(:KSIZE2)=P1(:KSIZE2)
+  P1(2:KSIZE2)=P1(2:KSIZE2)
+
+  P2(1)=P2(2)
+  P2(:)=P2(:)
+  P2(1:KSIZE2)=P2(1:KSIZE2)
+  P2=5.
+  P2(:KSIZE2)=P2(:KSIZE2)
+  P2(2:KSIZE2)=P2(2:KSIZE2)
+
+  P3(1)=P3(2)
+  P3(:)=P3(:)
+  P3(1:KSIZE2)=P3(1:KSIZE2)
+  P3=5.
+  P3(:KSIZE2)=P3(:KSIZE2)
+  P3(2:KSIZE2)=P3(2:KSIZE2)
+
+  P4(1)=P4(2)
+  P4(:)=P4(:)
+  P4(1:KSIZE2)=P4(1:KSIPE2)
+  P4=5.
+  P4(:KSIZE2)=P4(:KSIZE2)
+  P4(2:KSIZE2)=P4(2:KSIZE2)
+
+  P5(1)=P5(2)
+  P5(:)=P5(:)
+  P5(1:KSIZE2)=P5(1:KSIPE2)
+  P5=5.
+  P5(:KSIZE2)=P5(:KSIZE2)
+  P5(2:KSIZE2)=P5(2:KSIZE2)
+
+  P6(1)=P6(2)
+  P6(:)=P6(:)
+  P6(1:KSIZE2)=P6(1:KSIPE2)
+  P6=5.
+  P6(:KSIZE2)=P6(:KSIZE2)
+  P6(2:KSIZE2)=P6(2:KSIZE2)
+
+  print*, P, Q
+
+END SUBROUTINE INC1
+
+SUBROUTINE INC2(Z1, Z2)
+  REAL, DIMENSION(KSIZE2) :: Z1, Z2
+  Z1(:)=Z2(:)
+END SUBROUTINE INC2
+
+SUBROUTINE INC3(P1, P2)
+  REAL, OPTIONAL, DIMENSION(KSIZE2) :: P1, P2
+  IF(PRESENT(P1)) P1(:)=P1(:)+1
+  IF(PRESENT(P2)) P2(:)=P2(:)+2
+!dd
+END SUBROUTINE INC3
+
+SUBROUTINE INC4(C, E, F)
+  TYPE(ICEPt) :: C, F
+  TYPE(ICEPt), DIMENSION(5) :: E
+  print*, C%D%T(:)
+  print*, E(1)%D%T(:)
+  print*, F%D%T(:)
+END SUBROUTINE INC4
+
+SUBROUTINE INC5(P1, P2, P3)
+  REAL, DIMENSION(5:KSIZE2) :: P1, P2, P3
+  P1(1)=P1(2)
+  P1(:)=P1(:)
+  P1(1:KSIZE2)=P1(1:KSIZE2)
+  P1=5.
+  P1(:KSIZE2)=P1(:KSIZE2)
+  P1(2:KSIZE2)=P1(2:KSIZE2)
+
+  P2(1)=P2(2)
+  P2(:)=P2(:)
+  P2(1:KSIZE2)=P2(1:KSIZE2)
+  P2=5.
+  P2(:KSIZE2)=P2(:KSIZE2)
+  P2(2:KSIZE2)=P2(2:KSIZE2)
+
+  P3(1)=P3(2)
+  P3(:)=P3(:)
+  P3(1:KSIZE2)=P3(1:KSIZE2)
+  P3=5.
+  P3(:KSIZE2)=P3(:KSIZE2)
+  P3(2:KSIZE2)=P3(2:KSIZE2)
+END SUBROUTINE INC5
+
+SUBROUTINE INC6(P)
+REAL, DIMENSION(KSIZE, 2) :: P
+
+P(:, 1)=P(:, 2)
+END SUBROUTINE INC6
+
+END SUBROUTINE FOO

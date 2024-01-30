@@ -147,8 +147,9 @@ if __name__ == '__main__':
     gApplications.add_argument('--expandAllArrays', default=False, action='store_true',
                                help='Expand all array syntax (computing and where block) ' + \
                                     'using mnh directives if present')
-    gApplications.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
-                               help='Inline containted subroutines in main routine')
+    gApplications.add_argument('--inlineContainedSubroutinesPHYEX', default=False, action='store_true',
+                               help='Inline containted subroutines in main routine, using ' + \
+                                    'PHYEX conventions')
     gApplications.add_argument('--addStack', nargs=2, action='append',metavar=('TYPE', 'MODEL'),
                                help='Add local arrays to the stack')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
@@ -187,6 +188,8 @@ if __name__ == '__main__':
                                  "the form 'module:<name of the module>', 'sub:<name of the subroutine>' or " + \
                                  "'func:<name of the function>'. Use 'ALL' to suppress all the call " + \
                                  "statements regardless where there are.")
+    gStatement.add_argument('--inlineContainedSubroutines', default=False, action='store_true',
+                            help='Inline containted subroutines in main routine')
 
     #Misc
     gMisc = parser.add_argument_group('Miscellaneous')
@@ -262,6 +265,7 @@ if __name__ == '__main__':
         if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
         if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
         if args.inlineContainedSubroutines: pft.inlineContainedSubroutines(**simplify)
+        if args.inlineContainedSubroutinesPHYEX: pft.inlineContainedSubroutinesPHYEX(**simplify)
         if args.expandAllArrays: pft.removeArraySyntax()
         if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
         if args.removeIJLoops: pft.removeIJLoops()
