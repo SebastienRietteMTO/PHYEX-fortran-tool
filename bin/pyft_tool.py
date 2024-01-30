@@ -261,7 +261,7 @@ if __name__ == '__main__':
         assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
         if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
         if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
-        if args.inlineContainedSubroutines: pft.inlineContainedSubroutines()
+        if args.inlineContainedSubroutines: pft.inlineContainedSubroutines(**simplify)
         if args.expandAllArrays: pft.removeArraySyntax()
         if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
         if args.removeIJLoops: pft.removeIJLoops()

@@ -456,10 +456,10 @@ def removeStmtNode(doc, nodes, simplifyVar, simplifyStruct):
             if n not in otherNodes: otherNodes.append(n)
     #suppress all statements at once
     if len(otherNodes) > 0:
-        removeStmtNode(doc, otherNodes, simplifyVar, False)
+        removeStmtNode(doc, otherNodes, simplifyVar, simplifyStruct)
     #suppress construct nodes one by one (recursive call)
     for n in constructNodes:
-        removeConstructNode(doc, n, simplifyVar, False)
+        removeConstructNode(doc, n, simplifyVar, simplifyStruct)
 
 @debugDecor
 def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,

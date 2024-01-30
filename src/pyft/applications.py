@@ -271,7 +271,7 @@ def checkStackArginCall(doc):
                     addDeclStackAROME(doc,loc)
             
 @debugDecor
-def inlineContainedSubroutines(doc):
+def inlineContainedSubroutines(doc, simplify=False):
     """
     Inline all contained subroutines in the main subroutine
     Steps :
@@ -281,6 +281,7 @@ def inlineContainedSubroutines(doc):
         - Inline the main routine
         - Delete the containted routines
     :param doc: xml fragment containing main and contained subroutine
+    :param simplify: try to simplify code (construct or variables becoming useless)
     """
 
     locations  = getScopesList(doc,withNodes='tuple')
@@ -350,7 +351,8 @@ def inlineContainedSubroutines(doc):
                                                                            callStmt,
                                                                            loc[0],
                                                                            containedRoutines[containedRoutine][0],
-                                                                           varList)
+                                                                           varList,
+                                                                           simplify=simplify)
                         # Add local var and use to main routine
                         addVar(doc, [[loc[0], var['n'], varSpec2stmt(var), None] for var in localVarToAdd])
                         addModuleVar(doc, [[loc[0], n2name(use_stmt.find('.//{*}module-N//{*}N')),
@@ -385,7 +387,7 @@ def inlineContainedSubroutines(doc):
                 getParent(doc, loc[1]).remove(loc[1])
 
 
-def inline(doc, subContained, callStmt, mainScope, subScope, varList):
+def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=False):
     """
     Inline a subContainted subroutine
     Steps :
@@ -399,10 +401,11 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList):
     :param mainScope: scope of the main (calling) subroutine
     :param subScope: scope of the contained subroutine to include
     :param varList: var list of all scopes
+    :param simplify: try to simplify code (construct or variables becoming useless)
     """
-    def setPRESENTbyTrue(node, var):
+    def setPRESENTby(node, var, val):
         """
-        Replace PRESENT(var) by .True. on node if var is found in varsNamedN
+        Replace PRESENT(var) by .TRUE. if val is True, by .FALSE. otherwise on node if var is found
         :param node: xml node to work on (a contained subroutine)
         :param var: string of the name of the optional variable to check
         """
@@ -413,7 +416,7 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList):
                     for n in namedE[:]:
                         namedE.remove(n)
                     namedE.tag = '{http://fxtran.net/#syntax}literal-E'
-                    namedE.text = '.TRUE.'
+                    namedE.text = '.TRUE.' if val else '.FALSE.'
 
     # Deep copy the object to possibly modify the original one multiple times
     node = copy.deepcopy(subContained)
@@ -446,13 +449,14 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList):
                            for i in (0, 1)]
                           for dim in v['as']]
 
-    # Remove all objects that is implicit none, comment or else until reach something interesting; except USE
+    # Remove all objects that is implicit none, comment or else until reach something interesting
+    # USE statements are stored for later user
+    # subroutine-stmt and end-subroutine-stmt are kept to ensure consistency (for removeStmtNode with simplify)
     localUseToAdd = node.findall('./{*}use-stmt')
-    for n in node.findall('./{*}T-decl-stmt') + localUseToAdd + node.findall('./{*}subroutine-stmt') + \
-             node.findall('./{*}end-subroutine-stmt') + node.findall('./{*}implicit-none-stmt'):
+    for n in node.findall('./{*}T-decl-stmt') + localUseToAdd + node.findall('./{*}implicit-none-stmt'):
         node.remove(n)
-    while node[0].tag.split('}')[1] == 'C':
-        node.remove(node[0])
+    while node[1].tag.split('}')[1] == 'C':
+        node.remove(node[1])
 
     # Variable correspondance
     # For each dummy argument, we look for the calling arg name and shape
@@ -494,43 +498,58 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList):
             argname = "".join(tmp.itertext())
         vartable[dummyName] = {'node': argnode, 'name': argname, 'dim': dim}
 
-    # Look for PRESENT(var) and replace it by True when variabl is present
+    # Look for PRESENT(var) and replace it by True when variable is present, by False otherwise
     for dummyName in [dummyName for (dummyName, value) in vartable.items() if value is not None]:
-        setPRESENTbyTrue(node, dummyName)
+        setPRESENTby(node, dummyName, True)
+    for dummyName in [dummyName for (dummyName, value) in vartable.items() if value is None]:
+        setPRESENTby(node, dummyName, False)
 
     # Look for usage of variable not present and delete corresponding code
     for dummyName in [dummyName for (dummyName, value) in vartable.items() if value is None]:
-        for namedE in node.findall('.//{*}named-E/{*}N'):
-            if n2name(namedE).upper() == dummyName:
-                par = getParent(node, namedE,level=4)
-                # The deletion of a variable is complex and depends on the context
-                # Context 1 : an a-stmt of type E1 = E2
-                level = 4
-                par = getParent(node, namedE, level=level)
-                while par:
-                    if par.tag.endswith('}a-stmt'):
-                        getParent(node, par).remove(par)
+        for N in node.findall('.//{*}named-E/{*}N'):
+            if n2name(N).upper() == dummyName:
+                removed = False
+                par = getParent(node, N, level=2) #parent is the  named-E node, we need at least the upper level
+                allreadySuppressed = []
+                while par and not removed and par not in allreadySuppressed:
+                    toSuppress = None
+                    tag = par.tag.split('}')[1]
+                    if tag in ('a-stmt', 'print-stmt'):
+                        # Context 1: an a-stmt of type E1 = E2
+                        toSuppress = par
+                    elif tag == 'call-stmt':
+                        #We should rewrite the call statement without this optional argument
+                        #But it is not easy: we must checke that the argument is really optional for the called
+                        #routine and we must add (if not already present) keywords for following arguments
+                        raise NotImplementedError('call-stmt not (yet?) implemented')
+                    elif tag in ('if-stmt', 'where-stmt'):
+                        # Context 2: an if-stmt of type  : IF(variable) ...
+                        toSuppress = par
+                    elif tag in ('if-then-stmt', 'else-if-stmt', 'where-construct-stmt', 'else-where-stmt'):
+                        # Context 3: an if-block of type  : IF(variable) THEN...
+                        # We delete the entire construct
+                        toSuppress =  getParent(node, par, 2)
+                    elif tag in ('select-case-stmt', 'case-stmt'):
+                        # Context 4: SELECT CASE (variable)... or CASE (variable)
+                        # We deleted the entire construct
+                        toSuppress = getParent(node, par, 2)
+                    elif tag.endswith('-block') or tag.endswith('-stmt') or tag.endswith('-construct'):
+                        # action-stmt, do-stmt, forall-construct-stmt, forall-stmt,
+                        # if-block, where-block, selectcase-block,
+                        #  must not contain directly
+                        # the variable but must contain other statements using the variable. We target the inner
+                        # statement in the previous cases.
+                        # Some cases may have been overlooked and should be added above.
+                        raise PYFTError(("We shouldn't be here. A case may have been " + \
+                                         "overlooked (tag={tag}).".format(tag=tag)))
+                    if toSuppress is not None:
+                        removed = True
+                        if toSuppress not in allreadySuppressed:
+                            # We do not simplify variables to prevent side-effect with the variable renaming
+                            removeStmtNode(node, toSuppress, False, simplify)
+                            allreadySuppressed.extend(list(toSuppress.iter()))
                     else:
-                        level += 1
-                    par = getParent(node, namedE, level=level)
-                # Context 2 : an if-stmt of type  : IF(PRESENT(variable) ...)
-                level = 4
-                par = getParent(node, namedE, level=level)
-                while par:
-                    if par.tag.endswith('}if-stmt'):
-                        getParent(node, par).remove(par)
-                    else:
-                        level += 1
-                    par = getParent(node, namedE, level=level)
-                # Context 3 : an if-block of type  : IF(PRESENT(variable) THEN...
-                level = 4
-                par = getParent(node, namedE, level=level)
-                while par:
-                    if par.tag.endswith('}if-block'):
-                        getParent(node, par).remove(par)
-                    else:
-                        level += 1
-                    par = getParent(node, namedE, level=level)
+                        par = getParent(node, par)
 
     # Loop on the dummy argument
     for name in vartable:
@@ -699,6 +718,9 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList):
                 for n in namedE[:]:
                     namedE.remove(n)
                 namedE.extend(updatedNamedE[:])
+
+    node.remove(node.find('./{*}subroutine-stmt'))
+    node.remove(node.find('./{*}end-subroutine-stmt'))
 
     return node, localVarToAdd, localUseToAdd
     
