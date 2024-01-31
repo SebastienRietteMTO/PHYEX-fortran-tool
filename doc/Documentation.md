@@ -72,6 +72,8 @@ With the info level, execution time and number of calls are printed
 for each called functions. In addition, with the debug level, input
 and output of all the called functions are printed.
 
+**\--enableCache** activates a cache to obtain the node's parent faster.
+
 ### Dealing with variables
 
 **\--showVariables** displays a list of all the declared variables

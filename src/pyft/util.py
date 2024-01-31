@@ -429,6 +429,16 @@ def removeFromList(doc, item, l):
             parent[i - 1].tail = parent[i - 1].tail + e.tail
         parent.remove(e)
 
+__cacheParent = {}
+def cacheParents(doc):
+    """
+    Adds an hidden attribute to each node to reduce the computational time for getParent
+    :param doc: etree to use
+    """
+    for node in doc.iter():
+        for n in node:
+            __cacheParent[id(n)] = node
+
 def getParent(doc, item, level=1):
     """
     :param doc: xml fragment in which parent must be searched
@@ -436,10 +446,25 @@ def getParent(doc, item, level=1):
     :param level: number of degrees (1 to get the parent, 2 to get
                   the parent of the parent...)
     """
+    def check(node):
+        #We check if the registered parent is still the right one
+        #node must be in its parent, and the parent chain must go to the doc node
+        return node in __cacheParent.get(id(node), []) and \
+               (__cacheParent[id(node)] == doc or check(__cacheParent[id(node)]))
+
     assert level >= 1
-    for p in doc.iter():
-        if item in list(p):
-            return p if level == 1 else getParent(doc, p, level - 1)
+    parent = None
+    if check(item):
+        parent = __cacheParent[id(item)]
+    else:
+        for p in doc.iter():
+            if item in list(p):
+                parent = p
+                if __cacheParent:
+                    #__cacheParent not empty means that we want to use the caching system
+                    __cacheParent[id(item)] = p
+                break
+    return parent if level == 1 else getParent(doc, parent, level - 1)
 
 def getSiblings(doc, item, before=True, after=True):
     """

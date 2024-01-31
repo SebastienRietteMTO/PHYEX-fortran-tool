@@ -24,6 +24,8 @@ if __name__ == '__main__':
                              'and variables that have become useless')
     parser.add_argument('--logLevel', default='warning',
                         help='Provide logging level. Example --logLevel debug (default is warning)' )
+    parser.add_argument('--enableCache', default=False, action='store_true',
+                        help='Precompute parent of each xml node and store the result')
 
     #Inputs and outputs
     gInOut = parser.add_argument_group('Input and output')
@@ -225,7 +227,7 @@ if __name__ == '__main__':
 
     try:
         pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
-                   verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree)
+                   verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree, enableCache=args.enableCache)
 
         #File name manipulations
         if args.renamefF: pft.renameUpper()

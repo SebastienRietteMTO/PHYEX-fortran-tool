@@ -10,14 +10,15 @@ from pyft.scope import Scope
 from pyft.statements import Statements
 from pyft.tree import Tree
 from pyft.cpp import Cpp
-from pyft.util import tostring, tofortran, fortran2xml, set_verbosity, print_infos, PYFTError
+from pyft.util import (tostring, tofortran, fortran2xml, set_verbosity, print_infos, PYFTError,
+                       cacheParents)
 
 class PYFT(Variables, Cosmetics, Applications, Scope, Statements, Tree, Cpp):
     DEFAULT_FXTRAN_OPTIONS = ['-construct-tag', '-no-include', '-no-cpp', '-line-length', '9999']
     MANDATORY_FXTRAN_OPTIONS = ['-construct-tag']
 
     def __init__(self, filename, output=None, parser=None, parserOptions=None, verbosity=None,
-                 wrapH=False, tree=None):
+                 wrapH=False, tree=None, enableCache=False):
         """
         :param filename: Input file name containing FORTRAN code
         :param output: Output file name, None to replace input file
@@ -28,6 +29,7 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements, Tree, Cpp):
                       fxtran to recognize it as free form) inside a module (to
                       enable the reading of files containing only a code part)
         :param tree: list of directories where code can be searched for
+        :param enableCache: True to cache node parents
         """
         if not sys.version_info >= (3, 8):
             #At least version 3.7 for ordered dictionary
@@ -49,6 +51,8 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements, Tree, Cpp):
         self._ns, self._xml = fortran2xml(self._filename, self._parser, self._parserOptions, wrapH)
         if verbosity is not None:
             set_verbosity(verbosity)
+        if enableCache:
+            cacheParents(self._xml)
 
     def close(self):
         print_infos()
