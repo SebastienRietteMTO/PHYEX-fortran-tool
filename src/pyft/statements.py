@@ -8,7 +8,7 @@ from pyft.util import (copy_doc, n2name, getParent, non_code, getSiblings, debug
 from pyft.scope import getScopeChildNodes, getScopeNode, getScopesList, getScopePath, isScopeNode
 from pyft.variables import (removeVarIfUnused, getVarList, addVar, findVar,
                             findArrayBounds, arrayR2parensR, varSpec2stmt, renameVar,
-                            addArrayParentheses, addExplicitArrayBounds, addModuleVar)
+                            addArrayParenthesesInNode, addExplicitArrayBounds, addModuleVar)
 from pyft.expressions import createExprPart, createArrayBounds
 from pyft.cosmetics import changeIfStatementsInIfConstructs     
 import re
@@ -959,7 +959,7 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
     prefix = subContained.findall('.//{*}prefix')
     if len(prefix) > 0 and 'ELEMENTAL' in [p.text.upper() for p in prefix]:
         #Add missing parentheses
-        addArrayParentheses(doc, callStmt, varList=varList, scope=mainScope)
+        addArrayParenthesesInNode(doc, callStmt, varList=varList, scope=mainScope)
 
         #Add explcit bounds
         addExplicitArrayBounds(doc, node=callStmt, varList=varList, scope=mainScope)

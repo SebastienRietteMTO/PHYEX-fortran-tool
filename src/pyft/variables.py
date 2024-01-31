@@ -32,6 +32,7 @@ def getVarList(doc, scopePath=None):
               - scope: its scope
               - allocatable: boolean
               - parameter: boolean
+              - pointer: boolean
     Notes: - variables are found in modules only if the 'ONLY' attribute is used
            - array specification and type is unknown for module variables
            - function is not able to follow the 'ASSOCIATE' statements
@@ -69,11 +70,13 @@ def getVarList(doc, scopePath=None):
             opt_spec = False
             allocatable = False
             parameter = False
+            pointer = False
             allattributes = decl_stmt.findall('.//{*}attribute/{*}attribute-N')
             for attribute in allattributes:
                 if alltext(attribute).upper() == 'OPTIONAL': opt_spec = True
                 if alltext(attribute).upper() == 'ALLOCATABLE': allocatable = True
                 if alltext(attribute).upper() == 'PARAMETER': parameter = True
+                if alltext(attribute).upper() == 'POINTER': pointer = True
             #Dimensions declared with the DIMENSION attribute
             array_specs = decl_stmt.findall('.//{*}attribute//{*}array-spec//{*}shape-spec')
             as0_list, asx0_list = decode_array_specs(array_specs)
@@ -93,7 +96,8 @@ def getVarList(doc, scopePath=None):
                                'asx': asx_list if len(asx0_list) == 0 else asx0_list,
                                'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
                                'use': False, 'opt': opt_spec, 'allocatable': allocatable,
-                               'parameter': parameter, 'init': init, 'scope': loc})
+                               'parameter': parameter, 'pointer': pointer,
+                               'init': init, 'scope': loc})
 
         #Loop on each use statement
         use_stmts = [stmt for stmt in stmts if stmt.tag.endswith('}use-stmt')]
@@ -104,7 +108,8 @@ def getVarList(doc, scopePath=None):
                 result.append({'as': None, 'asx': None,
                                'n': n, 'i': None, 't': None, 'arg': False,
                                'use': module, 'opt': None, 'allocatable': None,
-                               'parameter': None, 'init': None, 'scope': loc})
+                               'parameter': None, 'pointer': None,
+                               'init': None, 'scope': loc})
 
     return result
 
@@ -294,7 +299,110 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
     return (None, []) if False in table.keys() else (table, varNew)
 
 @debugDecor
-def addArrayParentheses(doc, node, varList=None, scope=None):
+def addArrayParentheses(doc, varList=None, scopes=None):
+    """
+    Look for arrays and add parenthesis. A => A(:)
+    :param doc: etree to use
+    :param varList: var list or None to compute it
+    :param scopes: scope (or list of scopes) to deal with, None to transform all found scopes
+    """
+    #List of variables
+    if varList is None:
+        varList = getVarList(doc)
+
+    #Loop on scopes
+    if scopes is None:
+        scopes = getScopesList(doc)
+    if not isinstance(scopes, list):
+        scopes = [scopes]
+    for scope in scopes:
+        for child in getScopeChildNodes(doc, scope):
+            #Arrays are used in statements
+            #* We must exclude allocate-stmt, deallocate-stmt, pointer-a-stmt, T-decl-stmt and associate-stmt,
+            #  nullify-stmt
+            #  function-stmt, subroutine-stmt, interface-stmt must be kept untouched
+            #  action-stmt is discarded as it contains another statement.
+            #* Array variables to modify can be found in
+            #    - simple affectation (a-stmt),
+            #    - if construct conditions (if-then-stmt, else-if-stmt),
+            #    - where-construct mask (where-construct-stmt, else-where-stmt),
+            #    - if statement condition (if-stmt/condition-E, be carefull to not take the whole if-stmt as it
+            #                            contains the action-stmt which, in turn, can contain an
+            #                            allocate/deallocate/pointer assignment)
+            #    - where statement mask (where-stmt/mask-E and not directly where-stmt as for if-stmt),
+            #    - select-case-stmt and case-stmt,
+            #    - do-stmt or forall-construct-stmt (e.g. FOR I=LBOUND(A, 0), UBOUND(A, 0))
+            #    - forall-stmt/forall-triplet-spec-LT
+            for node in child.iter():
+                tag = node.tag.split('}')[1]
+                nodeToTransform = None
+                if tag in ('allocate-stmt', 'deallocate-stmt', 'pointer-a-stmt', 'T-decl-stmt',
+                           'associate-stmt', 'function-stmt', 'subroutine-stmt', 'interface-stmt',
+                           'action-stmt', 'nullify-stmt'):
+                    #excluded
+                    pass
+                elif tag in ('if-stmt', 'where-stmt', 'forall-stmt'):
+                    #We must transform only a part of the node
+                    part = {'if-stmt': 'condition-E', 'where-stmt': 'mask-E',
+                            'forall-stmt': 'forall-triplet-spec-LT'}[tag]
+                    nodeToTransform = node.find('./{*}' + part)
+                elif tag.endswith('-stmt'):
+                    nodeToTransform = node
+                if nodeToTransform is not None:
+                    addArrayParenthesesInNode(doc, nodeToTransform, varList, scope)
+
+def _inProcedure(doc, node, procList):
+    """
+    Return True if node (named-E) is an argument of a procedure listed in procList
+    :param doc: etree to use
+    :param node: node to test
+    :param procList: list of procedure names
+    """
+    #E.g. The xml for "ASSOCIATED(A)" is
+    #<f:named-E>
+    #  <f:N><f:n>ASSOCIATED</f:n></f:N>
+    #  <f:R-LT><f:parens-R>(
+    #    <f:element-LT><f:element><f:named-E><f:N><f:n>A</f:n></f:N></f:named-E></f:element></f:element-LT>)
+    #  </f:parens-R></f:R-LT>
+    #</f:named-E>
+    inside = False
+    par = getParent(doc, node)
+    if par.tag.split('}')[1] == 'element':
+        par = getParent(doc, par)
+        if par.tag.split('}')[1] == 'element-LT':
+            par = getParent(doc, par)
+            if par.tag.split('}')[1] == 'parens-R':
+                par = getParent(doc, par)
+                if par.tag.split('}')[1] == 'R-LT':
+                    previous = getSiblings(doc, par, before=True, after=False)
+                    if len(previous) > 0 and previous[-1].tag.split('}')[1] == 'N' and \
+                       n2name(previous[-1]).upper() in [p.upper() for p in procList]:
+                        inside = True
+    return inside
+
+def _inCall(doc, node):
+    """
+    Return True if node (named-E) is an argument of a called procedure
+    :param doc: etree to use
+    :param node: node to test
+    """
+    #E.g. The xml for "CALL FOO(A)" is
+    #<f:call-stmt>CALL 
+    #  <f:procedure-designator><f:named-E><f:N><f:n>FOO</f:n></f:N></f:named-E></f:procedure-designator>(
+    #  <f:arg-spec><f:arg><f:named-E><f:N><f:n>A</f:n></f:N></f:named-E></f:arg></f:arg-spec>)
+    #</f:call-stmt>
+    inside = False
+    par = getParent(doc, node)
+    if par.tag.split('}')[1] == 'arg':
+        par = getParent(doc, par)
+        if par.tag.split('}')[1] == 'arg-spec':
+            par = getParent(doc, par)
+            if par.tag.split('}')[1] == 'call-stmt':
+                inside = True
+    return inside
+
+@debugDecor
+def addArrayParenthesesInNode(doc, node, varList=None, scope=None):
     """
     Look for arrays and add parenthesis. A => A(:)
     :param doc: etree to use
@@ -313,24 +421,31 @@ def addArrayParentheses(doc, node, varList=None, scope=None):
     #Loop on variables
     for namedE in node.findall('.//{*}named-E'):
         if not namedE.find('./{*}R-LT'): #no parentheses
-            N = namedE.find('./{*}N')
-            var = findVar(doc, n2name(N), scope, varList)
-            if var is not None and var['as'] is not None and len(var['as']) > 0:
-                #This is a known array variable, with no parentheses
-                RLT = ET.Element('{http://fxtran.net/#syntax}R-LT')
-                namedE.insert(list(namedE).index(N) + 1, RLT)
-                arrayR = ET.Element('{http://fxtran.net/#syntax}array-R')
-                arrayR.text = '('
-                RLT.append(arrayR)
-                sectionSubscriptLT = ET.Element('{http://fxtran.net/#syntax}section-subscript-LT')
-                sectionSubscriptLT.tail = ')'
-                arrayR.append(sectionSubscriptLT)
-                for _ in var['as']:
-                    sectionSubscript = ET.Element('{http://fxtran.net/#syntax}section-subscript')
-                    sectionSubscript.text = ':'
-                    sectionSubscript.tail = ', '
-                    sectionSubscriptLT.append(sectionSubscript)
-                sectionSubscript.tail = None #last one
+            if not _inProcedure(doc, namedE, ('ALLOCATED', 'ASSOCIATED', 'PRESENT')):
+                #Pointer/allocatable used in ALLOCATED/ASSOCIATED must not be modified
+                #Array in present must not be modified
+                N = namedE.find('./{*}N')
+                var = findVar(doc, n2name(N), scope, varList)
+                if var is not None and var['as'] is not None and len(var['as']) > 0 and \
+                   not ((var['pointer'] or var['allocatable']) and _inCall(doc, namedE)):
+                    #This is a known array variable, with no parentheses
+                    #But we exclude pointer allocatable in call statement because the called subroutine
+                    #can wait for a pointer/allocatable and not an array (and it is difficult to guess as it
+                    #would need to find the source code of the subroutine)
+                    RLT = ET.Element('{http://fxtran.net/#syntax}R-LT')
+                    namedE.insert(list(namedE).index(N) + 1, RLT)
+                    arrayR = ET.Element('{http://fxtran.net/#syntax}array-R')
+                    arrayR.text = '('
+                    RLT.append(arrayR)
+                    sectionSubscriptLT = ET.Element('{http://fxtran.net/#syntax}section-subscript-LT')
+                    sectionSubscriptLT.tail = ')'
+                    arrayR.append(sectionSubscriptLT)
+                    for _ in var['as']:
+                        sectionSubscript = ET.Element('{http://fxtran.net/#syntax}section-subscript')
+                        sectionSubscript.text = ':'
+                        sectionSubscript.tail = ', '
+                        sectionSubscriptLT.append(sectionSubscript)
+                    sectionSubscript.tail = None #last one
 
 @debugDecor
 def addExplicitArrayBounds(doc, node=None, varList=None, scope=None):
@@ -1113,4 +1228,8 @@ class Variables():
 
     @copy_doc(addArrayParentheses)
     def addArrayParentheses(self, *args, **kwargs):
+        return addArrayParentheses(self._xml, *args, **kwargs)
+
+    @copy_doc(addArrayParenthesesInNode)
+    def addArrayParenthesesInNode(self, *args, **kwargs):
         return addArrayParentheses(self._xml, *args, **kwargs)

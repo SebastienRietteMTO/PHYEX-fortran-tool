@@ -50,6 +50,8 @@ documentation. If no option is provided, the defaults one will be used (the
 list of default options can be seen with "pyft.py -h"). In case this option
 is used, the default options will be replaced by the ones specified.
 
+**\--wrapH** Wrap .h file content into a MODULE to enable the parsing by fxtran.
+
 ### Input and output
 
 **\--renamefF** transforms in upper case the file extension.
@@ -112,6 +114,8 @@ to deal with the variables declared in the mnh\_expand directives
 
 **\--addExplicitArrayBounds** Adds explicit bounds to arrays that already have parentheses.
 
+**\--addArrayParentheses** Adds parentheses to arrays.
+
 ### Cosmetics
 
 **\--upperCase** puts the FORTRAN code into upper case letters.
@@ -169,6 +173,8 @@ The second argument is the subprogram name.
 **\--removePrints** removes print statements. The argument describes from where the
 call statements must be suppressed (it is a scope as described in [Concepts](#concepts)).
 
+**\--inlineContainedSubroutines** inline containted subroutines in main routine.
+
 ### Miscellaneous
 
 **\--showScopes** print the different scopes found in the source code.
@@ -184,9 +190,11 @@ points (multiple column dependency).
 
 **\--removeIJLoops** remove DO loops on I and J dimensions (1, KLON).
 
+**\--expandAllArraysPHYEX** expand all array syntax (computing and where block) using PHYEX conventions.
+
 **\--expandAllArrays** expand all array syntax (computing and where block).
 
-**\--inlineContainedSubroutines** inline containted subroutines in main routine.
+**\--inlineContainedSubroutinesPHYEX** inline containted subroutines in main routine using PHYEX conventions.
 
 **\--addStack** add local arrays to the stack.
 
@@ -206,4 +214,6 @@ a percentage sign '%' (e.g. if we use '--applyCPPifdef K', '#ifdef K' is evaluat
 whereas if we use '--applyCPPifdef %K', '#ifdef K' is evaluated to False.
 But the method does not evaluate more complicated cpp directives such as '#if defined'.
 
+### Tree
 
+**\--tree** Directories where source code must be searched for.

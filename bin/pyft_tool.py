@@ -96,6 +96,8 @@ if __name__ == '__main__':
                                  'mnh_expand directives to prevent from removing useful variables.')
     gVariables.add_argument('--addExplicitArrayBounds', action='store_true',
                             help='Adds explicit bounds to arrays that already have parentheses.')
+    gVariables.add_argument('--addArrayParentheses', action='store_true',
+                            help='Adds parentheses to arrays (A => A(:))')
 
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
@@ -251,6 +253,7 @@ if __name__ == '__main__':
                                               [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
                                               **simplify)
         if args.addExplicitArrayBounds: pft.addExplicitArrayBounds()
+        if args.addArrayParentheses: pft.addArrayParentheses()
 
         #Applications
         if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
