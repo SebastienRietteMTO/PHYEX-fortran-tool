@@ -202,9 +202,16 @@ if __name__ == '__main__':
 
     #Tree
     gTree = parser.add_argument_group('Tree')
-    gMisc.add_argument('--tree', default=None, action='append',
+    gTree.add_argument('--tree', default=None, action='append',
                        help='Directories where source code must be searched for')
-
+    gTree.add_argument('--descTree', default=None,
+                       help='File to write and/or read the description of the tree.')
+    gTree.add_argument('--plotCompilTree', default=None,
+                       help='File name for compilation dependency graph (.dot or image extension)')
+    gTree.add_argument('--plotMaxUpper', default=None, type=int,
+                       help='Maximum number of upper elements in the plot tree')
+    gTree.add_argument('--plotMaxLower', default=None, type=int,
+                       help='Maximum number of lower elements in the plot tree')
 
     #Preprocessor
     gCpp = parser.add_argument_group('Preprocessor')
@@ -316,6 +323,12 @@ if __name__ == '__main__':
 
         #Misc
         if args.showScopes: pft.showScopesList()
+
+        #Tree
+        if args.descTree: pft.descTree(args.tree, args.descTree, parser=args.parser,
+                                       parserOptions=parserOptions, wrapH=args.wrapH)
+        if args.plotCompilTree: pft.plotCompilTree(args.INPUT, args.descTree, args.plotCompilTree,
+                                                   args.plotMaxUpper, args.plotMaxLower)
 
         #Preprocessor
         if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])

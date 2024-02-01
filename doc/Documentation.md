@@ -219,3 +219,14 @@ But the method does not evaluate more complicated cpp directives such as '#if de
 ### Tree
 
 **\--tree** Directories where source code must be searched for.
+
+**\--descTree** File name where the description of the tree is stored. If the file doesn't
+exist, it will be created using the \--tree option.
+
+**\--plotCompilTree** File name for compilation dependency graph (.dot or image extension).
+If \--descTree is used, the descTree file will be used, otherwise the tree (provided
+with the \--tree option) is explored. See \--plotMaxUpper and \--plotMaxLower options.
+
+**\--plotMaxUpper** Maximum number of elements to plot, upper than the central element.
+
+**\--plotMaxLower** Maximum number of elements to plot, lower than the central element.

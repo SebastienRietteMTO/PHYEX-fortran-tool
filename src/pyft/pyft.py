@@ -114,3 +114,12 @@ class PYFT(Variables, Cosmetics, Applications, Scope, Statements, Tree, Cpp):
         """
         with open(filename, 'w') as f:
            f.write(self.xml)
+
+    #xml methods
+    def findall(self, *args, **kwargs):
+        return self._xml.findall(*args, **kwargs)
+
+    def find(self, *args, **kwargs):
+        return self._xml.find(*args, **kwargs)
+
+
