@@ -227,6 +227,10 @@ exist, it will be created using the \--tree option.
 If \--descTree is used, the descTree file will be used, otherwise the tree (provided
 with the \--tree option) is explored. See \--plotMaxUpper and \--plotMaxLower options.
 
+**\--plotExecTree** File name for the calling graph (.dot or image extension).
+If \--descTree is used, the descTree file will be used, otherwise the tree (provided
+with the \--tree option) is explored. See \--plotMaxUpper and \--plotMaxLower options.
+
 **\--plotMaxUpper** Maximum number of elements to plot, upper than the central element.
 
 **\--plotMaxLower** Maximum number of elements to plot, lower than the central element.

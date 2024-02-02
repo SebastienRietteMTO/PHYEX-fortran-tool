@@ -208,6 +208,8 @@ if __name__ == '__main__':
                        help='File to write and/or read the description of the tree.')
     gTree.add_argument('--plotCompilTree', default=None,
                        help='File name for compilation dependency graph (.dot or image extension)')
+    gTree.add_argument('--plotExecTree', default=None,
+                       help='File name for execution dependency graph (.dot or image extension)')
     gTree.add_argument('--plotMaxUpper', default=None, type=int,
                        help='Maximum number of upper elements in the plot tree')
     gTree.add_argument('--plotMaxLower', default=None, type=int,
@@ -327,8 +329,10 @@ if __name__ == '__main__':
         #Tree
         if args.descTree: pft.descTree(args.tree, args.descTree, parser=args.parser,
                                        parserOptions=parserOptions, wrapH=args.wrapH)
-        if args.plotCompilTree: pft.plotCompilTree(args.INPUT, args.descTree, args.plotCompilTree,
-                                                   args.plotMaxUpper, args.plotMaxLower)
+        if args.plotCompilTree: pft.plotCompilTreeFromFile(args.INPUT, args.descTree, args.plotCompilTree,
+                                                           args.plotMaxUpper, args.plotMaxLower)
+        if args.plotExecTree: pft.plotExecTreeFromFile(args.INPUT, args.descTree, args.plotExecTree,
+                                                       args.plotMaxUpper, args.plotMaxLower)
 
         #Preprocessor
         if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])

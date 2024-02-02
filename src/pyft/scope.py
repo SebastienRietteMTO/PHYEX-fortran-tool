@@ -192,8 +192,8 @@ def getScopesList(doc, withNodes=False):
 
 class Scope():
     @copy_doc(getScopesList)
-    def getScopesList(self):
-        return getScopesList(doc=self._xml)
+    def getScopesList(self, *args, **kwargs):
+        return getScopesList(self._xml, *args, **kwargs)
 
     def showScopesList(self):
         """
