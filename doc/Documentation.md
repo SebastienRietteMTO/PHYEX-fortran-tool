@@ -40,6 +40,8 @@ has one of the following forms:
 
 If only one file name is given, the output file will replace the input file.
 
+The order of the arguments matters: transformation are done in that specific order.
+
 ### Parser options
 
 **\--parser=PATH** can be used to specify the full path to the fxtran executable.

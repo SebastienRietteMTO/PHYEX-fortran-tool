@@ -2,6 +2,8 @@
 
 from pyft import PYFT
 import logging
+import argparse
+import sys
 
 def isint(s):
     """
@@ -16,8 +18,18 @@ def isint(s):
         return True
 
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(description='Python FORTRAN tool')
+
+    # ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !
+    # IMPORTANT NOTE
+    # Argument order matters but argparse is not able to give the order
+    # Therefore, arguments are processed twice. The first time by argparse to fully decode them.
+    # The a second pass is made direcly on sys.argv. This mechanism has two implications:
+    # allow_abbrev must be set to False in ArgumentParser
+    # only long argument options are allowed (begining with two dashes)
+    # ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! ! !
+
+    parser = argparse.ArgumentParser(description='Python FORTRAN tool', allow_abbrev=False,
+                                     epilog="The argument order matters.")
 
     parser.add_argument('--simplify', default=False, action='store_true',
                         help='After a deletion, recursively deletes the code ' + \
@@ -252,108 +264,119 @@ if __name__ == '__main__':
         pft = PYFT(args.INPUT, args.OUTPUT, parser=args.parser, parserOptions=parserOptions,
                    verbosity=args.logLevel, wrapH=args.wrapH, tree=args.tree, enableCache=args.enableCache)
 
-        #File name manipulations
-        if args.renamefF: pft.renameUpper()
-        if args.renameFf: pft.renameLower()
+        #We loop on sys.argv to apply the transformation in the order they were specified
+        optList = []
+        for arg in sys.argv[1:]:
+            if arg.startswith('--') and arg not in optList:
+                optList.append(arg)
+        kw_updateCnt = None
+        for arg in optList:
 
-        #Variables
-        if args.showVariables: pft.showVarList()
-        if args.attachArraySpecToEntity: pft.attachArraySpecToEntity()
-        if args.removeVariable is not None: pft.removeVar(args.removeVariable, **simplify)
-        if args.addVariable is not None: pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
-        if args.addModuleVariable is not None: pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
-        if args.showUnusedVariables is not None:
-            if len(args.showUnusedVariables) == 1 and args.showUnusedVariables[0] is None:
-                pft.showUnusedVar()
-            else:
-                pft.showUnusedVar(args.showUnusedVariables)
-        if args.removeUnusedLocalVariables is not None:
-            for where, exclude in args.removeUnusedLocalVariables:
-                pft.removeUnusedLocalVar(where if where != 'ALL' else None,
-                                         [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
-                                         **simplify)
-        if args.removePHYEXUnusedLocalVariables is not None:
-            for where, exclude in args.removePHYEXUnusedLocalVariables:
-                pft.removePHYEXUnusedLocalVar(where if where != 'ALL' else None,
-                                              [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
-                                              **simplify)
-        if args.addExplicitArrayBounds: pft.addExplicitArrayBounds()
-        if args.addArrayParentheses: pft.addArrayParentheses()
-        if args.modifyAutomaticArrays: pft.modifyAutomaticArrays(*(args.modifyAutomaticArrays.split('#')))
-        if args.replaceAutomaticWithAllocatable:
-            pft.modifyAutomaticArrays("{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}",
-                                      "ALLOCATE({name}({shape}))", "DEALLOCATE({name})")
-
-        #Applications
-        if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])
-        if args.addIncludes: pft.addIncludes()
-        if args.checkStackArginCall: pft.checkStackArginCall()
-        if args.deleteDrHook: pft.deleteDrHook(**simplify)
-        if args.deleteBudgetDDH: pft.deleteBudgetDDH(**simplify)
-        if args.deleteNonColumnCallsPHYEX: pft.deleteNonColumnCallsPHYEX(**simplify)
-        #mnhExpand must be before inlineContainedSubroutines as inlineContainedSubroutines can change
-        #variable names used by mnh_expand directives
-        assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
-        if args.mnhExpand: pft.removeArraySyntax(everywhere=False)
-        if args.mnhExpandConcurrent: pft.removeArraySyntax(concurrent=True, everywhere=False)
-        if args.inlineContainedSubroutines: pft.inlineContainedSubroutines(**simplify)
-        if args.inlineContainedSubroutinesPHYEX: pft.inlineContainedSubroutinesPHYEX(**simplify)
-        if args.expandAllArrays: pft.removeArraySyntax()
-        if args.expandAllArraysPHYEX: pft.expandAllArraysPHYEX()
-        if args.removeIJLoops: pft.removeIJLoops()
-
-        #Cosmetics
-        if args.upperCase: pft.upperCase()
-        if args.lowerCase: pft.lowerCase()
-        if args.changeIfStatementsInIfConstructs: pft.changeIfStatementsInIfConstructs()
-        if args.reDimKlonArrayToScalar: pft.reDimKlonArrayToScalar()
-        if args.indent: pft.indent()
-        if args.removeIndent: pft.indent(indent_programunit=0, indent_branch=0)
-        if args.removeEmptyLines: pft.removeEmptyLines()
-        if args.removeComments: pft.removeComments()
-        if args.updateSpaces: pft.updateSpaces()
-        kw_updateCnt = dict(align=args.alignContinuation,
-                            addBegin=args.addBeginContinuation,
-                            removeBegin=args.removeBeginContinuation,
-                            removeALL=args.removeALLContinuation)
-        if True in kw_updateCnt.values(): pft.updateContinuation(**kw_updateCnt)
-        if args.prettify:
-            pft.indent()
-            pft.upperCase()
-            pft.removeEmptyLines()
-            pft.updateSpaces()
-            pft.updateContinuation()
-        if args.minify:
-            pft.indent(indent_programunit=0, indent_branch=0)
-            pft.upperCase()
-            pft.removeComments()
-            pft.removeEmptyLines()
-            pft.updateSpaces()
-            pft.updateContinuation(align=False, removeALL=True, addBegin=False)
-
-        #Checks
-        if args.checkIMPLICIT is not None: pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
-        if args.checkINTENT is not None: pft.checkIntent(args.checkINTENT == 'Err')
-
-        #Statements
-        if args.removeCall is not None:
-            for rc in args.removeCall: pft.removeCall(rc[1], None if rc[0] == 'ALL' else rc[0], **simplify)
-        if args.removePrints is not None:
-            for rp in args.removePrints: pft.removePrints(None if rp == 'ALL' else rp, **simplify)
-
-        #Misc
-        if args.showScopes: pft.showScopesList()
-
-        #Tree
-        if args.descTree: pft.descTree(args.tree, args.descTree, parser=args.parser,
-                                       parserOptions=parserOptions, wrapH=args.wrapH)
-        if args.plotCompilTree: pft.plotCompilTreeFromFile(args.INPUT, args.descTree, args.plotCompilTree,
+            #File name manipulations
+            if arg == '--renamefF': pft.renameUpper()
+            if arg == '--renameFf': pft.renameLower()
+    
+            #Variables
+            if arg == '--showVariables': pft.showVarList()
+            if arg == '--attachArraySpecToEntity': pft.attachArraySpecToEntity()
+            if arg == '--removeVariable': pft.removeVar(args.removeVariable, **simplify)
+            if arg == '--addVariable': pft.addVar([[v[0], v[1], v[2], (int(v[3]) if isint(v[3]) else None)] for v in args.addVariable])
+            if arg == '--addModuleVariable': pft.addModuleVar([[v[0], v[1], v[2]] for v in args.addModuleVariable])
+            if arg == '--showUnusedVariables':
+                if len(args.showUnusedVariables) == 1 and args.showUnusedVariables[0] is None:
+                    pft.showUnusedVar()
+                else:
+                    pft.showUnusedVar(args.showUnusedVariables)
+            if arg == '--removeUnusedLocalVariables':
+                for where, exclude in args.removeUnusedLocalVariables:
+                    pft.removeUnusedLocalVar(where if where != 'ALL' else None,
+                                             [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                             **simplify)
+            if arg == '--removePHYEXUnusedLocalVariables':
+                for where, exclude in args.removePHYEXUnusedLocalVariables:
+                    pft.removePHYEXUnusedLocalVar(where if where != 'ALL' else None,
+                                                  [item.strip() for item in exclude.split(',')] if exclude != 'NONE' else None,
+                                                  **simplify)
+            if arg == '--addExplicitArrayBounds': pft.addExplicitArrayBounds()
+            if arg == '--addArrayParentheses': pft.addArrayParentheses()
+            if arg == '--modifyAutomaticArrays': pft.modifyAutomaticArrays(*(args.modifyAutomaticArrays.split('#')))
+            if arg == '--replaceAutomaticWithAllocatable':
+                pft.modifyAutomaticArrays("{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}",
+                                          "ALLOCATE({name}({shape}))", "DEALLOCATE({name})")
+    
+            #Applications
+            if arg == '--addStack': pft.addStack(args.addStack[0][0], args.addStack[0][1])
+            if arg == '--addIncludes': pft.addIncludes()
+            if arg == '--checkStackArginCall': pft.checkStackArginCall()
+            if arg == '--deleteDrHook': pft.deleteDrHook(**simplify)
+            if arg == '--deleteBudgetDDH': pft.deleteBudgetDDH(**simplify)
+            if arg == '--deleteNonColumnCallsPHYEX': pft.deleteNonColumnCallsPHYEX(**simplify)
+            #mnhExpand must be before inlineContainedSubroutines as inlineContainedSubroutines can change
+            #variable names used by mnh_expand directives
+            assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
+            if arg == '--mnhExpand': pft.removeArraySyntax(everywhere=False)
+            if arg == '--mnhExpandConcurrent': pft.removeArraySyntax(concurrent=True, everywhere=False)
+            if arg == '--inlineContainedSubroutines': pft.inlineContainedSubroutines(**simplify)
+            if arg == '--inlineContainedSubroutinesPHYEX': pft.inlineContainedSubroutinesPHYEX(**simplify)
+            if arg == '--expandAllArrays': pft.removeArraySyntax()
+            if arg == '--expandAllArraysPHYEX': pft.expandAllArraysPHYEX()
+            if arg == '--removeIJLoops': pft.removeIJLoops()
+    
+            #Cosmetics
+            if arg == '--upperCase': pft.upperCase()
+            if arg == '--lowerCase': pft.lowerCase()
+            if arg == '--changeIfStatementsInIfConstructs': pft.changeIfStatementsInIfConstructs()
+            if arg == '--reDimKlonArrayToScalar': pft.reDimKlonArrayToScalar()
+            if arg == '--indent': pft.indent()
+            if arg == '--removeIndent': pft.indent(indent_programunit=0, indent_branch=0)
+            if arg == '--removeEmptyLines': pft.removeEmptyLines()
+            if arg == '--removeComments': pft.removeComments()
+            if arg == '--updateSpaces': pft.updateSpaces()
+            if kw_updateCnt is None and arg in ('--alignContinuation', '--addBeginContinuation',
+                                                '--removeBeginContinuation', '--emoveALLContinuation'):
+                #Test if kw_updateCnt is None is done to execute the transformation only once
+                kw_updateCnt = dict(align=args.alignContinuation,
+                                    addBegin=args.addBeginContinuation,
+                                    removeBegin=args.removeBeginContinuation,
+                                    removeALL=args.removeALLContinuation)
+                pft.updateContinuation(**kw_updateCnt)
+            if arg == '--prettify':
+                pft.indent()
+                pft.upperCase()
+                pft.removeEmptyLines()
+                pft.updateSpaces()
+                pft.updateContinuation()
+            if arg == '--minify':
+                pft.indent(indent_programunit=0, indent_branch=0)
+                pft.upperCase()
+                pft.removeComments()
+                pft.removeEmptyLines()
+                pft.updateSpaces()
+                pft.updateContinuation(align=False, removeALL=True, addBegin=False)
+    
+            #Checks
+            if arg == '--checkIMPLICIT': pft.checkImplicitNone(args.checkIMPLICIT == 'Err')
+            if arg == '--checkINTENT': pft.checkIntent(args.checkINTENT == 'Err')
+    
+            #Statements
+            if arg == '--removeCall':
+                for rc in args.removeCall: pft.removeCall(rc[1], None if rc[0] == 'ALL' else rc[0], **simplify)
+            if arg == '--removePrints':
+                for rp in args.removePrints: pft.removePrints(None if rp == 'ALL' else rp, **simplify)
+    
+            #Misc
+            if arg == '--showScopes': pft.showScopesList()
+    
+            #Tree
+            if arg == '--descTree': pft.descTree(args.tree, args.descTree, parser=args.parser,
+                                           parserOptions=parserOptions, wrapH=args.wrapH)
+            if arg == '--plotCompilTree': pft.plotCompilTreeFromFile(args.INPUT, args.descTree, args.plotCompilTree,
+                                                               args.plotMaxUpper, args.plotMaxLower)
+            if arg == '--plotExecTree': pft.plotExecTreeFromFile(args.INPUT, args.descTree, args.plotExecTree,
                                                            args.plotMaxUpper, args.plotMaxLower)
-        if args.plotExecTree: pft.plotExecTreeFromFile(args.INPUT, args.descTree, args.plotExecTree,
-                                                       args.plotMaxUpper, args.plotMaxLower)
-
-        #Preprocessor
-        if args.applyCPPifdef: pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
+    
+            #Preprocessor
+            if arg == '--applyCPPifdef': pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
 
         #Writing
         if args.xml is not None: pft.writeXML(args.xml)
