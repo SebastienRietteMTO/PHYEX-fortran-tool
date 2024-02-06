@@ -6,10 +6,11 @@ import xml.etree.ElementTree as ET
 from pyft.util import (copy_doc, PYFTError, debugDecor,
                        tostring, alltext, getFileName, removeFromList, getParent,
                        getSiblings, insertInList, fortran2xml, isExecutable, n2name)
-from pyft.expressions import createArrayBounds, simplifyExpr, createExprPart
+from pyft.expressions import createArrayBounds, simplifyExpr, createExprPart, createExpr
 from pyft.scope import getScopeNode, getScopeChildNodes, getScopesList, getScopePath, getParentScopeNode
 from xml.etree.ElementTree import Element
 import logging
+import copy
 
 @debugDecor
 def getVarList(doc, scopePath=None):
@@ -33,6 +34,7 @@ def getVarList(doc, scopePath=None):
               - allocatable: boolean
               - parameter: boolean
               - pointer: boolean
+              - result: boolean (function result)
     Notes: - variables are found in modules only if the 'ONLY' attribute is used
            - array specification and type is unknown for module variables
            - function is not able to follow the 'ASSOCIATE' statements
@@ -44,7 +46,7 @@ def getVarList(doc, scopePath=None):
             lb = array_spec.find('.//{*}lower-bound')
             ub = array_spec.find('.//{*}upper-bound')
             as_list.append([alltext(lb) if lb is not None else None, alltext(ub) if ub is not None else None])
-            asx_list.append([tostring(lb) if lb is not None else None, tostring(ub) if ub is not None else None])
+            asx_list.append([lb if lb is not None else None, ub if ub is not None else None])
         return as_list, asx_list
 
     if scopePath is None:
@@ -56,7 +58,15 @@ def getVarList(doc, scopePath=None):
     for loc in scopePath:
         #We search for declaration  only in the nodes corresponding to the scope
         stmts = getScopeChildNodes(doc, loc)
-        
+
+        #In case loc is a function, we determine the name of the result
+        if stmts[0].tag.split('}')[1] == 'function-stmt':
+            rSpec = stmts[0].find('./{*}result-spec/{*}N')
+            funcResultName = rSpec if rSpec is not None else stmts[0].find('./{*}function-N/{*}N')
+            funcResultName = n2name(funcResultName).upper()
+        else:
+            funcResultName = ''
+
         #Find dummy arguments
         dummy_args = [n2name(e).upper() for stmt in stmts for e in stmt.findall('.//{*}dummy-arg-LT/{*}arg-N/{*}N')]
 
@@ -96,7 +106,7 @@ def getVarList(doc, scopePath=None):
                                'asx': asx_list if len(asx0_list) == 0 else asx0_list,
                                'n': n, 'i': i_spec, 't': t_spec, 'arg': n in dummy_args,
                                'use': False, 'opt': opt_spec, 'allocatable': allocatable,
-                               'parameter': parameter, 'pointer': pointer,
+                               'parameter': parameter, 'pointer': pointer, 'result': funcResultName == n,
                                'init': init, 'scope': loc})
 
         #Loop on each use statement
@@ -108,7 +118,7 @@ def getVarList(doc, scopePath=None):
                 result.append({'as': None, 'asx': None,
                                'n': n, 'i': None, 't': None, 'arg': False,
                                'use': module, 'opt': None, 'allocatable': None,
-                               'parameter': None, 'pointer': None,
+                               'parameter': None, 'pointer': None, 'result': None,
                                'init': None, 'scope': loc})
 
     return result
@@ -1177,6 +1187,128 @@ def findVar(doc, varName, currentScope, varList=None, array=None, exactScope=Fal
         else:
             return None
 
+@debugDecor
+def modifyAutomaticArrays(doc, declTemplate=None, startTemplate=None, endTemplate=None,
+                          scopes=None, varList=None):
+    """
+    :param doc: etree to use
+    :param declTemplate: declaration template
+    :param startTemplate: template for the first executable statement
+    :param: endTemplate: template for the last executable statement
+    :param scopes: scope or list of scopes in which to apply the transformation (None to apply everywhere)
+    :param varList: varList to use (None to compute it)
+    :return: number of arrays modified
+    Modifies all automatic arrays declaration in subroutine and functions. The declaration is replaced
+    by the declaration template, the start template is inserted as first executable statement and
+    the end template as last executable statement. Each template can use the following place holders:
+    "{doubledotshape}", "{shape}", "{lowUpList}", "{name}" and "{type}" wich are, respectively modified
+    into ":, :, :", "I, I:J, 0:I", "1, I, I, J, 0, I", "A", "REAL" if the original declaration
+    statement was "A(I, I:J, 0:I)". The template
+    "{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))#DEALLOCATE({name})"
+    replaces automatic arrays by allocatables
+    """
+    if scopes is None:
+        scopes = getScopesList(doc)
+    elif not isinstance(scopes, list):
+        scopes = [scopes]
+
+    if varList is None:
+        varList = getVarList(doc)
+
+    templates = {'decl': declTemplate if declTemplate is not None else '',
+                 'start': startTemplate if startTemplate is not None else '',
+                 'end': endTemplate if endTemplate is not None else ''} #ordered dict
+
+    number = 0
+    for scope in [scope for scope in scopes if scope.split('/')[-1].split(':')[0] in ('sub', 'func')]:
+        #For all subroutine and function scopes
+        #Determine the list of variables to transform
+        varListToTransform = []
+        for var in [var for var in varList
+                    if var['scope'] == scope and var['as'] is not None and len(var['as']) > 0 and \
+                       not (var['arg'] or var['allocatable'] or var['pointer'] or var['result'])]:
+            #For all automatic arrays, which are not argument, not allocatable, not pointer and not result
+            if var['init'] is not None:
+                logging.warning(("An array ({name}) has an initial value, it can't be processed " + \
+                                 "by modifyAutomaticArrays.)").format(name=var['n']))
+            else:
+                varListToTransform.append(var)
+        #A variable can make use of the size of another variable in its declaration statement
+        #We order the variables to not insert the declaration of a variable before the declaration of
+        #the variables it depends on
+        orderedVarListToTransform = []
+        while len(varListToTransform) > 0:
+            nAdded = 0
+            for var in varListToTransform[:]:
+                Nlist = [x for l in var['asx'] for x in l if x is not None] #flatten var['asx'] excluding None
+                Nlist = [n2name(N).upper() for asx in Nlist for N in asx.findall('.//{*}N/{*}n/..')]
+                if len(set(Nlist).intersection([v['n'].upper() for v in varListToTransform])) == 0:
+                    #Variable var does not use vraibles still in varListToTransform
+                    varListToTransform.remove(var)
+                    orderedVarListToTransform.append(var)
+                    nAdded += 1
+            if nAdded == 0:
+                raise PYFTError('It seems that there is a circular reference in the declaration statements')
+        #Loop on variable to transform
+        for var in orderedVarListToTransform[::-1]: #reverse order
+            number += 1
+            #Apply the template
+            templ = copy.deepcopy(templates)
+            for t in templ:
+                if '{doubledotshape}' in templ[t]:
+                    templ[t] = templ[t].replace('{doubledotshape}', ','.join([':'] * len(var['as'])))
+                if '{shape}' in templ[t]:
+                    result = []
+                    for i in range(len(var['as'])):
+                        if var['as'][i][0] is None:
+                            result.append(var['as'][i][1])
+                        else:
+                            result.append(var['as'][i][0] + ':' + var['as'][i][1])
+                    templ[t] = templ[t].replace('{shape}', ', '.join(result))
+                if '{name}' in templ[t]:
+                    templ[t] = templ[t].replace('{name}', var['n'])
+                if '{type}' in templ[t]:
+                    templ[t] = templ[t].replace('{type}', var['t'])
+                if '{lowUpList}' in templ[t]:
+                    result = []
+                    for i in range(len(var['as'])):
+                        if var['as'][i][0] is None:
+                            result.extend([1, var['as'][i][1]])
+                        else:
+                            result.extend([var['as'][i][0], var['as'][i][1]])
+                    templ[t] = templ[t].replace('{lowUpList}', ', '.join(result))
+
+            #Get the xml for the template
+            separator = "!ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz0123456789"
+            part = 0
+            for node in createExpr(templ['decl'] + '\n' + separator + '\n' + \
+                                   templ['start'] + '\n' + separator + '\n' + \
+                                   templ['end']):
+                t = list(templ.keys())[part]
+                if not isinstance(templ[t], list):
+                    templ[t] = []
+                if node.tag.split('}')[1] == 'C' and node.text == separator:
+                    part += 1
+                else:
+                    templ[t].append(node)
+
+            #Replace declaration statement
+            scopeNode = getScopeNode(doc, scope)
+            index = list(scopeNode).index(scopeNode.find('./{*}T-decl-stmt')) #first declaration statement
+            removeVar(doc, [(scope, var['n'])], simplify=False)
+            for n in templ['decl'][::-1]:
+                scopeNode.insert(index, n)
+
+            #Insert statements
+            #TODO suppress this import when pyft will be refactored
+            from pyft.statements import insertStatement #imported here to prevent circular import
+            for n in templ['start'][::-1]:
+                insertStatement(doc, scopeNode, n, True)
+            for n in templ['end'][::-1]:
+                insertStatement(doc, scopeNode, n, False)
+    return number
+
+
 class Variables():
     @copy_doc(getVarList)
     def getVarList(self):
@@ -1233,3 +1365,7 @@ class Variables():
     @copy_doc(addArrayParenthesesInNode)
     def addArrayParenthesesInNode(self, *args, **kwargs):
         return addArrayParentheses(self._xml, *args, **kwargs)
+
+    @copy_doc(modifyAutomaticArrays)
+    def modifyAutomaticArrays(self, *args, **kwargs):
+        return modifyAutomaticArrays(self._xml, *args, **kwargs)

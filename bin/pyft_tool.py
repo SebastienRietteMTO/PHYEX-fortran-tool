@@ -100,6 +100,20 @@ if __name__ == '__main__':
                             help='Adds explicit bounds to arrays that already have parentheses.')
     gVariables.add_argument('--addArrayParentheses', action='store_true',
                             help='Adds parentheses to arrays (A => A(:))')
+    gVariables.add_argument('--modifyAutomaticArrays', metavar="DECL#START#END",
+                            help='Transform all automatic arrays declaration using the templates. ' + \
+                                 'The DECL part of the template will replace the declaration statement, ' + \
+                                 'the START part will be inserted as the first executable statement while ' + \
+                                 'the END part will be inserted as the last executable statement. Each part ' + \
+                                 'of the template can use the following place holders: ' + \
+                                 '"{doubledotshape}", "{shape}", "{lowUpList}", "{name}" and "{type}" ' + \
+                                 'which are, respectively modified into ":, :, :", "I, I:J, 0:I", ' + \
+                                 '"1, I, I, J, 0, I", "A", "REAL" if the original declaration statement ' + \
+                                 'was "A(I, I:J, 0:I)". For example, the template ' + \
+                                 '"{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))#DEALLOCATE({name})"' + \
+                                 'will replace automatic arrays by allocatables.')
+    gVariables.add_argument('--replaceAutomaticWithAllocatable', action='store_true',
+                            help='Replace all automatic arrays with allocatable arrays.')
 
     #Cosmetics
     gCosmetics = parser.add_argument_group('Cosmetics options')
@@ -265,6 +279,10 @@ if __name__ == '__main__':
                                               **simplify)
         if args.addExplicitArrayBounds: pft.addExplicitArrayBounds()
         if args.addArrayParentheses: pft.addArrayParentheses()
+        if args.modifyAutomaticArrays: pft.modifyAutomaticArrays(*(args.modifyAutomaticArrays.split('#')))
+        if args.replaceAutomaticWithAllocatable:
+            pft.modifyAutomaticArrays("{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}",
+                                      "ALLOCATE({name}({shape}))", "DEALLOCATE({name})")
 
         #Applications
         if args.addStack is not None: pft.addStack(args.addStack[0][0], args.addStack[0][1])

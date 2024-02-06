@@ -83,6 +83,14 @@ def createExprPart(value):
     return copy.deepcopy(_cached_createExprPart(value))
 
 @debugDecor
+def createExpr(value):
+    """
+    :param value: statements to convert into xml
+    :return: the xml fragment corresponding to value (list of nodes)
+    """
+    return fortran2xml("SUBROUTINE T\n{v}\nEND".format(v=value))[1].find('.//{*}program-unit')[1:-1]
+
+@debugDecor
 def simplifyExpr(expr, add=None, sub=None):
     """
     :param expr: string containing an expression to simplify

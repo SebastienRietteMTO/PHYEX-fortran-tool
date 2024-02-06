@@ -1316,6 +1316,44 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
         #node is a program-unit, we must insert the subelements
         parent.insert(index, node)
 
+@debugDecor
+def insertStatement(doc, scope, stmt, first):
+    """
+    Insert a statement to be executed first (or last)
+    :param doc: etree to use
+    :param scope: scope (path or node) in which the statement must be inserted
+    :param stmt: statement to insert
+    :param first: True to insert it in first position, False to insert it in last position
+    """
+    if isinstance(scope, str):
+        scope = getScopeNode(doc, scope)
+    if first:
+        #Statement must be inserted after all use, T-decl, implicit-non-stmt and interface
+        nodes = scope.findall('./{*}T-decl-stmt') + scope.findall('./{*}use-stmt') + \
+                scope.findall('./{*}implicit-none-stmt') + scope.findall('./{*}interface-construct')
+        if len(nodes) > 0:
+            #Insertion after the last node
+            index = max([list(scope).index(n) for n in nodes]) + 1
+        else:
+            #Insertion after the subroutine or function node
+            index = 2
+        #If an include statements follows, it certainly contains an interface
+        while scope[index].tag.split('}')[1] in ('C', 'include', 'include-stmt'):
+            index += 1
+    else:
+        #Statement must be inserted before the contains statement
+        contains = scope.find('./{*}contains-stmt')
+        if contains is not None:
+            #Insertion before the contains statement
+            index = list(scope).index(contains)
+        else:
+            #Insertio before the end subroutine or function statement
+            index = -1
+    if scope[index - 1].tail is None:
+        scope[index - 1].tail = '\n'
+    elif not '\n' in scope[index - 1].tail:
+        scope[index - 1].tail += '\n'
+    scope.insert(index, stmt)
 
 class Statements():
     @copy_doc(removeCall)

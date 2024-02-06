@@ -124,7 +124,7 @@ def addStack(doc, declarationAllocType, model):
                 if not var['arg'] and var['as']:
                     parameterVar = False
                     for asx in var['asx'][0]: #remove PARAMETER variable (containing literal-E in asx
-                        if asx and 'literal-E' in asx:
+                        if asx and asx.find('.//{*}literal-E'):
                             parameterVar = True
                     if not parameterVar:
                         localArrays.append(var)

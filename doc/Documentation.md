@@ -118,6 +118,17 @@ to deal with the variables declared in the mnh\_expand directives
 
 **\--addArrayParentheses** Adds parentheses to arrays.
 
+**\--modifyAutomaticArrays DECL#START#END** modifies all automatic
+arrays declaration in subroutine and functions. The declaration is replaced by the DECL template,
+the START template is inserted as first executable statement and the END template as last executable
+statement. Each template can use the following place holders: "{doubledotshape}", "{shape}", "{lowUpList}",
+"{name}" and "{type}" which are, respectively modified into ":, :, :", "I, I:J, 0:I", "1, I, I, J, 0, I",
+"A", "REAL" if the original declaration statement was "A(I, I:J, 0:I)". The template
+"{type}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))#DEALLOCATE({name})"
+replaces automatic arrays by allocatables.
+
+**\--replaceAutomaticWithAllocatable** replace all automatic arrays with allocatables
+
 ### Cosmetics
 
 **\--upperCase** puts the FORTRAN code into upper case letters.
