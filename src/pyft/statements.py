@@ -1338,7 +1338,8 @@ def insertStatement(doc, scope, stmt, first):
             #Insertion after the subroutine or function node
             index = 2
         #If an include statements follows, it certainly contains an interface
-        while scope[index].tag.split('}')[1] in ('C', 'include', 'include-stmt'):
+        while scope[index].tag.split('}')[1] in ('C', 'include', 'include-stmt') or \
+              (scope[index].tag.split('}')[1] == 'cpp' and scope[index].text.startswith('#include')):
             index += 1
     else:
         #Statement must be inserted before the contains statement
