@@ -240,6 +240,16 @@ if __name__ == '__main__':
                        help='Maximum number of upper elements in the plot tree')
     gTree.add_argument('--plotMaxLower', default=None, type=int,
                        help='Maximum number of lower elements in the plot tree')
+    gTree.add_argument('--addArgInTree', default=None, action='append', nargs=5,
+                       metavar=('WHERE', 'VARNAME', 'DECLARATION', 'POSITION', 'STOPSCOPES'),
+                       help='Add an argument variable. First argument is the scope (as for ' + \
+                            'the --removeVariable option. The second is the variable ' + \
+                            'name, the third is the declarative statement to insert, ' + \
+                            'the fourth is the position (python indexing) the new ' + \
+                            'variable will have in the calling statment of the ' + \
+                            'routine. The last argument is #-separated list of scopes ' + \
+                            'where the recursive inclusion of the argument variable ' + \
+                            'must stop.')
 
     #Preprocessor
     gCpp = parser.add_argument_group('Preprocessor')
@@ -374,7 +384,11 @@ if __name__ == '__main__':
                                                                args.plotMaxUpper, args.plotMaxLower)
             if arg == '--plotExecTree': pft.plotExecTreeFromFile(args.INPUT, args.descTree, args.plotExecTree,
                                                            args.plotMaxUpper, args.plotMaxLower)
-    
+            if arg == '--addArgInTree':
+                for scope, varName, declStmt, pos, stopScopes in args.addArgInTree:
+                    pft.addArgInTree(scope, args.descTree, varName, declStmt, int(pos), stopScopes.split('#'),
+                                     parser=args.parser, parserOptions=parserOptions, wrapH=args.wrapH)
+                    
             #Preprocessor
             if arg == '--applyCPPifdef': pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
 

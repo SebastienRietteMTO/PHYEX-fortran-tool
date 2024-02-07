@@ -247,3 +247,10 @@ with the \--tree option) is explored. See \--plotMaxUpper and \--plotMaxLower op
 **\--plotMaxUpper** Maximum number of elements to plot, upper than the central element.
 
 **\--plotMaxLower** Maximum number of elements to plot, lower than the central element.
+
+**--addArgInTree** Add an argument variable recursively. First argument is the scope (as
+described in [Concepts](#concepts), the second is the variable name, the third is the
+declarative statement to insert, the fourth is the position (python indexing) the new
+variable will have in the calling statment of the routine. The last argument is a
+\#-separated list of scopes where the recursive inclusion of the argument variable
+must stop.

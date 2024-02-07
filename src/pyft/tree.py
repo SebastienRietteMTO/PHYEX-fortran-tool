@@ -5,9 +5,10 @@ This module contains the functions to browse the tree
 import glob
 import os
 import logging
-from pyft.util import debugDecor, copy_doc, PYFTError, n2name
+from pyft.util import debugDecor, copy_doc, PYFTError, n2name, insertInList, getFileName
 from pyft.scope import getScopeChildNodes
-from pyft.variables import getVarList, findVar
+from pyft.variables import getVarList, findVar, addVar, addModuleVar
+from pyft.expressions import createExprPart
 import json
 import subprocess
 import xml.etree.ElementTree as ET
@@ -38,8 +39,22 @@ def getFiles(tree):
                 filenames.append(filename)
     return filenames
 
+def _conservativePYFT(filename, parser, parserOptions, wrapH):
+    """
+    Return a conservative PYFT object usable for tree manipulation
+    :param filename: name of the file to open
+    :param parser, parserOptions, wrapH: see the pyft class
+    :return: PYFT object
+    """
+    from pyft import PYFT
+    options = parserOptions
+    if options is not None and len(set(options).intersection(('-no-include', '-noinclude'))) == 0:
+        #We must not include 'include files' when analysing the tree
+        options.append('-no-include')
+    return PYFT(filename, parser=parser, parserOptions=options, wrapH=wrapH)
+
 @debugDecor
-def descTree(tree, descTree, parser, parserOptions, wrapH):
+def descTree(tree, descTree, parser=None, parserOptions=None, wrapH=False):
     """
     Build the description tree file
     :param tree: list of directories composing the tree or None
@@ -53,15 +68,9 @@ def descTree(tree, descTree, parser, parserOptions, wrapH):
             text = text[1, -1]
         return text
 
-    from pyft import PYFT
     if not os.path.exists(descTree):
         if tree is None:
             raise PYFTError('You must provide tree when descTree is set')
-        options = parserOptions
-        if options is not None and len(set(options).intersection(('-no-include', '-noinclude'))) == 0:
-            #We must not include 'include files' when analysing the tree
-            options.append('-no-include')
-
         result = {'cwd': os.getcwd(), 'compilation_tree': {}, 'execution_tree': {}, 'scopes': {}}
 
         useList = {}
@@ -71,7 +80,7 @@ def descTree(tree, descTree, parser, parserOptions, wrapH):
         #Loop on directory and files
         for filename in getFiles(tree):
             if os.path.isfile(filename):
-                pft = PYFT(filename, parser=parser, parserOptions=options, wrapH=wrapH)
+                pft = _conservativePYFT(filename, parser, parserOptions, wrapH)
                 filename = filename[2:] if filename.startswith('./') else filename
                 varList = getVarList(pft._xml)
 
@@ -242,7 +251,6 @@ def descTree(tree, descTree, parser, parserOptions, wrapH):
                             logging.error('  found {i} time(s) in include files'.format(i=len(foundInInclude)))
                             logging.error('  found {i} time(s) in CONTAINS block'.format(i=len(foundInContains)))
                             logging.error('  found {i} time(s) in the same scope'.format(i=len(foundInSameScope)))
-                            print(foundInUse)
                             result['execution_tree'][scope].append('??')
                         elif len(foundInUse + foundInInclude + foundInContains + foundInSameScope) == 1:
                             r = (foundInUse + foundInInclude + foundInContains + foundInSameScope)[0]
@@ -272,6 +280,24 @@ def toJson(descTree):
     else:
         return descTree
 
+def scopeToFiles(scope, descTree):
+    """
+    Return the name of the file defining the scope
+    :param scope: scope to search for
+    :param descTree: tree description file (obtained by descTree) or its json equivalence
+    :return: list file names in which scope is defined
+    """
+    return [filename for filename, scopes in descTree['scopes'].items() if scope in scopes]
+
+def fileToScopes(filename, descTree):
+    """
+    Return the scopes contained in the file
+    :param filename: name of the file tn inspect
+    :param descTree: tree description file (obtained by descTree) or its json equivalence
+    :return: list of scopes defined in the file
+    """
+    return toJson(descTree)['scopes'][filename]
+
 def _recurList(node, descTreePart, level, down):
     """
     :param node: initial node
@@ -284,47 +310,48 @@ def _recurList(node, descTreePart, level, down):
         if down:
             result = descTreePart.get(n, [])
         else:
-            result = [item for item, l in descTree.items() if n in l]
-        if level is not None or level > 1:
+            result = [item for (item, l) in descTreePart.items() if n in l]
+        if level is None or level > 1:
             for r in list(result):
-                result.extend(recur(r, None if level is None else level - 1, down))
-    return recur(filename, level)
+                result.extend(recur(r, None if level is None else level - 1))
+        return result
+    return recur(node, level)
 
-def needsFile(filename, descTree, level):
+def needsFile(filename, descTree, level=1):
     """
     :param filename: initial file name
     :param descTree: tree description file (obtained by descTree) or its json equivalence
     :param level: number of levels (0 to get only the initial file, None to get all files)
     :return: list of file names needed by the initial file (recursively)
     """
-    return _recurList(filename, descTree['compilation_tree'], True)
+    return _recurList(filename, toJson(descTree)['compilation_tree'], level, True)
 
-def neededByFile(filename, descTree, level):
+def neededByFile(filename, descTree, level=1):
     """
     :param filename: initial file name
     :param descTree: tree description file (obtained by descTree) or its json equivalence
     :param level: number of levels (0 to get only the initial file, None to get all files)
     :return: list of file names that needs the initial file (recursively)
     """
-    return _recurList(filename, descTree['compilation_tree'], False)
+    return _recurList(filename, toJson(descTree)['compilation_tree'], level, False)
 
-def callsScopes(scope, descTree, level):
+def callsScopes(scope, descTree, level=1):
     """
     :param scope: initial scope
     :param descTree: tree description file (obtained by descTree) or its json equivalence
     :param level: number of levels (0 to get only the initial scope, None to get all scopes)
-    :return: list of file scopes called by the initial scope (recursively)
+    :return: list of scopes called by the initial scope (recursively)
     """
-    return _recurList(scope, descTree['execution_tree'], True)
+    return _recurList(scope, toJson(descTree)['execution_tree'], level, True)
 
-def neededByFile(scope, descTree, level):
+def calledByScope(scope, descTree, level=1):
     """
     :param scope: initial scope
     :param descTree: tree description file (obtained by descTree) or its json equivalence
     :param level: number of levels (0 to get only the initial scope, None to get all scopes)
-    :return: list of file scopes that calls the initial scope (recursively)
+    :return: list of scopes that calls the initial scope (recursively)
     """
-    return _recurList(scope, descTree['execution_tree'], False)
+    return _recurList(scope, toJson(descTree)['execution_tree'], level, False)
 
 @debugDecor
 def plotTree(centralNodeList, descTree, output, plotMaxUpper, plotMaxLower, kind, frame=False):
@@ -461,8 +488,8 @@ def plotCompilTreeFromScope(scope, descTree, output, plotMaxUpper, plotMaxLower)
     :param plotMaxLower: Maximum number of elements to plot, lower than the central element
     """
     descTree = toJson(descTree)
-    return plotTree([filename for filename, scopes in descTree['scopes'] if scope in scopes],
-                    descTree, output, plotMaxUpper, plotMaxLower, 'compilation_tree')
+    return plotTree(scopeToFiles(scope, descTree), descTree, output, plotMaxUpper, plotMaxLower,
+                    'compilation_tree')
 
 @debugDecor
 def plotExecTreeFromFile(filename, descTree, output, plotMaxUpper, plotMaxLower):
@@ -475,9 +502,91 @@ def plotExecTreeFromFile(filename, descTree, output, plotMaxUpper, plotMaxLower)
     :param plotMaxLower: Maximum number of elements to plot, lower than the central element
     """
     descTree = toJson(descTree)
-    return plotTree(descTree['scopes'][filename], descTree, output, plotMaxUpper, plotMaxLower,
+    return plotTree(fileToScopes(filename, descTree), descTree, output, plotMaxUpper, plotMaxLower,
                     'execution_tree', True)
 
+@debugDecor
+def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, moduleVarList=None,
+                 parser=None, parserOptions=None, wrapH=False):
+    """
+    Adds an argument to the routine and propagates it upward until we encounter a scope
+    where the variable exists exists or a scope in stopScopes
+    :param doc: etree of the starting routine
+    :param scope: scope to start with (if None, try to guess it from the scopes defined in doc)
+    :param descTree: descTree file
+    :param varName: variable name
+    :param declStmt: declarative statment (will be used by addVar)
+    :param pos: position of the variable in the list of dummy argument
+    :param stopScopes: list of scopes to reach
+    :param moduleVarList: list of module variable specification to insert in the xml code
+                          a module variable specification is a list of two elements:
+                          - module name
+                          - variable name or or list of variable names
+                            or None to add a USE statement without the ONLY attribute
+                          use moduleVarList to not add module variables
+    :param parser, parserOptions, wrapH: see the pyft class
+
+    Argument is inserted only on paths leading to one of scopes listed in stopScopes
+    """
+    #TODO won't be able to add argument to a call statement without argument ('CALL FOO')
+    #TODO arguments must be added to interface blocks
+    #TODO arguments in subroutine and function calls are added directly whereas it should be
+    #     necessary to use the 'KEY=VAL' syntax if previous arguments use this syntax and/or if
+    #     the new argument is inserted after a missing optional argument
+    descTree = toJson(descTree)
+    if scope is None:
+        allScopes = [scope for scope in getScopesList(doc)
+                     if scope.split('/')[-1].split(':')[0] in ('sub', 'func')]
+        if len(allScopes) == 1:
+            scope = allScopes[0]
+        else:
+            raise PYFTError('Unable to guess the scope to deal with')
+
+    var = findVar(doc, varName, scope, exactScope=True)
+    if var is None:
+       #The variable doesn't exist in this scope, we add it
+       addVar(doc, [[scope, varName, declStmt, pos]])
+       if moduleVarList is not None:
+           #Module variables must be added when var is added
+           addModuleVar(doc, [(scope, moduleName, moduleVarNames)
+                              for (moduleName, moduleVarNames) in moduleVarList])
+    if var is None and scope not in stopScopes:
+        #We must propagates upward
+        for scopeUp in calledByScope(scope, descTree): #scopes calling the current scope
+            upperScopes = calledByScope(scopeUp, descTree, None)
+            if scopeUp in stopScopes or any([scp in upperScopes for scp in stopScopes]):
+                #We are on the path to a scope in the stopScopes list, or scopeUp is one of the stopScopes
+                for filename in scopeToFiles(scopeUp, descTree): #can be defined several times?
+                    if getFileName(doc) == filename:
+                        #Upper scope is in the same file
+                        xml = doc
+                        pft = None
+                    else:
+                        pft = _conservativePYFT(filename, parser, parserOptions, wrapH)
+                        xml = pft._xml
+                    #Add the argument and propagate upward
+                    addArgInTree(xml, scopeUp, descTree, varName, declStmt, pos, stopScopes, moduleVarList)
+                    #Add the argument to calls (subroutine or function)
+                    scopeUpNode = ET.Element('scope')
+                    scopeUpNode.extend(getScopeChildNodes(xml, scopeUp))
+                    name = scope.split('/')[-1].split(':')[1].upper()
+                    if scope.split('/')[-1].split(':')[0] == 'sub':
+                        #We look for call statements
+                        for callStmt in scopeUpNode.findall('.//{*}call-stmt'):
+                            callName = n2name(callStmt.find('./{*}procedure-designator/{*}named-E/{*}N')).upper()
+                            if callName == name:
+                                item = ET.Element('{http://fxtran.net/#syntax}arg')
+                                item.append(createExprPart(varName))
+                                insertInList(pos, item, callStmt.find('./{*}arg-spec'))
+                    else:
+                        #We look for function use
+                        for funcCall in scopeUpNode.findall('.//{*}named-E/{*}R-LT/{*}parens-R/{*}element-LT/../../..'):
+                            funcName = n2name(funcCall.find('./{*}N')).upper()
+                            if funcName == name:
+                                item = ET.Element('{http://fxtran.net/#syntax}element')
+                                item.append(createExprPart(varName))
+                                insertInList(pos, item, funcCall.find('./{*}R-LT/{*}parens-R/{*}element-LT'))
+                    if pft is not None: pft.write()
 
 class Tree():
     @copy_doc(getDirs)
@@ -503,3 +612,7 @@ class Tree():
     @copy_doc(plotExecTreeFromScope)
     def plotExecTreeFromFile(self, *args, **kwargs):
         return plotExecTreeFromFile(*args, **kwargs)
+
+    @copy_doc(addArgInTree)
+    def addArgInTree(self, *args, **kwargs):
+        return addArgInTree(self._xml, *args, **kwargs)
