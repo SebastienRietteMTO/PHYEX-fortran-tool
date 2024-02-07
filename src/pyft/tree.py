@@ -57,6 +57,11 @@ def descTree(tree, descTree, parser, parserOptions, wrapH):
     if not os.path.exists(descTree):
         if tree is None:
             raise PYFTError('You must provide tree when descTree is set')
+        options = parserOptions
+        if options is not None and len(set(options).intersection(('-no-include', '-noinclude'))) == 0:
+            #We must not include 'include files' when analysing the tree
+            options.append('-no-include')
+
         result = {'cwd': os.getcwd(), 'compilation_tree': {}, 'execution_tree': {}, 'scopes': {}}
 
         useList = {}
@@ -66,7 +71,7 @@ def descTree(tree, descTree, parser, parserOptions, wrapH):
         #Loop on directory and files
         for filename in getFiles(tree):
             if os.path.isfile(filename):
-                pft = PYFT(filename, parser=parser, parserOptions=parserOptions, wrapH=wrapH)
+                pft = PYFT(filename, parser=parser, parserOptions=options, wrapH=wrapH)
                 filename = filename[2:] if filename.startswith('./') else filename
                 varList = getVarList(pft._xml)
 
