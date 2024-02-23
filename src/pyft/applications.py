@@ -84,7 +84,8 @@ def addStack(doc, declarationAllocType, model):
     Add specific allocations of local arrays on the fly for GPU
     :param doc: etree to use
     :param declarationAllocType: string of the template for declaration + allocation
-    Example for Mesonh : "{kind}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))"
+    Example for Mesonh : "{kind}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))" for the regular case
+                         "{kind}, DIMENSION({doubledotshape}), POINTER, CONTIGUOUS :: {name}#CALL MNH_MEM_GET({name}, {shape})"  for the MNH_OPENACC case
     for Philippe's version before CPP : "temp ({kind}, {name}, ({shape}))#alloc ({name})"
     (not tested) for Philippe's version after CPP  : "{kind}, DIMENSION ({shape}) :: {name}; POINTER(IP_##{name}##_, {name})#IP_##{name}##_=YLSTACK%L;YLSTACK%L=YLSTACK%L+KIND({name})*SIZE({name});IF(YLSTACK%L>YLSTACK%U)CALL SOF(__FILE__, __LINE__)"
     :param model : 'MESONH' or 'AROME' for specific objects related to the allocator or stack
@@ -120,6 +121,7 @@ def addStack(doc, declarationAllocType, model):
             varList = getVarList(doc,scopepath)
             # Look for all local arrays only (and not PARAMETER variables)
             localArrays, varListToRemove = [], []
+            listLocalArrays=""
             for var in varList:
                 if not var['arg'] and var['as']:
                     parameterVar = False
@@ -129,6 +131,7 @@ def addStack(doc, declarationAllocType, model):
                     if not parameterVar:
                         localArrays.append(var)
                         varListToRemove.append([scopepath,var['n']])
+                        listLocalArrays+=" "+[scopepath,var['n']][1]+','
                     
             # Remove the current declaration form
             removeVar(doc,varListToRemove,simplify=False)
@@ -154,7 +157,15 @@ def addStack(doc, declarationAllocType, model):
                     declTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
                 par.insert(index, declTypeXML)
             lastIndexDecl = index
-            
+
+            if model == 'MESONH' and len(localArrays)>0:
+                subRoutineName = scopepath.split('/')[-1].split(':')[1]
+                fortranSource = "SUBROUTINE FOO598756\n "+"CALL MNH_MEM_POSITION_PIN(\""+ subRoutineName+ "\") "+ " \nEND SUBROUTINE"
+                _, xmlTypeRoutine = fortran2xml(fortranSource)
+                mnh_mem_position_pin_stmt = xmlTypeRoutine.find('.//{*}call-stmt')
+                index += 1
+                par.insert(index, mnh_mem_position_pin_stmt)
+                        
             # Handle text allocations
             for var in localArrays:
                 index += 1
@@ -165,13 +176,22 @@ def addStack(doc, declarationAllocType, model):
                 _, xmlTypeRoutine = fortran2xml(fortranSource)
                 allocTypeXML = xmlTypeRoutine.find('.//{*}allocate-stmt')
                 if allocTypeXML is None:
-                    allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
+                    allocTypeXML = xmlTypeRoutine.find('.//{*}call-stmt')
+                    if allocTypeXML is None:
+                        allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
                 par.insert(index, allocTypeXML)
         
             if len(localArrays)>0:
                 if model == 'AROME':
                     addDeclStackAROME(doc, loc, lastIndexDecl)
-                #elif model == 'MESONH':
+                elif model == 'MESONH':
+                    # Handle !$add data present (local variables) 
+                    #TODO: handle break of lines in case of long list of local variables
+                    fortranSource = "SUBROUTINE FOO598756\n "+"!$acc data present ("+listLocalArrays[:len(listLocalArrays)-1]+")"+" \nEND SUBROUTINE"
+                    _, xmlAccDataPresent = fortran2xml(fortranSource)
+                    accDataPresentXML = xmlAccDataPresent.find('.//{*}C')
+                    index+=1
+                    par.insert(index, accDataPresentXML)
                     #addDeclStackMESONH() # TODO regarging specifications of LAERO Open-ACC branch
             
 @debugDecor
