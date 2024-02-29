@@ -911,7 +911,7 @@ def addVar(doc, varList):
                 #node insertion index
                 declLst = [node for node in getScopeChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
                 if len(declLst) != 0:
-                    #There already have declaration statements, we add the new one after them
+                    #There already are declaration statements, we add the new one after them
                     index = list(locNode).index(declLst[-1]) + 1
                 else:
                     #There is no declaration statement
@@ -1276,7 +1276,7 @@ def modifyAutomaticArrays(doc, declTemplate=None, startTemplate=None, endTemplat
                             result.extend([1, var['as'][i][1]])
                         else:
                             result.extend([var['as'][i][0], var['as'][i][1]])
-                    templ[t] = templ[t].replace('{lowUpList}', ', '.join(result))
+                    templ[t] = templ[t].replace('{lowUpList}', ', '.join([str(r) for r in result]))
 
             #Get the xml for the template
             separator = "!ABCDEFGHIJKLMNOPQRSTUVWabcdefghijklmnopqrstuvwxyz0123456789"
@@ -1294,7 +1294,12 @@ def modifyAutomaticArrays(doc, declTemplate=None, startTemplate=None, endTemplat
 
             #Replace declaration statement
             scopeNode = getScopeNode(doc, scope)
-            index = list(scopeNode).index(scopeNode.find('./{*}T-decl-stmt')) #first declaration statement
+            #We look for the last position in the declaration list which do not use the variable we add
+            #This algorithm will stop when the original declaration statement is encoutered
+            for decl in scopeNode.findall('./{*}T-decl-stmt'):
+                index = list(scopeNode).index(decl)
+                if var['n'] in [n2name(N) for N in decl.findall('.//{*}N')]:
+                    break
             removeVar(doc, [(scope, var['n'])], simplify=False)
             for n in templ['decl'][::-1]:
                 scopeNode.insert(index, n)

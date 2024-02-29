@@ -3,38 +3,14 @@ This module implements functions for high-to-moderate level transformation
 """
 
 import xml.etree.ElementTree as ET
-from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml
+from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, getFileName
 from pyft.statements import (removeCall, setFalseIfStmt, removeStmtNode,
-                             removeArraySyntax, inlineContainedSubroutines)
+                             removeArraySyntax, inlineContainedSubroutines, insertStatement)
 from pyft.variables import (removeUnusedLocalVar, getVarList, addVar, addModuleVar,
-                            removeVar)
+                            removeVar, modifyAutomaticArrays)
 from pyft.scope import getScopesList, getScopePath
-from pyft.expressions import createExprPart
-
-@debugDecor
-def addIncludes(doc):
-    """
-    fxtran includes the file but:
-    - it does not remove the INCLUDE "file.h" statement
-    - include the file with its file node
-    This function removes the INCLUDE statement and the file node
-    :param doc: etree to use
-    """
-    #Remove the include statement
-    includeStmts = doc.findall('.//{*}include')
-    for includeStmt in includeStmts:
-        par = getParent(doc, includeStmt)
-        par.remove(includeStmt)
-    #Remove the file node
-    mainfile = doc.find('./{*}file')
-    for file in mainfile.findall('.//{*}file'):
-        par = getParent(doc, file)
-        index = list(par).index(file)
-        if file.tail is not None:
-            file[-1].tail = file.tail if file[-1].tail is None else (file[-1].tail + file.tail)
-        for node in file[::-1]:
-            par.insert(index, node)
-        par.remove(file)
+from pyft.tree import addArgInTree, calledByScope
+from pyft.expressions import createExpr, createExprPart
 
 @debugDecor
 def deleteNonColumnCallsPHYEX(doc, simplify=False):
@@ -79,195 +55,68 @@ def deleteBudgetDDH(doc, simplify=False):
     setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
 
 @debugDecor
-def addStack(doc, declarationAllocType, model):
+def addStack(doc, descTree, model, stopScopes, parser=None, parserOptions=None, wrapH=False):
     """
     Add specific allocations of local arrays on the fly for GPU
     :param doc: etree to use
-    :param declarationAllocType: string of the template for declaration + allocation
-    Example for Mesonh : "{kind}, DIMENSION({doubledotshape}), ALLOCATABLE :: {name}#ALLOCATE({name}({shape}))"
-    for Philippe's version before CPP : "temp ({kind}, {name}, ({shape}))#alloc ({name})"
-    (not tested) for Philippe's version after CPP  : "{kind}, DIMENSION ({shape}) :: {name}; POINTER(IP_##{name}##_, {name})#IP_##{name}##_=YLSTACK%L;YLSTACK%L=YLSTACK%L+KIND({name})*SIZE({name});IF(YLSTACK%L>YLSTACK%U)CALL SOF(__FILE__, __LINE__)"
+    :param descTree: descTree file
     :param model : 'MESONH' or 'AROME' for specific objects related to the allocator or stack
-    """
-    def getShape(var):
-        """
-        Return the shape of var as text
-        :param var: variable element from getVarList
-        return arrayTxt (e.g. 'D%NIJT,D%NKT') and doubledotshape (e.g. ':,:')
-        """
-        # Array dimensions
-        arrayTxt = ''
-        nb_dim=0
-        for el in var['as']:
-            if el[0] is None:
-                arrayTxt+=str(el[1])+','
-                nb_dim += 1
-        tempArrayTxt = arrayTxt
-        doubledotshape = ":,"*nb_dim
-        tempdoubledotshape = doubledotshape
-        if arrayTxt[-1] == ',': # remove last ',' if present
-            tempArrayTxt = arrayTxt[:-1]
-            tempdoubledotshape = doubledotshape[:-1]
-        arrayTxt = tempArrayTxt
-        doubledotshape = tempdoubledotshape
-        return arrayTxt, doubledotshape
+    :param stopScopes: scope where we stop to add stack
+    :param parser, parserOptions, wrapH: see the pyft class
 
-    tempdeclType, tempallocType = declarationAllocType.split('#')[0], declarationAllocType.split('#')[1]
-    locations  = getScopesList(doc,withNodes='tuple')
-    for loc in locations:
-        if 'sub:' in loc[0]: # Do not add stack to MODULE object, but only to SUBROUTINES
-            scopepath = getScopePath(doc,loc[1])
-            varList = getVarList(doc,scopepath)
-            # Look for all local arrays only (and not PARAMETER variables)
-            localArrays, varListToRemove = [], []
-            for var in varList:
-                if not var['arg'] and var['as']:
-                    parameterVar = False
-                    for asx in var['asx'][0]: #remove PARAMETER variable (containing literal-E in asx
-                        if asx and asx.find('.//{*}literal-E'):
-                            parameterVar = True
-                    if not parameterVar:
-                        localArrays.append(var)
-                        varListToRemove.append([scopepath,var['n']])
-                    
-            # Remove the current declaration form
-            removeVar(doc,varListToRemove,simplify=False)
-            
-             # Get the index of the last declaration object
-            declStmts = loc[1].findall('.//{*}T-decl-stmt')
-            par = getParent(loc[1],declStmts[-1])
-            allsiblings = par.findall('./{*}*')
-            index = allsiblings.index(declStmts[-1])
-    
-            # Handle text declarations
-            for var in localArrays:
-                index += 1
-                declType = tempdeclType.replace('{kind}',var['t'])
-                declType = declType.replace('{name}',var['n'])
-                arrayTxt, doubledotshape = getShape(var)
-                declType = declType.replace('{doubledotshape}',doubledotshape)
-                declType = declType.replace('{shape}',arrayTxt)
-                fortranSource = "SUBROUTINE FOO598756\n "+declType+" \nEND SUBROUTINE"
-                _, xmlTypeRoutine = fortran2xml(fortranSource)
-                declTypeXML = xmlTypeRoutine.find('.//{*}T-decl-stmt')
-                if declTypeXML is None:
-                    declTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
-                par.insert(index, declTypeXML)
-            lastIndexDecl = index
-            
-            # Handle text allocations
-            for var in localArrays:
-                index += 1
-                allocType = tempallocType.replace('{name}',var['n'])
-                arrayTxt, doubledotshape = getShape(var)
-                allocType = allocType.replace('{shape}',arrayTxt)
-                fortranSource = "SUBROUTINE FOO598756\n "+allocType+" \nEND SUBROUTINE"
-                _, xmlTypeRoutine = fortran2xml(fortranSource)
-                allocTypeXML = xmlTypeRoutine.find('.//{*}allocate-stmt')
-                if allocTypeXML is None:
-                    allocTypeXML = xmlTypeRoutine.find('.//{*}broken-stmt') # For the non-conventional declaration type such as temp ()
-                par.insert(index, allocTypeXML)
-        
-            if len(localArrays)>0:
-                if model == 'AROME':
-                    addDeclStackAROME(doc, loc, lastIndexDecl)
-                #elif model == 'MESONH':
-                    #addDeclStackMESONH() # TODO regarging specifications of LAERO Open-ACC branch
-            
-@debugDecor
-def addDeclStackAROME(doc, loc, lastIndexDecl=0):
+    Stacks are added to all routines called by the scopes listed in stopScopes
     """
-    Prepare objects STACK_MOD, YLSTACK and YDSTACK for addStack
-    :param doc: etree to use
-    :param loc: scope to add the specific objets
-    :param lastIndexDecl: index of the last declaration object added that may not be recognized by fxtran as a declaration (e.g. in case of "temp" statement)
-    """
-    addVar(doc,[[loc[0],'YDSTACK','TYPE(STACK) :: YDSTACK, YLSTACK',-1]])
-    addModuleVar(doc, [[loc[0], 'STACK_MOD',None]])
-        
-    # Add include stack.h after the USE STACK_MOD
-    modules = loc[1].findall('.//{*}use-stmt/{*}module-N/{*}N/{*}n')
-    fortranSource = "SUBROUTINE FOO598756\n #include \"stack.h\" \nEND SUBROUTINE"
-    _, xmlIncludeStack = fortran2xml(fortranSource)
-    for mod in modules:
-        if alltext(mod) == 'STACK_MOD':
-            par = getParent(loc[1], mod, level=4)
-            index = par[:].index(getParent(loc[1], mod, level=3))
-            par.insert(index+1, xmlIncludeStack.find('.//{*}include'))
-
-    # Add !$acc routine (ROUTINE_NAME) seq after subroutine-stmt
-    routineName = loc[1].find('.//{*}subroutine-stmt/{*}subroutine-N/{*}N/{*}n')
-    fortranSource = "SUBROUTINE FOO598756\n !$acc routine ("+ alltext(routineName) + ") seq \nEND SUBROUTINE"
-    _, xmlAccRoutine = fortran2xml(fortranSource)
-    routineStmt = loc[1].find('.//{*}subroutine-stmt')
-    par = getParent(loc[1], routineStmt)
-    index = par[:].index(routineStmt)
-    par.insert(index+1, xmlAccRoutine.find('.//{*}C'))
+    if model == 'AROME':
+        for scope in getScopesList(doc):
+            #The AROME transformation needs an additional parameter
+            #We apply the transformation only if the routine is called from a scope within stopScopes
+            upperScopes = calledByScope(scope, descTree, None)
+            if scope in stopScopes or any([scp in upperScopes for scp in stopScopes]):
+                #Intermediate transformation, needs cpp to be completed
+                #This version would be OK if we didn't need to read again the files with fxtran after transformation
+                #nb = modifyAutomaticArrays(doc,
+                #                           declTemplate="temp({type}, {name}, ({shape}))",
+                #                           startTemplate="alloc({name})",
+                #                           scopes=scope)
     
-    # in case, called by checkStackArginCall, get lastIndexDecl:
-    if lastIndexDecl == 0:
-        declStmts = loc[1].findall('.//{*}T-decl-stmt')
-        par = getParent(loc[1],declStmts[-1])
-        allsiblings = par.findall('./{*}*')
-        lastIndexDecl = allsiblings.index(declStmts[-1])
-    # Add YLSTACK = YDSTACK        
-    fortranSource = "SUBROUTINE FOO598756\n YLSTACK=YDSTACK \nEND SUBROUTINE"
-    _, xml = fortran2xml(fortranSource)
-    par.insert(lastIndexDecl+5,xml.find('.//{*}a-stmt')) # 5 corresponds to 1 for new line, 4 for the 4 lines added in addDeclStackAROME
+                #Full transformation, using CRAY pointers
+                #In comparison with the original transformation of Philippe, we do not call SOF with
+                #__FILE__ and __LINE__ because it breaks future reading with fxtran
+                nb = modifyAutomaticArrays(doc,
+                            declTemplate="{type}, DIMENSION({shape}) :: {name}; POINTER(IP_{name}_, {name})",
+                            startTemplate="IP_{name}_=YDSTACK%L;YDSTACK%L=YDSTACK%L+KIND({name})*SIZE({name});IF(YDSTACK%L>YDSTACK%U)CALL SOF('" + getFileName(doc) + ":{name}', 0)",
+                            scopes=scope)
     
-    #Update subroutines_wth_stack.txt
-    f = open("subroutines_wth_stack.txt", "a")
-    try: 
-        f.write(loc[0].split('/sub:')[1] + '\n')
-    except:
-        f.write(loc[0].split('sub:')[1] + '\n') # Case for main call (rain_ice, shallow, turb, ice_adjust) that are not in modules
-    f.close()
+                if nb > 0:
+                    #Some automatic arrays have been modified, we need to add an argument to the routine
+                    addArgInTree(doc, scope, descTree, 'YDSTACK', 'TYPE (STACK) :: YDSTACK',
+                                 -1, stopScopes, moduleVarList=[('STACK_MOD', ['STACK', 'SOF'])],
+                                 parser=parser, parserOptions=parserOptions, wrapH=wrapH)
+    elif model == 'MESONH':
+        for scope in getScopesList(doc):
+            #We apply the transformation only if the routine is called from a scope within stopScopes
+            upperScopes = calledByScope(scope, descTree, None)
+            if scope in stopScopes or any([scp in upperScopes for scp in stopScopes]):
+                nb = modifyAutomaticArrays(doc,
+                            declTemplate="{type}, DIMENSION({doubledotshape}), POINTER, CONTIGUOUS :: {name}",
+                            startTemplate="CALL MNH_MEM_GET({name}, {lowUpList})",
+                            scopes=scope)
+                if nb > 0:
+                    #Some automatic arrays have been modified
+                    #  we need to add the stack module,
+                    addModuleVar(doc, [(scope, 'MODE_MNH_ZWORK',
+                                        ['MNH_MEM_GET', 'MNH_MEM_POSITION_PIN', 'MNH_MEM_RELEASE'])])
+                    #  to pin the memory position,
+                    insertStatement(doc, scope,
+                                    createExpr("CALL MNH_MEM_POSITION_PIN('{scope}')".format(scope=scope))[0], True)
+                    #  and to realease the memory
+                    insertStatement(doc, scope,
+                                    createExpr("CALL MNH_MEM_RELEASE('{scope}')".format(scope=scope))[0], False)
+    else:
+        raise PYFTError('Stack is implemented only for AROME and MESONH models')
 
 @debugDecor
-def checkStackArginCall(doc):
-    """
-    Check in all CALL statements if YLSTACK must be present. It is based on a first call of addDeclStackMODEL that writes in subroutines_wth_stack.txt
-    all the routines that need the STACK object
-    :param doc: etree to use
-    """
-    f = open("subroutines_wth_stack.txt", "r")
-    lines = f.readlines()
-    routinesWthStack = []
-    for l in lines:
-        routinesWthStack.append(l.replace('\n',''))
-    f.close()
-    
-    # Build <f:arg><f:arg-N n="YDSTACK"><f:k>YDSTACK</f:k></f:arg-N>=<f:named-E><f:N><f:n>YLSTACK</f:n></f:N></f:named-E></f:arg>
-    fortranSource = "SUBROUTINE FOO598756\n CALL FOO(YLSTACK=YDSTACK) \nEND SUBROUTINE"
-    _, xml = fortran2xml(fortranSource) 
-    YLSTACKarg = xml.find('.//{*}arg')
-    YLSTACKarg.text = ','
-                   
-    locations  = getScopesList(doc,withNodes='tuple')
-    for loc in locations:
-        if 'sub:' in loc[0]: # Do not work on MODULE scope
-            addedOnce = False # becomes True as soon as YLSTACK has been added at least once, to check later if the declaration of YLSTACK is already present in the scope
-            callStmts = loc[1].findall('.//{*}call-stmt')
-            for callStmt in callStmts:
-                routineName = callStmt.find('.//{*}procedure-designator/{*}named-E/{*}N/{*}n')
-                if alltext(routineName) in routinesWthStack:
-                    lastArg = callStmt.findall('.//{*}arg-spec/{*}arg/{*}named-E')[-1]
-                    if not alltext(lastArg) == 'YDSTACK': # If the last argument is not YLSTACK, then add it
-                       # Append YLSTACKarg as the last argument of the calling statement
-                       callStmt_args = callStmt.find('.//{*}arg-spec')
-                       callStmt_args.append(YLSTACKarg)
-                       addedOnce = True
-            # Check if the declaration of YLSTACK is already present in the scope
-            if addedOnce:
-                declStmts = loc[1].findall('.//{*}T-decl-stmt//{*}EN-decl')
-                declStmtsTxt = []
-                for el in declStmts:
-                    declStmtsTxt.append(alltext(el))
-                if 'YLSTACK' not in declStmtsTxt:
-                    addDeclStackAROME(doc,loc)
-
-@debugDecor
-def inlineContainedSubroutinesPHYEX(doc, simplify=False):
+def inlineContainedSubroutinesPHYEX(doc, descTree=None, simplify=False):
     """
     Inline all contained subroutines in the main subroutine
     Steps :
@@ -275,6 +124,7 @@ def inlineContainedSubroutinesPHYEX(doc, simplify=False):
         - Look for all CALL statements, check if it is a containted routines; if yes, inline
         - Delete the containted routines
     :param doc: xml fragment containing main and contained subroutine
+    :param descTree: description tree object (to update it with the inlining)
     :param simplify: try to simplify code (construct or variables becoming useless)
     :param loopVar: None to create new variable for each added DO loop (around ELEMENTAL subroutine calls)
                     or a function that return the name of the variable to use for the loop control.
@@ -286,7 +136,7 @@ def inlineContainedSubroutinesPHYEX(doc, simplify=False):
                       - name of the array
                       - index of the rank
     """
-    return inlineContainedSubroutines(doc, simplify=simplify, loopVar=_loopVarPHYEX)
+    return inlineContainedSubroutines(doc, descTree=descTree, simplify=simplify, loopVar=_loopVarPHYEX)
 
 @debugDecor            
 def removeIJLoops(doc):
@@ -469,14 +319,6 @@ class Applications():
     def addStack(self, *args, **kwargs):
         return addStack(self._xml, *args, **kwargs)  
 
-    @copy_doc(checkStackArginCall)
-    def checkStackArginCall(self, *args, **kwargs):
-        return checkStackArginCall(self._xml, *args, **kwargs)  
-    
-    @copy_doc(addIncludes)
-    def addIncludes(self, *args, **kwargs):
-        return addIncludes(self._xml, *args, **kwargs)
-    
     @copy_doc(deleteDrHook)
     def deleteDrHook(self, *args, **kwargs):
         return deleteDrHook(self._xml, *args, **kwargs)

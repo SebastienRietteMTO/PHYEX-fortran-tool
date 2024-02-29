@@ -165,6 +165,28 @@ def fortran2xml(fortranSource, parser='fxtran', parserOptions=None, wrapH=False)
             node.tail = node.tail[:-1] #remove '\n' added before 'END MODULE'
             file.remove(programUnit)
 
+    if len(set(['-no-include', '-noinclude']).intersection(parserOptions)) == 0:
+        #fxtran has included the files but:
+        #- it doesn't have removed the INCLUDE "file.h" statement
+        #- it included the file with its file node
+        #This code section removes the INCLUDE statement and the file node
+
+        #Remove the include statement
+        includeStmts = xml.findall('.//{*}include')
+        for includeStmt in includeStmts:
+            par = getParent(xml, includeStmt)
+            par.remove(includeStmt)
+        #Remove the file node
+        mainfile = xml.find('./{*}file')
+        for file in mainfile.findall('.//{*}file'):
+            par = getParent(xml, file)
+            index = list(par).index(file)
+            if file.tail is not None:
+                file[-1].tail = file.tail if file[-1].tail is None else (file[-1].tail + file.tail)
+            for node in file[::-1]:
+                par.insert(index, node)
+            par.remove(file)
+
     return ns, xml
 
 def tostring(doc):

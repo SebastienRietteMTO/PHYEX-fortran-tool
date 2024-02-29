@@ -211,11 +211,12 @@ points (multiple column dependency).
 
 **\--inlineContainedSubroutinesPHYEX** inline containted subroutines in main routine using PHYEX conventions.
 
-**\--addStack** add local arrays to the stack.
+**\--addStack MODEL STOPSCOPES** add local automatic arrays to the stack. The first argument is the
+the model name in which stack must be added ("AROME" or "MESONH") and the second one is a #-separated
+list of scopes where the recursive inclusion of the STACK argument variable must stop (significant
+only for the "AROME" case
 
 **\--addIncludes** add .h includes in the file and remove the INCLUDE statement.
-
-**\--checkStackArginCall** check in all CALL statements if YLSTACK must be present.
 
 **\--mnhExpand** apply the mnh\_expand directives using DO loops.
 
@@ -235,6 +236,9 @@ But the method does not evaluate more complicated cpp directives such as '#if de
 
 **\--descTree** File name where the description of the tree is stored. If the file doesn't
 exist, it will be created using the \--tree option.
+
+**\--descTreeWithIncludes** same as --descTree but also apply --addIncludes to all the files
+in the tree
 
 **\--plotCompilTree** File name for compilation dependency graph (.dot or image extension).
 If \--descTree is used, the descTree file will be used, otherwise the tree (provided

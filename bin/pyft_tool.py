@@ -180,12 +180,14 @@ if __name__ == '__main__':
     gApplications.add_argument('--inlineContainedSubroutinesPHYEX', default=False, action='store_true',
                                help='Inline containted subroutines in main routine, using ' + \
                                     'PHYEX conventions')
-    gApplications.add_argument('--addStack', nargs=2, action='append',metavar=('TYPE', 'MODEL'),
-                               help='Add local arrays to the stack')
+    gApplications.add_argument('--addStack', metavar=('MODEL', 'STOPSCOPES'), nargs=2,
+                               help='Add local arrays to the stack. The first argument is the ' + \
+                                    'the model name in which stack must be added ("AROME" or "MESONH")' + \
+                                    'and the second one is a #-separated list of scopes ' + \
+                                    'where the recursive inclusion of the STACK argument variable ' + \
+                                    'must stop (significant only for the "AROME" case).')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
                                help='Add .h includes in the file and remove the INCLUDE statement')  
-    gApplications.add_argument('--checkStackArginCall', default=False, action='store_true',
-                               help='Check in all CALL statements if YLSTACK must be present')
     gApplications.add_argument('--mnhExpand', default=False, action='store_true',
                                help='Apply the mnh_expand directives with DO loops')
     gApplications.add_argument('--mnhExpandConcurrent', default=False, action='store_true',
@@ -232,6 +234,8 @@ if __name__ == '__main__':
                        help='Directories where source code must be searched for')
     gTree.add_argument('--descTree', default=None,
                        help='File to write and/or read the description of the tree.')
+    gTree.add_argument('--descTreeWithIncludes', default=None,
+                       help='same as --descTree but also apply --addIncludes to all the files in the tree')
     gTree.add_argument('--plotCompilTree', default=None,
                        help='File name for compilation dependency graph (.dot or image extension)')
     gTree.add_argument('--plotExecTree', default=None,
@@ -280,6 +284,7 @@ if __name__ == '__main__':
             if arg.startswith('--') and arg not in optList:
                 optList.append(arg)
         kw_updateCnt = None
+        descTree = None
         for arg in optList:
 
             #File name manipulations
@@ -315,9 +320,9 @@ if __name__ == '__main__':
                                           "ALLOCATE({name}({shape}))", "DEALLOCATE({name})")
     
             #Applications
-            if arg == '--addStack': pft.addStack(args.addStack[0][0], args.addStack[0][1])
-            if arg == '--addIncludes': pft.addIncludes()
-            if arg == '--checkStackArginCall': pft.checkStackArginCall()
+            if arg == '--addStack': pft.addStack(descTree, args.addStack[0], args.addStack[1].split('#'),
+                                                 parser=args.parser, parserOptions=parserOptions,
+                                                 wrapH=args.wrapH)
             if arg == '--deleteDrHook': pft.deleteDrHook(**simplify)
             if arg == '--deleteBudgetDDH': pft.deleteBudgetDDH(**simplify)
             if arg == '--deleteNonColumnCallsPHYEX': pft.deleteNonColumnCallsPHYEX(**simplify)
@@ -326,8 +331,8 @@ if __name__ == '__main__':
             assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
             if arg == '--mnhExpand': pft.removeArraySyntax(everywhere=False)
             if arg == '--mnhExpandConcurrent': pft.removeArraySyntax(concurrent=True, everywhere=False)
-            if arg == '--inlineContainedSubroutines': pft.inlineContainedSubroutines(**simplify)
-            if arg == '--inlineContainedSubroutinesPHYEX': pft.inlineContainedSubroutinesPHYEX(**simplify)
+            if arg == '--inlineContainedSubroutines': pft.inlineContainedSubroutines(descTree=descTree, **simplify)
+            if arg == '--inlineContainedSubroutinesPHYEX': pft.inlineContainedSubroutinesPHYEX(descTree=descTree, **simplify)
             if arg == '--expandAllArrays': pft.removeArraySyntax()
             if arg == '--expandAllArraysPHYEX': pft.expandAllArraysPHYEX()
             if arg == '--removeIJLoops': pft.removeIJLoops()
@@ -378,21 +383,28 @@ if __name__ == '__main__':
             if arg == '--showScopes': pft.showScopesList()
     
             #Tree
-            if arg == '--descTree': pft.descTree(args.tree, args.descTree, parser=args.parser,
-                                           parserOptions=parserOptions, wrapH=args.wrapH)
-            if arg == '--plotCompilTree': pft.plotCompilTreeFromFile(args.INPUT, args.descTree, args.plotCompilTree,
-                                                               args.plotMaxUpper, args.plotMaxLower)
-            if arg == '--plotExecTree': pft.plotExecTreeFromFile(args.INPUT, args.descTree, args.plotExecTree,
-                                                           args.plotMaxUpper, args.plotMaxLower)
+            if arg == '--descTree': descTree = pft.descTree(args.tree, args.descTree, parser=args.parser,
+                                                            parserOptions=parserOptions, wrapH=args.wrapH)
+            if arg == '--descTreeWithIncludes': descTree = pft.descTree(args.tree, args.descTreeWithIncludes,
+                                                            parser=args.parser,
+                                                            parserOptions=parserOptions, wrapH=args.wrapH,
+                                                            addIncludes=True)
+            if arg == '--plotCompilTree': pft.plotCompilTreeFromFile(args.INPUT, descTree, args.plotCompilTree,
+                                                                     args.plotMaxUpper, args.plotMaxLower)
+            if arg == '--plotExecTree': pft.plotExecTreeFromFile(args.INPUT, descTree, args.plotExecTree,
+                                                                 args.plotMaxUpper, args.plotMaxLower)
             if arg == '--addArgInTree':
                 for scope, varName, declStmt, pos, stopScopes in args.addArgInTree:
-                    pft.addArgInTree(scope, args.descTree, varName, declStmt, int(pos), stopScopes.split('#'),
+                    pft.addArgInTree(scope, descTree, varName, declStmt, int(pos), stopScopes.split('#'),
                                      parser=args.parser, parserOptions=parserOptions, wrapH=args.wrapH)
                     
             #Preprocessor
             if arg == '--applyCPPifdef': pft.applyCPPifdef([k for l in args.applyCPPifdef for k in l])
 
         #Writing
+        if descTree is not None:
+            from pyft.tree import descTreToJson
+            descTreToJson(descTree, args.descTree if args.descTree is not None else args.descTreeWithIncludes)
         if args.xml is not None: pft.writeXML(args.xml)
         if not args.dryRun:
             pft.write()

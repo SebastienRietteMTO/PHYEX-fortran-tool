@@ -844,7 +844,7 @@ def removeArraySyntax(doc, concurrent=False, useMnhExpand=True, everywhere=True,
     return doc
 
 @debugDecor
-def inlineContainedSubroutines(doc, simplify=False, loopVar=None):
+def inlineContainedSubroutines(doc, descTree=None, simplify=False, loopVar=None):
     """
     Inline all contained subroutines in the main subroutine
     Steps :
@@ -852,6 +852,7 @@ def inlineContainedSubroutines(doc, simplify=False, loopVar=None):
         - Look for all CALL statements, check if it is a containted routines; if yes, inline
         - Delete the containted routines
     :param doc: xml fragment containing main and contained subroutine
+    :param descTree: description tree object (to update it with the inlining)
     :param simplify: try to simplify code (construct or variables becoming useless)
     :param loopVar: None to create new variable for each added DO loop (around ELEMENTAL subroutine calls)
                     or a function that return the name of the variable to use for the loop control.
@@ -885,25 +886,31 @@ def inlineContainedSubroutines(doc, simplify=False, loopVar=None):
                        getParent(doc, callStmtNn, level=4),
                        loc[0], containedRoutines[containedRoutine][0], # Scopes
                        getVarList(doc), # Must be recomputed each time to take into account new variable
+                       descTree,
                        simplify=simplify, loopVar=loopVar)
+        #loc doesn't use anymore the sub-contained routines
+        for cr in containedRoutines:
+            if containedRoutines[cr][0] in descTree['execution_tree'][loc[0]]:
+                descTree['execution_tree'][loc[0]].remove(containedRoutines[cr][0])
 
-                # Update containedRoutines
-                # Inline contained subroutines : look for sub: / sub:
-                containedRoutines = {}
-                for locs in locations:
-                    if locs[0].count('sub:') >= 2:
-                        containedRoutines[n2name(locs[1].find('.//{*}subroutine-N/{*}N'))] = (locs[0], locs[1])
-
-    for loc in locations:
+    for loc in locations: #loop on all subroutines
         if loc[0].count('sub:') >= 2:
+            #This is a contained subroutine
             name = loc[0].split(':')[-1].upper() # Subroutine name
             nodes = [N for N in doc.findall('.//{*}N') if n2name(N).upper() == name] # All nodes refering the subroutine
             if all([N in loc[1].iter() for N in nodes]):
-                # Subroutine name not used (apart in its definition scope)
+                # Subroutine name not used (apart in its definition scope), we suppress it from the CONTAINS part
                 getParent(doc, loc[1]).remove(loc[1])
+                if descTree is not None:
+                    # If the contained routine call other routines, these called routines have been added
+                    # to descTree['execution_tree'][upperRoutine] by the inline function.
+                    # Here we suppress the existence of loc in the execution tree
+                    del descTree['execution_tree'][loc[0]]
+                    # And in the list of scopes
+                    descTree['scopes'][getFileName(doc)].remove(loc[0])
 
 @debugDecor
-def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=False, loopVar=None):
+def inline(doc, subContained, callStmt, mainScope, subScope, varList, descTree, simplify=False, loopVar=None):
     """
     Inline a subContainted subroutine
     Steps :
@@ -920,6 +927,7 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
     :param mainScope: scope of the main (calling) subroutine
     :param subScope: scope of the contained subroutine to include
     :param varList: var list of all scopes
+    :param descTree: description tree object (to update it with the inlining)
     :param simplify: try to simplify code (construct or variables becoming useless)
     :param loopVar: None to create new variable for each added DO loop (around ELEMENTAL subroutine calls)
                     or a function that return the name of the variable to use for the loop control.
@@ -1316,6 +1324,14 @@ def inline(doc, subContained, callStmt, mainScope, subScope, varList, simplify=F
         #node is a program-unit, we must insert the subelements
         parent.insert(index, node)
 
+    # Update the descTree object
+    if descTree is not None:
+        for item in descTree['execution_tree'][subScope]:
+            if item not in descTree['execution_tree'][mainScope]:
+                #All subroutines/functions called by the sub-contained routine are now directly
+                #called by the main routine
+                descTree['execution_tree'][mainScope].append(item)
+
 @debugDecor
 def insertStatement(doc, scope, stmt, first):
     """
@@ -1328,9 +1344,10 @@ def insertStatement(doc, scope, stmt, first):
     if isinstance(scope, str):
         scope = getScopeNode(doc, scope)
     if first:
-        #Statement must be inserted after all use, T-decl, implicit-non-stmt and interface
+        #Statement must be inserted after all use, T-decl, implicit-non-stmt, interface and cray pointers
         nodes = scope.findall('./{*}T-decl-stmt') + scope.findall('./{*}use-stmt') + \
-                scope.findall('./{*}implicit-none-stmt') + scope.findall('./{*}interface-construct')
+                scope.findall('./{*}implicit-none-stmt') + scope.findall('./{*}interface-construct') + \
+                scope.findall('./{*}pointer-stmt')
         if len(nodes) > 0:
             #Insertion after the last node
             index = max([list(scope).index(n) for n in nodes]) + 1
@@ -1348,7 +1365,7 @@ def insertStatement(doc, scope, stmt, first):
             #Insertion before the contains statement
             index = list(scope).index(contains)
         else:
-            #Insertio before the end subroutine or function statement
+            #Insertion before the end subroutine or function statement
             index = -1
     if scope[index - 1].tail is None:
         scope[index - 1].tail = '\n'
