@@ -3,7 +3,8 @@ This module implements functions for high-to-moderate level transformation
 """
 
 import xml.etree.ElementTree as ET
-from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, getFileName
+from pyft.cosmetics import indent
+from pyft.util import copy_doc, debugDecor, alltext, getParent, fortran2xml, getFileName, PYFTError
 from pyft.statements import (removeCall, setFalseIfStmt, removeStmtNode,
                              removeArraySyntax, inlineContainedSubroutines, insertStatement)
 from pyft.variables import (removeUnusedLocalVar, getVarList, addVar, addModuleVar,
@@ -54,6 +55,135 @@ def deleteBudgetDDH(doc, simplify=False):
     'BUCONF%LBUDGET_RC','BUCONF%LBUDGET_U','BUCONF%LBUDGET_V','BUCONF%LBUDGET_W']
     setFalseIfStmt(doc,flag_torm, None, simplify=simplify)
 
+def addMPPDB_CHECKS(doc):
+    """
+    Add MPPDB_CHEKS on all intent arrays on subroutines. ****** Not applied no modd_ routines. ********
+    Example, for a BL89 routine with 4 arguments, 1 INTENT(IN), 2 INTENT(INOUT), 1 INTENT(OUT), it produces :
+    IF (MPPDB_INITIALIZED) THEN
+      !Check all IN arrays 
+      CALL MPPDB_CHECK(PZZ, "BL89 beg:PZZ") 
+      !Check all INOUT arrays 
+      CALL MPPDB_CHECK(PDZZ, "BL89 beg:PDZZ") 
+      CALL MPPDB_CHECK(PTHVREF, "BL89 beg:PTHVREF") 
+   END IF
+   ...
+   IF (MPPDB_INITIALIZED) THEN
+      !Check all INOUT arrays 
+      CALL MPPDB_CHECK(PDZZ, "BL89 end:PDZZ") 
+      CALL MPPDB_CHECK(PTHVREF, "BL89 end:PTHVREF") 
+      !Check all OUT arrays 
+      CALL MPPDB_CHECK(PLM, "BL89 end:PLM") 
+   END IF
+    :param doc: etree to use
+    """
+    locations  = getScopesList(doc,withNodes='tuple')
+
+    if locations[0][0].split('/')[-1].split(':')[1][:4] == 'MODD':
+        pass
+    else:
+        for loc in locations:
+            if 'sub:' in loc[0]: # Do not add MPPDB_CHEKS to MODULE object, but only to SUBROUTINES
+                print(loc[0])
+                scopepath = getScopePath(doc,loc[1])
+                subRoutineName = scopepath.split('/')[-1].split(':')[1]
+                varList = getVarList(doc,scopepath)
+                
+                # Look for all in and inout arrays only
+                arraysIn, arraysInOut, arraysOut = [], [], []
+                for var in varList:
+                     if var['arg'] and var['as']:
+                         if var['i']=='IN':
+                             arraysIn.append(var)
+                         if var['i']=='INOUT':
+                             arraysInOut.append(var)
+                         if var['i']=='OUT':
+                             arraysOut.append(var)
+                # Check if there is any intent variables
+                if len(arraysIn) + len(arraysInOut) + len(arraysOut) == 0: 
+                    break
+                
+                # Add necessary module
+                addModuleVar(doc, [(loc[0], 'MODE_MPPDB', None)])
+                
+                # Get the index of the last declaration object
+                declStmts = loc[1].findall('.//{*}T-decl-stmt')
+                par = getParent(loc[1],declStmts[-1])
+                allsiblings = par.findall('./{*}*')
+                ind = allsiblings.index(declStmts[-1])
+    
+                # Prepare some FORTRAN comments
+                fortranSource = "SUBROUTINE FOO598756\n !Check all IN arrays \nEND SUBROUTINE"
+                _, cfxtran = fortran2xml(fortranSource)
+                commentIN = cfxtran.find('.//{*}C')
+                fortranSource = "SUBROUTINE FOO598756\n !Check all INOUT arrays \nEND SUBROUTINE"
+                _, cfxtran = fortran2xml(fortranSource)
+                commentINOUT = cfxtran.find('.//{*}C')           
+                fortranSource = "SUBROUTINE FOO598756\n !Check all OUT arrays \nEND SUBROUTINE"
+                _, cfxtran = fortran2xml(fortranSource)
+                commentOUT = cfxtran.find('.//{*}C')
+                
+                # 1) variables IN and INOUT block (beggining of the routine)
+                if len(arraysIn) + len(arraysInOut) > 0:
+                    fortranSource = "SUBROUTINE FOO598756\n IF (MPPDB_INITIALIZED) THEN\nEND IF \nEND SUBROUTINE"
+                    _, ifMPPDBinitfxtran = fortran2xml(fortranSource)
+                    ifMPPDBinit = ifMPPDBinitfxtran.find('.//{*}if-construct')
+                    ifMPPDB = ifMPPDBinit.find('.//{*}if-block')
+                    
+                    # Variables IN
+                    if len(arraysIn) > 0:
+                        ifMPPDB.insert(1,commentIN)
+                        for i,var in enumerate(arraysIn):
+                            argsMPPDB = var['n'] + ", " + "\"" + subRoutineName + " beg:"+var['n'] + "\""
+                            fortranSource = "SUBROUTINE FOO598756\n CALL MPPDB_CHECK(" + argsMPPDB + ") \nEND SUBROUTINE"
+                            _, callMPPDBfxtran = fortran2xml(fortranSource)
+                            callMPPDB = callMPPDBfxtran.find('.//{*}call-stmt')
+                            ifMPPDB.insert(2+i,callMPPDB)
+                    
+                    # Variables INOUT
+                    if len(arraysInOut) > 0:
+                        shiftLineNumber = 2 if(len(arraysIn)>0) else 1
+                        ifMPPDB.insert(len(arraysIn) + shiftLineNumber, commentINOUT)
+                        for i,var in enumerate(arraysInOut):
+                            argsMPPDB = var['n'] + ", " + "\"" + subRoutineName + " beg:"+var['n'] + "\""
+                            fortranSource = "SUBROUTINE FOO598756\n CALL MPPDB_CHECK(" + argsMPPDB + ") \nEND SUBROUTINE"
+                            _, callMPPDBfxtran = fortran2xml(fortranSource)
+                            callMPPDB = callMPPDBfxtran.find('.//{*}call-stmt')
+                            ifMPPDB.insert(len(arraysIn) + shiftLineNumber + 1 + i, callMPPDB)
+                    
+                    # Add the new IN and INOUT block 
+                    par.insert(ind+1,indent(ifMPPDBinit))
+                    
+                # 2) variables INOUT and OUT block (end of the routine)
+                if len(arraysInOut) + len(arraysOut) > 0:
+                    fortranSource = "SUBROUTINE FOO598756\n IF (MPPDB_INITIALIZED) THEN\nEND IF \nEND SUBROUTINE"
+                    _, ifMPPDBendfxtran = fortran2xml(fortranSource)
+                    ifMPPDBend = ifMPPDBendfxtran.find('.//{*}if-construct')
+                    ifMPPDB = ifMPPDBend.find('.//{*}if-block')
+                    
+                    # Variables INOUT
+                    if len(arraysInOut) > 0:
+                        ifMPPDB.insert(1,commentINOUT)
+                        for i,var in enumerate(arraysInOut):
+                            argsMPPDB = var['n'] + ", " + "\"" + subRoutineName + " end:"+var['n'] + "\""
+                            fortranSource = "SUBROUTINE FOO598756\n CALL MPPDB_CHECK(" + argsMPPDB + ") \nEND SUBROUTINE"
+                            _, callMPPDBfxtran = fortran2xml(fortranSource)
+                            callMPPDB = callMPPDBfxtran.find('.//{*}call-stmt')
+                            ifMPPDB.insert(2+i,callMPPDB)
+                    
+                    # Variables OUT
+                    if len(arraysOut) > 0:
+                        shiftLineNumber = 2 if(len(arraysInOut)>0) else 1
+                        ifMPPDB.insert(len(arraysInOut)+shiftLineNumber,commentOUT)
+                        for i,var in enumerate(arraysOut):
+                            argsMPPDB = var['n'] + ", " + "\"" + subRoutineName + " end:"+var['n'] + "\""
+                            fortranSource = "SUBROUTINE FOO598756\n CALL MPPDB_CHECK(" + argsMPPDB + ") \nEND SUBROUTINE"
+                            _, callMPPDBfxtran = fortran2xml(fortranSource)
+                            callMPPDB = callMPPDBfxtran.find('.//{*}call-stmt')
+                            ifMPPDB.insert(len(arraysInOut) + shiftLineNumber + 1 + i, callMPPDB)
+                    #print(alltext(ifMPPDB))
+                    # Add the new INOUT and OUT block 
+                    #par.insert(-1,indent(ifMPPDBend))
+                    insertStatement(doc,loc[0],indent(ifMPPDBend),first=False)
 @debugDecor
 def addStack(doc, descTree, model, stopScopes, parser=None, parserOptions=None, wrapH=False):
     """
@@ -318,7 +448,11 @@ class Applications():
     @copy_doc(addStack)
     def addStack(self, *args, **kwargs):
         return addStack(self._xml, *args, **kwargs)  
-
+    
+    @copy_doc(addMPPDB_CHECKS)
+    def addMPPDB_CHECKS(self, *args, **kwargs):
+        return addMPPDB_CHECKS(self._xml, *args, **kwargs)
+    
     @copy_doc(deleteDrHook)
     def deleteDrHook(self, *args, **kwargs):
         return deleteDrHook(self._xml, *args, **kwargs)

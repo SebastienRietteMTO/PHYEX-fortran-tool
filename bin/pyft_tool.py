@@ -192,7 +192,10 @@ if __name__ == '__main__':
                                help='Apply the mnh_expand directives with DO loops')
     gApplications.add_argument('--mnhExpandConcurrent', default=False, action='store_true',
                                help='Apply the mnh_expand directives with DO CONCURRENT loops')
-
+    gApplications.add_argument('--addMPPDB_CHECKS', default=False, action='store_true',
+                               help='Add MPPDB_CHEKS bit-repro checking routines of MesoNH for all in and ' + \
+                                   'inout arrays in subroutines')
+   
     #Checks
     gChecks = parser.add_argument_group('Check options')
     gChecks.add_argument('--checkIMPLICIT', choices={'Warn', 'Err'}, default=None,
@@ -326,6 +329,7 @@ if __name__ == '__main__':
             if arg == '--deleteDrHook': pft.deleteDrHook(**simplify)
             if arg == '--deleteBudgetDDH': pft.deleteBudgetDDH(**simplify)
             if arg == '--deleteNonColumnCallsPHYEX': pft.deleteNonColumnCallsPHYEX(**simplify)
+            if arg == '--addMPPDB_CHECKS': pft.addMPPDB_CHECKS()
             #mnhExpand must be before inlineContainedSubroutines as inlineContainedSubroutines can change
             #variable names used by mnh_expand directives
             assert not (args.mnhExpand and args.mnhExpandConcurrent), "Only one of --mnhExpand and --mnhExpandConcurrent"
