@@ -77,13 +77,16 @@ def addMPPDB_CHECKS(doc):
     :param doc: etree to use
     """
     locations  = getScopesList(doc,withNodes='tuple')
-
-    if locations[0][0].split('/')[-1].split(':')[1][:4] == 'MODD':
+    mod_type = locations[0][0].split('/')[-1].split(':')[1][:4]
+    if mod_type == 'MODD':
         pass
     else:
         for loc in locations:
-            if 'sub:' in loc[0]: # Do not add MPPDB_CHEKS to MODULE object, but only to SUBROUTINES
-                print(loc[0])
+            # Do not add MPPDB_CHEKS to :
+            # - MODULE or FUNCTION object, 
+            # - interface subroutine from a MODI
+            # but only to SUBROUTINES
+            if 'sub:' in loc[0] and 'func' not in loc[0] and 'interface' not in loc[0]:
                 scopepath = getScopePath(doc,loc[1])
                 subRoutineName = scopepath.split('/')[-1].split(':')[1]
                 varList = getVarList(doc,scopepath)
@@ -104,12 +107,6 @@ def addMPPDB_CHECKS(doc):
                 
                 # Add necessary module
                 addModuleVar(doc, [(loc[0], 'MODE_MPPDB', None)])
-                
-                # Get the index of the last declaration object
-                declStmts = loc[1].findall('.//{*}T-decl-stmt')
-                par = getParent(loc[1],declStmts[-1])
-                allsiblings = par.findall('./{*}*')
-                ind = allsiblings.index(declStmts[-1])
     
                 # Prepare some FORTRAN comments
                 fortranSource = "SUBROUTINE FOO598756\n !Check all IN arrays \nEND SUBROUTINE"
@@ -151,7 +148,7 @@ def addMPPDB_CHECKS(doc):
                             ifMPPDB.insert(len(arraysIn) + shiftLineNumber + 1 + i, callMPPDB)
                     
                     # Add the new IN and INOUT block 
-                    par.insert(ind+1,indent(ifMPPDBinit))
+                    insertStatement(doc,loc[0],indent(ifMPPDBinit),first=True)
                     
                 # 2) variables INOUT and OUT block (end of the routine)
                 if len(arraysInOut) + len(arraysOut) > 0:
@@ -180,9 +177,8 @@ def addMPPDB_CHECKS(doc):
                             _, callMPPDBfxtran = fortran2xml(fortranSource)
                             callMPPDB = callMPPDBfxtran.find('.//{*}call-stmt')
                             ifMPPDB.insert(len(arraysInOut) + shiftLineNumber + 1 + i, callMPPDB)
-                    #print(alltext(ifMPPDB))
+
                     # Add the new INOUT and OUT block 
-                    #par.insert(-1,indent(ifMPPDBend))
                     insertStatement(doc,loc[0],indent(ifMPPDBend),first=False)
 @debugDecor
 def addStack(doc, descTree, model, stopScopes, parser=None, parserOptions=None, wrapH=False):
