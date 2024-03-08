@@ -195,6 +195,8 @@ if __name__ == '__main__':
     gApplications.add_argument('--addMPPDB_CHECKS', default=False, action='store_true',
                                help='Add MPPDB_CHEKS bit-repro checking routines of MesoNH for all in and ' + \
                                    'inout arrays in subroutines')
+    gApplications.add_argument('--addACC_data', default=False, action='store_true',
+                               help='Add !$acc data present and !$acc end data directives')
    
     #Checks
     gChecks = parser.add_argument_group('Check options')
@@ -340,6 +342,8 @@ if __name__ == '__main__':
             if arg == '--expandAllArrays': pft.removeArraySyntax()
             if arg == '--expandAllArraysPHYEX': pft.expandAllArraysPHYEX()
             if arg == '--removeIJLoops': pft.removeIJLoops()
+            if arg == '--addACC_data': pft.addACC_data()
+
     
             #Cosmetics
             if arg == '--upperCase': pft.upperCase()
