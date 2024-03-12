@@ -135,8 +135,6 @@ if __name__ == '__main__':
                             help='Put FORTRAN code in lower case letters')
     gCosmetics.add_argument('--changeIfStatementsInIfConstructs', default=False, action='store_true',
                             help='Find all if-statement and convert it to if-then-statement')
-    gCosmetics.add_argument('--reDimKlonArrayToScalar', default=False, action='store_true',
-                            help='Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar')
     gCosmetics.add_argument('--indent', default=False, action='store_true',
                             help='Correct indentation')
     gCosmetics.add_argument('--removeIndent', default=False, action='store_true',
@@ -169,8 +167,9 @@ if __name__ == '__main__':
     gApplications.add_argument('--deleteNonColumnCallsPHYEX', default=False, action='store_true',
                                help='Delete call to PHYEX routines that needs information on horizontal ' + \
                                     'points (multiple column dependency')
-    gApplications.add_argument('--removeIJLoops', default=False, action='store_true',
-                               help='Remove DO loops on I and J dimensions (1,KLON)')
+    gApplications.add_argument('--removeIJDim', default=False, action='store_true',
+                               help='Remove I and J dimensions (1, KLON). ' + \
+                                    'Needs the --stopScopes argument.')
     gApplications.add_argument('--expandAllArraysPHYEX', default=False, action='store_true',
                                help='Expand all array syntax (computing and where block) ' + \
                                'using PHYEX conventions')
@@ -180,12 +179,10 @@ if __name__ == '__main__':
     gApplications.add_argument('--inlineContainedSubroutinesPHYEX', default=False, action='store_true',
                                help='Inline containted subroutines in main routine, using ' + \
                                     'PHYEX conventions')
-    gApplications.add_argument('--addStack', metavar=('MODEL', 'STOPSCOPES'), nargs=2,
-                               help='Add local arrays to the stack. The first argument is the ' + \
-                                    'the model name in which stack must be added ("AROME" or "MESONH")' + \
-                                    'and the second one is a #-separated list of scopes ' + \
-                                    'where the recursive inclusion of the STACK argument variable ' + \
-                                    'must stop (significant only for the "AROME" case).')
+    gApplications.add_argument('--addStack', metavar='MODEL', type=str,
+                               help='Add local arrays to the stack. The argument is the ' + \
+                                    'the model name in which stack must be added ("AROME" or "MESONH").' + \
+                                    'Needs the --stopScopes argument for AROME.')
     gApplications.add_argument('--addIncludes', default=False, action='store_true',
                                help='Add .h includes in the file and remove the INCLUDE statement')  
     gApplications.add_argument('--mnhExpand', default=False, action='store_true',
@@ -245,15 +242,17 @@ if __name__ == '__main__':
     gTree.add_argument('--plotMaxLower', default=None, type=int,
                        help='Maximum number of lower elements in the plot tree')
     gTree.add_argument('--addArgInTree', default=None, action='append', nargs=5,
-                       metavar=('WHERE', 'VARNAME', 'DECLARATION', 'POSITION', 'STOPSCOPES'),
-                       help='Add an argument variable. First argument is the scope (as for ' + \
+                       metavar=('WHERE', 'VARNAME', 'DECLARATION', 'POSITION'),
+                       help='Add an argument variable. The argument is the scope (as for ' + \
                             'the --removeVariable option. The second is the variable ' + \
                             'name, the third is the declarative statement to insert, ' + \
                             'the fourth is the position (python indexing) the new ' + \
                             'variable will have in the calling statment of the ' + \
-                            'routine. The last argument is #-separated list of scopes ' + \
-                            'where the recursive inclusion of the argument variable ' + \
-                            'must stop.')
+                            'routine. Needs the --stopScopes argument')
+    gTree.add_argument('--stopScopes', default=None, type=str,
+                       help='#-separated list of scopes ' + \
+                            'where the recursive inclusion of an argument variable ' + \
+                            'must stop (needed for some transformations).')
 
     #Preprocessor
     gCpp = parser.add_argument_group('Preprocessor')
@@ -320,7 +319,7 @@ if __name__ == '__main__':
                                           "ALLOCATE({name}({shape}))", "DEALLOCATE({name})")
     
             #Applications
-            if arg == '--addStack': pft.addStack(descTree, args.addStack[0], args.addStack[1].split('#'),
+            if arg == '--addStack': pft.addStack(descTree, args.addStack, args.stopScopes.split('#'),
                                                  parser=args.parser, parserOptions=parserOptions,
                                                  wrapH=args.wrapH)
             if arg == '--deleteDrHook': pft.deleteDrHook(**simplify)
@@ -335,13 +334,14 @@ if __name__ == '__main__':
             if arg == '--inlineContainedSubroutinesPHYEX': pft.inlineContainedSubroutinesPHYEX(descTree=descTree, **simplify)
             if arg == '--expandAllArrays': pft.removeArraySyntax()
             if arg == '--expandAllArraysPHYEX': pft.expandAllArraysPHYEX()
-            if arg == '--removeIJLoops': pft.removeIJLoops()
+            if arg == '--removeIJDim': pft.removeIJDim(descTree, args.stopScopes.split('#'),
+                                                       parser=args.parser, parserOptions=parserOptions,
+                                                       wrapH=args.wrapH, **simplify)
     
             #Cosmetics
             if arg == '--upperCase': pft.upperCase()
             if arg == '--lowerCase': pft.lowerCase()
             if arg == '--changeIfStatementsInIfConstructs': pft.changeIfStatementsInIfConstructs()
-            if arg == '--reDimKlonArrayToScalar': pft.reDimKlonArrayToScalar()
             if arg == '--indent': pft.indent()
             if arg == '--removeIndent': pft.indent(indent_programunit=0, indent_branch=0)
             if arg == '--removeEmptyLines': pft.removeEmptyLines()
@@ -394,8 +394,8 @@ if __name__ == '__main__':
             if arg == '--plotExecTree': pft.plotExecTreeFromFile(args.INPUT, descTree, args.plotExecTree,
                                                                  args.plotMaxUpper, args.plotMaxLower)
             if arg == '--addArgInTree':
-                for scope, varName, declStmt, pos, stopScopes in args.addArgInTree:
-                    pft.addArgInTree(scope, descTree, varName, declStmt, int(pos), stopScopes.split('#'),
+                for scope, varName, declStmt, pos in args.addArgInTree:
+                    pft.addArgInTree(scope, descTree, varName, declStmt, int(pos), args.stopScopes.split('#'),
                                      parser=args.parser, parserOptions=parserOptions, wrapH=args.wrapH)
                     
             #Preprocessor

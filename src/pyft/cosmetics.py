@@ -886,62 +886,6 @@ def changeIfStatementsInIfConstructs(doc, singleItem=None, parent=None):
             for cnt in item.findall('./{*}cnt'):
                 item.remove(cnt)
 
-@debugDecor
-def reDimKlonArrayToScalar(doc):
-    """
-    Remove NIJ, NI or NJ dimension to all 1D and 2D arrays : these arrays become scalar.
-    To apply after applications:removeIJLoops and attachArraySpecToEntity
-    Applied on computation (index loop removal) and variable declarations (dimension removal)
-    :param doc: xml fragment
-    """
-    locations  = getScopesList(doc,withNodes='tuple')
-    locations.reverse()
-    for loc in locations:
-        # For all subroutines or modi_ interface (but not mode)
-        if 'sub:' in loc[0] or 'MODI_' in loc[0]:
-            varArray,varArrayNamesList = [], []
-            scopepath = getScopePath(doc,loc[1])
-            varList = getVarList(doc,scopepath)
-            for var in varList:
-                if var['as']:
-                    varArray.append(var)
-                    varArrayNamesList.append(var['n'])
-            # Remove dimensions in variable statements
-            decls = doc.findall('.//{*}T-decl-stmt/{*}EN-decl-LT/{*}EN-decl')
-            for decl in decls:
-                varsShape= decl.findall('.//{*}shape-spec-LT')
-                for varShape in varsShape:
-                    n = varShape.findall('.//{*}shape-spec')
-                    if (len(n) == 1 and (alltext(n[0]) == 'D%NIJT' or alltext(n[0]) == 'D%NJT' or alltext(n[0]) == 'D%NIT')) \
-                    or (len(n) == 2 and (alltext(n[0]) == 'D%NIT' and alltext(n[1]) == 'D%NJT')):
-                        par = getParent(doc,varShape,level=2)
-                        par.remove(getParent(doc,varShape))
-                        break
-            # Remove in index loop in computation (possible after removeIJLoops has been applied) 
-            parensR = doc.findall('.//{*}parens-R')
-            for el in parensR:
-                n = el.findall('.//{*}n')
-                if (len(n) == 1 and (alltext(n[0]) == 'JI' or alltext(n[0]) == 'JJ' or alltext(n[0]) == 'JIJ')) \
-                or (len(n) == 2 and (alltext(n[0]) == 'JI' and alltext(n[1]) == 'JJ')):
-                    par = getParent(doc,el)
-                    par.remove(el)           
-            # Remove (:) for klon array in call-statement
-            calls = loc[1].findall('.//{*}call-stmt')
-            for call in calls:
-                namedEs = call.findall('.//{*}named-E')
-                for namedE in namedEs:
-                    subs=namedE.findall('.//{*}section-subscript')
-                    if '%' in alltext(namedE):
-                        print("WARNING: " + alltext(namedE) + " is assumed not to be on klon dimensions, otherwise, do not use type variables")
-                    else:
-                        if len(subs) == 1 and alltext(subs[0]) == ':': # ':' alone
-                                varName = alltext(namedE.find('.//{*}n'))
-                                ind=varArrayNamesList.index(varName)
-                                upperBound = str(varArray[ind]['as'][0][1])
-                                if upperBound == 'D%NIJT' or upperBound == 'D%NIT' or upperBound == 'D%NJT':
-                                    RLT = namedE.find('.//{*}R-LT')
-                                    par = getParent(namedE,RLT)
-                                    par.remove(RLT)    
 class Cosmetics():
     @copy_doc(upperCase)
     def upperCase(self):
@@ -971,10 +915,6 @@ class Cosmetics():
     def updateContinuation(self, *args, **kwargs):
         self._xml = updateContinuation(doc=self._xml, *args, **kwargs)
         
-    @copy_doc(reDimKlonArrayToScalar)
-    def reDimKlonArrayToScalar(self, *args, **kwargs):
-        return reDimKlonArrayToScalar(self._xml, *args, **kwargs)
-
     @copy_doc(changeIfStatementsInIfConstructs)
     def changeIfStatementsInIfConstructs(self):
         return changeIfStatementsInIfConstructs(doc=self._xml)

@@ -206,6 +206,7 @@ def removeCall(doc, callName, scopePath, simplify=False):
                      we also delete it; or if the call was alone inside a if-then-endif construct,
                      the construct is also removed, and variables used in the if condition are also
                      checked...)
+    :return: number of calls suppressed
     """
     callName = callName.upper()
     if scopePath is None:
@@ -221,6 +222,7 @@ def removeCall(doc, callName, scopePath, simplify=False):
     callNodes = [cn for cn in callNodes
                  if n2name(cn.find('.//{*}named-E/{*}N')).upper() == callName] #filter by name
     removeStmtNode(doc, callNodes, simplify, simplify)
+    return len(callNodes)
 
 @debugDecor
 def removePrints(doc, scopePath, simplify=False):

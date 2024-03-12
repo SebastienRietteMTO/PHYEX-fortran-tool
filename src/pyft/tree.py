@@ -102,7 +102,18 @@ def descTree(tree, descTree, parser=None, parserOptions=None, wrapH=False, addIn
 
                 #Fill scopes
                 scopes = pft.getScopesList(withNodes='tuple')
-                result['scopes'][filename] = [scope[0] for scope in scopes]
+                result['scopes'][filename] = []
+                for scope in scopes:
+                    #Scope found in file
+                    result['scopes'][filename].append(scope[0])
+                    #We add, to this list, the "MODULE PROCEDURE" declared in INTERFACE statements
+                    if scope[0].split('/')[-1].split(':')[0] == 'interface':
+                        for name in [n2name(N).upper()
+                                     for moduleproc in scope[1].findall('./{*}procedure-stmt')
+                                     for N in moduleproc.findall('./{*}module-procedure-N-LT/{*}N')]:
+                            for s in scopes:
+                                if re.search(scope[0].rsplit('/', 1)[0] + '/[a-zA-Z]*:' + name, s[0]):
+                                    result['scopes'][filename].append(scope[0] + '/' + s[0].split('/')[-1])
 
                 #Fill trees
                 result['compilation_tree'][filename] = []
@@ -282,6 +293,28 @@ def descTree(tree, descTree, parser=None, parserOptions=None, wrapH=False, addIn
                                 logging.warning(('No definition of the program unit found for {callScope} ' + \
                                                  'called in {scope}').format(callScope=c, scope=scope))
 
+        #execution_tree: named interface
+        #We replace named interface by the list of routines declared in this interface
+        #This is not perfect because only one routine is called and not all
+        for scope, execList in result['execution_tree'].items():
+            for item in list(execList):
+                itemSplt = item.split('/')[-1].split(':')
+                if itemSplt[0] == 'interface' and itemSplt[1] != '--UNKNOWN--':
+                    #This is a named interface
+                    filenames = [k for (k, v) in result['scopes'].items() if item in v]
+                    if len(filenames) == 1:
+                        #We have found in which file this interface is declared
+                        execList.remove(item)
+                        for sub in [sub for sub in result['scopes'][filenames[0]]
+                                    if sub.startswith(item + '/')]:
+                            subscopeIn = sub.rsplit('/', 2)[0] + '/' + sub.split('/')[-1]
+                            if subscopeIn in result['scopes'][filenames[0]]:
+                                #Routine found in the same scope as the interface
+                                execList.append(subscopeIn)
+                            else:
+                                execList.append(sub.split('/')[-1])
+                            
+
         #execution_tree: cleaning (uniq values)
         for scope, execList in result['execution_tree'].items():
             result['execution_tree'][scope] = list(set(execList))
@@ -375,6 +408,27 @@ def calledByScope(scope, descTree, level=1):
     :return: list of scopes that calls the initial scope (recursively)
     """
     return _recurList(scope, jsonToDescTree(descTree)['execution_tree'], level, False)
+
+def isUnderStopScopes(scope, descTree, stopScopes, includeInterfaces=False):
+    """
+    :param scope: scope to test
+    :param descTree: tree description file (obtained by descTree) or its json equivalence
+    :param stopScopes: list of scopes
+    :param includeInterfaces: if True, interfaces of positive scopes are also positive
+    :return: True if scope is called directly or indirectly by one of the scope listed in stopScopes
+    """
+    scopeSplt = scope.split('/')
+    if includeInterfaces and len(scopeSplt) >= 2 and scopeSplt[-2].split(':')[0] == 'interface':
+        #This scope declares an interface, we look for the scope corresponding to this interface
+        scopeI = scopeSplt[-1]
+        if scopeI in descTree['execution_tree']:
+            #The actual code for the routine exists
+            return isUnderStopScopes(scopeI, descTree, stopScopes)
+        else:
+            #No code found for this interface
+            return False
+    upperScopes = calledByScope(scope, descTree, None)
+    return any([scp in upperScopes for scp in stopScopes])
 
 @debugDecor
 def plotTree(centralNodeList, descTree, output, plotMaxUpper, plotMaxLower, kind, frame=False):
@@ -529,6 +583,20 @@ def plotExecTreeFromFile(filename, descTree, output, plotMaxUpper, plotMaxLower)
                     'execution_tree', True)
 
 @debugDecor
+def findScopeInterface(descTree, scope):
+    """
+    Return the file name containing an interface for the scope
+    :param descTree: descTree file
+    :param scope: scope name for which an interface is searched
+    :return: (file name, interface scope) or (None, None) if not found
+    """
+    for filename, scopes in descTree['scopes'].items():
+        for scopeInterface in scopes:
+            if re.search(r'interface:[a-zA-Z0-9_-]*/' + scope, scopeInterface):
+                return filename, scopeInterface
+    return None, None
+
+@debugDecor
 def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, moduleVarList=None,
                  parser=None, parserOptions=None, wrapH=False):
     """
@@ -571,7 +639,7 @@ def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, modul
                 argList.tail = ')'
                 callFuncStmt.append(argList)
         item = createExprPart(varName)
-        previous = pos - 1 if pos > 0 else len(argList) + pos #convert negative pos using length
+        previous = pos - 1 if pos >= 0 else len(argList) + pos #convert negative pos using length
         while previous >= 0 and argList[previous].tag.split('}')[1] in ('C', 'cnt'):
             previous -= 1
         following = pos if pos > 0 else len(argList) + pos + 1 #convert negative pos using length
@@ -602,8 +670,7 @@ def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, modul
         else:
             raise PYFTError('Unable to guess the scope to deal with')
 
-    upperScopes = calledByScope(scope, descTree, None)
-    if scope in stopScopes or any([scp in upperScopes for scp in stopScopes]):
+    if scope in stopScopes or isUnderStopScopes(scope, descTree, stopScopes):
         #We are on the path to a scope in the stopScopes list, or scopeUp is one of the stopScopes
         var = findVar(doc, varName, scope, exactScope=True)
         if var is None:
@@ -615,30 +682,28 @@ def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, modul
                                   for (moduleName, moduleVarNames) in moduleVarList])
            #We look for interface declaration if subroutine is directly accessible
            if len(scope.split('/')) == 1:
-               for filename, scopes in descTree['scopes'].items():
-                   for scopeInterface in scopes:
-                       if re.search(r'interface:[a-zA-Z0-9_-]*/' + scope, scopeInterface):
-                           if getFileName(doc) == filename:
-                               #interface declared in same file
-                               xml = doc
-                               pft = None
-                           else:
-                               pft = _conservativePYFT(filename, parser, parserOptions, wrapH)
-                               xml = pft._xml
-                           varInterface = findVar(xml, varName, scopeInterface, exactScope=True)
-                           if varInterface is None:
-                               addVar(xml, [[scopeInterface, varName, declStmt, pos]])
-                               if moduleVarList is not None:
-                                   #Module variables must be added when var is added
-                                   addModuleVar(xml, [(scopeInterface, moduleName, moduleVarNames)
-                                                      for (moduleName, moduleVarNames) in moduleVarList])
-                           if pft is not None: pft.write()
+               filename, scopeInterface = findScopeInterface(descTree, scope)
+               if filename is not None:
+                   if getFileName(doc) == filename:
+                       #interface declared in same file
+                       xml = doc
+                       pft = None
+                   else:
+                       pft = _conservativePYFT(filename, parser, parserOptions, wrapH)
+                       xml = pft._xml
+                   varInterface = findVar(xml, varName, scopeInterface, exactScope=True)
+                   if varInterface is None:
+                       addVar(xml, [[scopeInterface, varName, declStmt, pos]])
+                       if moduleVarList is not None:
+                           #Module variables must be added when var is added
+                           addModuleVar(xml, [(scopeInterface, moduleName, moduleVarNames)
+                                              for (moduleName, moduleVarNames) in moduleVarList])
+                   if pft is not None: pft.write()
 
         if var is None and scope not in stopScopes:
             #We must propagates upward
             for scopeUp in calledByScope(scope, descTree): #scopes calling the current scope
-                upperScopes = calledByScope(scopeUp, descTree, None)
-                if scopeUp in stopScopes or any([scp in upperScopes for scp in stopScopes]):
+                if scopeUp in stopScopes or isUnderStopScopes(scopeUp, descTree, stopScopes):
                     #We are on the path to a scope in the stopScopes list, or scopeUp is one of the stopScopes
                     for filename in scopeToFiles(scopeUp, descTree): #can be defined several times?
                         if getFileName(doc) == filename:
@@ -672,7 +737,7 @@ def addArgInTree(doc, scope, descTree, varName, declStmt, pos, stopScopes, modul
                         if pft is not None: pft.write()
 
                         if isCalled:
-                            #We must check iCn the scope (or upper scopes) if an interface block declares the routine
+                            #We must check in the scope (or upper scopes) if an interface block declares the routine
                             for interface in doc.findall('.//{*}interface-construct/{*}program-unit/{*}subroutine-stmt/{*}subroutine-N/{*}N/../../../'):
                                 if n2name(interface.find('./{*}subroutine-stmt/{*}subroutine-N/{*}N')).upper() == name:
                                     #We must add the argument to the interface
