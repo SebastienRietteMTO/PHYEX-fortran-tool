@@ -140,9 +140,6 @@ replaces automatic arrays by allocatables.
 **\--changeIfStatementsInIfConstructs** transforms one line 'IF' contructs
 in 'IF-THEN' constructs
 
-**\--reDimKlonArrayToScalar** remove NIJ, NI or NJ dimension to all 1D and 2D arrays:
-these arrays become scalar.
-
 **\--indent** correct the indentation of the source code.
 
 **\--removeIndent** remove the indentation
@@ -203,7 +200,7 @@ call statements must be suppressed (it is a scope as described in [Concepts](#co
 **\--deleteNonColumnCallsPHYEX** delete call to PHYEX routines that needs information on horizontal
 points (multiple column dependency).
 
-**\--removeIJLoops** remove DO loops on I and J dimensions (1, KLON).
+**\--removeIJDim** remove DO I and J dimensions (1, KLON).
 
 **\--expandAllArraysPHYEX** expand all array syntax (computing and where block) using PHYEX conventions.
 
@@ -211,10 +208,9 @@ points (multiple column dependency).
 
 **\--inlineContainedSubroutinesPHYEX** inline containted subroutines in main routine using PHYEX conventions.
 
-**\--addStack MODEL STOPSCOPES** add local automatic arrays to the stack. The first argument is the
-the model name in which stack must be added ("AROME" or "MESONH") and the second one is a #-separated
-list of scopes where the recursive inclusion of the STACK argument variable must stop (significant
-only for the "AROME" case
+**\--addStack MODEL** add local automatic arrays to the stack. The argument is the
+the model name in which stack must be added ("AROME" or "MESONH"). Needs the --stopScopes argument
+for the "AROME" case
 
 **\--addIncludes** add .h includes in the file and remove the INCLUDE statement.
 
@@ -252,9 +248,12 @@ with the \--tree option) is explored. See \--plotMaxUpper and \--plotMaxLower op
 
 **\--plotMaxLower** Maximum number of elements to plot, lower than the central element.
 
-**--addArgInTree** Add an argument variable recursively. First argument is the scope (as
+**\--addArgInTree** Add an argument variable recursively. First argument is the scope (as
 described in [Concepts](#concepts), the second is the variable name, the third is the
 declarative statement to insert, the fourth is the position (python indexing) the new
 variable will have in the calling statment of the routine. The last argument is a
 \#-separated list of scopes where the recursive inclusion of the argument variable
 must stop.
+
+**\--stopScopes** #-separated list of scopes where the recursive inclusion of an
+argument variable must stop (needed for some transformations)

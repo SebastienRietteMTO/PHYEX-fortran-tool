@@ -202,21 +202,75 @@ def attachArraySpecToEntity(doc):
     :return: modified doc
     """
     # Find all T-decl-stmt elements that have a child element 'attribute' with attribute-N="DIMENSION"
-    decls = doc.findall('.//{*}T-decl-stmt')
-    
-    for decl in decls:
+    for decl in doc.findall('.//{*}T-decl-stmt'):
         array_spec = decl.find('./{*}attribute[{*}attribute-N="DIMENSION"]/{*}array-spec')
         attr_elem = decl.find('./{*}attribute[{*}attribute-N="DIMENSION"]/{*}array-spec/...')
-        if array_spec is not None:
+        #Discard allocatable (':' in array_spec)
+        if array_spec is not None and not ':' in alltext(array_spec):
             # Check if EN-decl elements don't already have an array-spec child element
-            c_arrayspec=decl.findall('./{*}EN-decl-LT/{*}EN-decl/{*}array-spec')
-            if len(c_arrayspec) == 0:
-                n = decl.findall('./{*}EN-decl-LT/{*}EN-decl/{*}EN-N')
+            # or an intial value
+            if decl.find('./{*}EN-decl-LT/{*}EN-decl/{*}array-spec') is None and \
+               decl.find('./{*}EN-decl-LT/{*}EN-decl/{*}init-E') is None:
+                n = decl.findall('./{*}EN-decl-LT/{*}EN-decl')
                 # Attach the array-spec element after the EN-N element
                 for elem in n:
-                    elem.append(array_spec)
+                    elem.append(copy.deepcopy(array_spec))
                 # Remove the dimension and array-spec elements
                 removeFromList(doc, attr_elem, decl)
+
+@debugDecor
+def findIndexArrayBounds(doc, arr, index, varList, currentScope, loopVar):
+    """
+    Find bounds and loop variable for a given array index
+    :param doc: etree to use
+    :param arr: array node (named-E node with a array-R child)
+    :param index: index of the rank of the array
+    :param varList: list of currently declared variables obtained by getVarList
+    :param currentScope: scope where the array is used
+    :param loopVar: None to create new variable for each added DO loop
+                    or a function that return the name of the variable to use for the loop control.
+                    This function returns a string (name of the variable), or True to create
+                    a new variable, or False to not transform this statement
+                    The functions takes as arguments:
+                      - lower and upper bounds as defined in the declaration statement
+                      - lower and upper bounds as given in the statement
+                      - name of the array
+                      - index of the rank
+    :return: the tuple (loopName, lowerBound, upperBound) where:
+                loopName is the name of the variable to use for the loop
+                lower and upper bounds are the bounds to use for the DO loop
+    loopName can be:
+        - a string
+        - False to discard this index
+        - True to create a new variable to loop with
+    """
+    name = n2name(arr.find('./{*}N'))
+    ss = arr.findall('./{*}R-LT/{*}array-R/{*}section-subscript-LT/{*}section-subscript')[index]
+    #We are only interested by the subscript containing ':'
+    #we must not iterate over the others, eg: X(:,1)
+    if ':' in alltext(ss):
+        #Look for lower and upper bounds for iteration and declaration
+        lower_used = ss.find('./{*}lower-bound')
+        upper_used = ss.find('./{*}upper-bound')
+        varDesc = findVar(doc, name, currentScope, varList, array=True)
+        if varDesc is not None:
+            lower_decl, upper_decl = varDesc['as'][index]
+            if lower_decl is None: lower_decl = '1' #default lower index for FORTRAN arrays
+        else:
+            lower_decl, upper_decl = None, None
+
+        #name of the loop variable
+        if loopVar is None:
+            #loopVar is not defined, we create a new variable for the loop
+            #only if lower and upper bounds have been found (easy way to discard character strings)
+            varName = lower_decl is not None and upper_decl is not None
+        else:
+            varName = loopVar(lower_decl, upper_decl,
+                              None if lower_used is None else alltext(lower_used),
+                              None if upper_used is None else alltext(upper_used), name, index)
+        return (varName,
+                lower_decl if lower_used is None else alltext(lower_used),
+                upper_decl if upper_used is None else alltext(upper_used))
 
 @debugDecor
 def findArrayBounds(doc, arr, varList, currentScope, loopVar):
@@ -252,41 +306,16 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
         #We are only interested by the subscript containing ':'
         #we must not iterate over the others, eg: X(:,1)
         if ':' in alltext(ss):
-            #Look for lower and upper bounds for iteration and declaration
-            lower_used = ss.find('./{*}lower-bound')
-            upper_used = ss.find('./{*}upper-bound')
-            varDesc = findVar(doc, name, currentScope, varList, array=True)
-            if varDesc is not None:
-                lower_decl, upper_decl = varDesc['as'][iss]
-                if lower_decl is None: lower_decl = '1' #default lower index for FORTRAN arrays
-            else:
-                lower_decl, upper_decl = None, None
-
-            #name of the loop variable
-            if loopVar is None:
-                #loopVar is not defined, we create a new variable for the loop
-                #only if lower and upper bounds have been found (easy way to discard character strings)
-                guess = lower_decl is not None and upper_decl is not None
-                varName = False
-            else:
-                varName = loopVar(lower_decl, upper_decl,
-                                  None if lower_used is None else alltext(lower_used),
-                                  None if upper_used is None else alltext(upper_used), name, iss)
-                if varName is not False and varName in table.keys():
-                    raise PYFTError(("The variable {var} must be used for the rank #{i1} whereas it " + \
-                                     "is already used for rank #{i2} (for array {name}).").format(
-                                       var=varName, i1=str(iss), i2=str(list(table.keys()).index(varName)),
-                                       name=name))
-                if varName is not False and findVar(doc, varName, currentScope,
-                                                    varList, array=False, exactScope=True) is None:
-                    #We must declare the variable
-                    varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
-                               't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
-                               'scope': currentScope}
-                    varNew.append(varDesc)
-                #varName can be a string (name to use), True (to create a variable), False (to discard the array)
-                guess = varName is True
-            if guess:
+            #Look for loop variable name and lower/upper bounds for iteration
+            varName, lower, upper = findIndexArrayBounds(doc, arr, iss, varList, currentScope, loopVar)
+            #varName can be a string (name to use), True (to create a variable), False (to discard the array
+            if varName is not False and varName in table.keys():
+                raise PYFTError(("The variable {var} must be used for the rank #{i1} whereas it " + \
+                                 "is already used for rank #{i2} (for array {name}).").format(
+                                   var=varName, i1=str(iss), i2=str(list(table.keys()).index(varName)),
+                                   name=name))
+            if varName is True:
+                #A new variable must be created
                 j = 1
                 #We look for a variable name that don't already exist
                 #We can reuse a newly created varaible only if it is not used for the previous indexes
@@ -302,9 +331,16 @@ def findArrayBounds(doc, arr, varList, currentScope, loopVar):
                 if varDesc not in varNew:
                     varNew.append(varDesc)
 
+            elif varName is not False and findVar(doc, varName, currentScope,
+                                                  varList, array=False, exactScope=True) is None:
+                #We must declare the variable
+                varDesc = {'as': [], 'asx': [], 'n': varName, 'i': None,
+                           't': 'INTEGER', 'arg': False, 'use': False, 'opt': False,
+                           'scope': currentScope}
+                varNew.append(varDesc)
+
             #fill table
-            table[varName] = (lower_decl if lower_used is None else alltext(lower_used),
-                              upper_decl if upper_used is None else alltext(upper_used))
+            table[varName] = (lower, upper)
 
     return (None, []) if False in table.keys() else (table, varNew)
 
@@ -861,9 +897,9 @@ def addVar(doc, varList):
 
         #Add variable to the argument list
         if pos is not None:
-            argN = Element('f:arg-N')
-            N = Element('f:N')
-            n = Element('f:n')
+            argN = Element('{http://fxtran.net/#syntax}:arg-N')
+            N = Element('{http://fxtran.net/#syntax}:N')
+            n = Element('{http://fxtran.net/#syntax}:n')
             n.text = name
             N.append(n)
             argN.append(N)
@@ -874,7 +910,7 @@ def addVar(doc, varList):
             if argLst is None:
                #This was a subroutine or function without dummy arguments
                locNode[0][0].tail = '(' 
-               argLst = Element('f:dummy-arg-LT')
+               argLst = Element('{http://fxtran.net/#syntax}:dummy-arg-LT')
                argLst.tail = ')'
                locNode[0].insert(1, argLst)
             insertInList(pos, argN, argLst)
@@ -909,10 +945,15 @@ def addVar(doc, varList):
                 previousTail = getSiblings(xml, ds, after=False)[-1].tail
 
                 #node insertion index
-                declLst = [node for node in getScopeChildNodes(doc, locNode) if node.tag.endswith('}' + declStmtTag)]
+                declLst = [node for node in getScopeChildNodes(doc, locNode)
+                           if node.tag.endswith('}' + declStmtTag)]
                 if len(declLst) != 0:
-                    #There already are declaration statements, we add the new one after them
-                    index = list(locNode).index(declLst[-1]) + 1
+                    #There already are declaration statements
+                    #We look for the last position in the declaration list which do not use the variable we add
+                    for decl in declLst:
+                        index = list(locNode).index(decl)
+                        if name in [n2name(N) for N in decl.findall('.//{*}N')]:
+                            break
                 else:
                     #There is no declaration statement
                     stmtLst = [node for node in getScopeChildNodes(doc, locNode) if isExecutable(node)] #list of executable nodes
@@ -1243,7 +1284,7 @@ def modifyAutomaticArrays(doc, declTemplate=None, startTemplate=None, endTemplat
                 Nlist = [x for l in var['asx'] for x in l if x is not None] #flatten var['asx'] excluding None
                 Nlist = [n2name(N).upper() for asx in Nlist for N in asx.findall('.//{*}N/{*}n/..')]
                 if len(set(Nlist).intersection([v['n'].upper() for v in varListToTransform])) == 0:
-                    #Variable var does not use vraibles still in varListToTransform
+                    #Variable var does not use variables still in varListToTransform
                     varListToTransform.remove(var)
                     orderedVarListToTransform.append(var)
                     nAdded += 1
